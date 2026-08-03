@@ -13,6 +13,8 @@ import {
 } from './gemma4Tunnel.js';
 import { ProviderReadinessCache } from './providerReadiness.js';
 import { attachVoiceGateway } from './voiceGateway.js';
+import { writeSse } from './sse.js';
+import { makeId } from '../utils/ids.js';
 import { extractPreferenceIntents } from '../runtime/memoryExtractor.js';
 import {
   defaultMemoryPolicy,
@@ -89,15 +91,6 @@ function sseHeaders(res: http.ServerResponse): void {
     'x-accel-buffering': 'no',
   });
   res.flushHeaders?.();
-}
-
-function writeSse(
-  res: http.ServerResponse,
-  event: 'activity' | 'commentary' | 'delta' | 'artifact' | 'result' | 'error',
-  payload: unknown,
-): void {
-  res.write(`event: ${event}\n`);
-  res.write(`data: ${JSON.stringify(payload)}\n\n`);
 }
 
 function textResponse(
@@ -447,6 +440,8 @@ async function handleTurnStream(
   req: http.IncomingMessage,
   res: http.ServerResponse,
 ): Promise<void> {
+  const requestId = makeId('stream');
+  const startedAt = performance.now();
   sseHeaders(res);
   try {
     const input = (await readJson(req)) as WebTurnRequest;
@@ -470,6 +465,7 @@ async function handleTurnStream(
         writeSse(res, 'artifact', normalizeArtifact(artifact));
       },
     });
+    const memoryStartedAt = performance.now();
     const finalized = await finalizeTurnMemory({
       input: prepared.input,
       result,
@@ -477,13 +473,34 @@ async function handleTurnStream(
       userMessage: prepared.userMessage,
       memoryPolicy: prepared.memoryPolicy,
     });
+    traceWebTiming(requestId, 'memory_finalize_completed', startedAt, {
+      memoryElapsedMs: Math.round(performance.now() - memoryStartedAt),
+    });
     writeSse(res, 'result', normalizeResult(finalized));
     res.end();
+    traceWebTiming(requestId, 'turn_completed', startedAt);
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unexpected server error.';
     writeSse(res, 'error', { error: message });
     res.end();
   }
+}
+
+function traceWebTiming(
+  requestId: string,
+  event: string,
+  startedAt: number,
+  detail: Record<string, unknown> = {},
+): void {
+  if (!config.trace) return;
+  console.info(
+    `[MuseTiming] ${JSON.stringify({
+      requestId,
+      event,
+      elapsedMs: Math.round(performance.now() - startedAt),
+      ...detail,
+    })}`,
+  );
 }
 
 async function handleConversations(
