@@ -1,0 +1,77 @@
+previews:
+  generation: "off"
+
+services:
+  - type: web
+    name: muse-mirror-team-demo
+    runtime: docker
+    plan: free
+    region: singapore
+    branch: codex/render-team-demo-deploy
+    numInstances: 1
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /healthz
+    autoDeployTrigger: commit
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: FASHION_AGENT_RUNTIME
+        value: muse
+      - key: FASHION_AGENT_LLM_PROVIDER
+        value: openai
+      - key: FASHION_AGENT_VISION_PROVIDER
+        value: openai
+      - key: FASHION_AGENT_IMAGE_PROVIDER
+        value: openai
+      - key: FASHION_AGENT_CLOSET_PROVIDER
+        value: local
+      - key: FASHION_AGENT_WEATHER_PROVIDER
+        value: mock
+      - key: FASHION_AGENT_PRODUCT_PROVIDER
+        value: disabled
+      - key: FASHION_AGENT_MOCK_TOOLS
+        value: "false"
+      - key: FASHION_AGENT_VISUAL_QC
+        value: "false"
+      - key: FASHION_AGENT_OUTPUT_DIR
+        value: /app/out
+      - key: FASHION_AGENT_MEMORY_DATA
+        value: /app/out/muse-memory-v1.json
+      - key: OPENAI_AGENT_MODEL
+        value: gpt-5.4
+      - key: OPENAI_VISION_MODEL
+        value: gpt-5.4-mini
+      - key: OPENAI_IMAGE_TOOL_HOST_MODEL
+        value: gpt-5.4-mini
+      - key: OPENAI_IMAGE_MODEL
+        value: gpt-image-2
+      - key: OPENAI_REASONING_EFFORT
+        value: low
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: FASHION_AGENT_ASR_PROVIDER
+        value: volcengine
+      - key: FASHION_AGENT_TTS_PROVIDER
+        value: volcengine
+      - key: VOLC_SPEECH_APP_ID
+        sync: false
+      - key: VOLC_SPEECH_APP_KEY
+        sync: false
+      - key: VOLC_SPEECH_ACCESS_KEY
+        sync: false
+      - key: VOLC_ASR_ENDPOINT
+        value: wss://openspeech.bytedance.com/api/v3/sauc/bigmodel
+      - key: VOLC_ASR_RESOURCE_ID
+        value: volc.seedasr.sauc.duration
+      - key: VOLC_TTS_ENDPOINT
+        value: wss://openspeech.bytedance.com/api/v3/tts/unidirectional/stream
+      - key: VOLC_TTS_RESOURCE_ID
+        value: seed-tts-2.0
+      - key: VOLC_TTS_MODEL
+        value: seed-tts-2.0-standard
+      - key: VOLC_TTS_SPEAKER_ID
+        value: zh_male_taocheng_uranus_bigtts
+      - key: MUSE_TEAM_DEMO_ACCESS_CODE
+        sync: false
+      - key: MUSE_TEAM_DEMO_SESSION_SECRET
+        sync: false

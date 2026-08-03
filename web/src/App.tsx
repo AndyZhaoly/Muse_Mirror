@@ -35,6 +35,7 @@ import {
   type UserMemory,
 	} from './agentClient';
 import { useVoiceSession } from './voice/useVoiceSession';
+import { getOrCreateBrowserUserId } from './browserIdentity';
 
 type CameraState = 'idle' | 'requesting' | 'active' | 'paused' | 'error';
 type VisualMode =
@@ -131,8 +132,6 @@ type PendingApproval = {
   approvals: ApprovalRequest[];
   resumeToken: string;
 };
-
-const userId = 'investor_demo_user';
 
 const initialMessages: Message[] = [
   {
@@ -340,12 +339,12 @@ function CameraPermissionCard({ onStart, loading }: { onStart: () => void; loadi
       <div className="permission-icon"><Icon name="camera" size={24} /></div>
       <p className="eyebrow">PRIVATE BY DEFAULT</p>
       <h2>开启你的实时试衣镜</h2>
-      <p>画面先在浏览器本地显示。只有你主动分析或请求上身预览时，才会截取当前画面。</p>
+      <p>授权后画面会先在浏览器显示；为保持视觉状态，Muse 会按低频截取当前画面并发送给视觉模型，不上传连续视频流。</p>
       <button className="button button-dark" onClick={onStart} disabled={loading}>
         <Icon name="camera" />
         {loading ? '正在请求权限...' : '开启摄像头'}
       </button>
-      <span className="privacy-note">默认不录音，不持续上传视频流</span>
+      <span className="privacy-note">默认不录音；低频画面仅在镜子开启时按需分析</span>
     </div>
   );
 }
@@ -1268,6 +1267,7 @@ function MessageBubble({
 }
 
 function App() {
+  const [userId] = useState(getOrCreateBrowserUserId);
   const [sessionId] = useState(makeSessionId);
   const [cameraState, setCameraState] = useState<CameraState>('idle');
   const [mirror, setMirror] = useState(true);
@@ -2083,7 +2083,7 @@ function App() {
             </div>
         )}
         {cameraState === 'paused' && <div className="paused-overlay"><Icon name="pause" /><span>镜子已暂停</span></div>}
-        {cameraState === 'active' && <div className="live-badge"><span /> LIVE · 仅本地预览</div>}
+        {cameraState === 'active' && <div className="live-badge"><span /> LIVE · 本地预览 / 低频分析</div>}
       </div>
     );
   };
@@ -2242,7 +2242,7 @@ function App() {
               </button>
               <button className="send-button" type="submit" aria-label="发送消息"><Icon name="send" size={18} /></button>
             </form>
-            <span className="voice-privacy">摄像头默认不录音。只有开启语音模式后才会使用麦克风；音频用于实时识别，不在本地持久化保存。</span>
+            <span className="voice-privacy">摄像头帧会按需发送给视觉模型；麦克风只在语音模式开启时使用，音频会发送给语音识别服务，Muse 服务不持久化原始音频。</span>
             <span className={`mock-note transport-${transport}`}>{statusNote}</span>
           </div>
         </aside>

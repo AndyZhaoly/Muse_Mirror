@@ -2,6 +2,29 @@
 
 The public turn and approval-resume API remains compatible with v0.4. Skill loading is internal and does not add a user-facing workflow.
 
+## Deployment health and team access
+
+`GET /healthz` is always public and returns a fast provider-independent response:
+
+```json
+{
+  "ok": true,
+  "service": "muse-mirror",
+  "version": "<commit-or-package-version>",
+  "timestamp": "<ISO timestamp>"
+}
+```
+
+When `MUSE_TEAM_DEMO_ACCESS_CODE` is configured, the following bootstrap endpoints remain public:
+
+- `GET /api/demo-auth/status`
+- `POST /api/demo-auth/login` with `{ "accessCode": "..." }`
+- `POST /api/demo-auth/logout`
+
+A successful login sets a signed HttpOnly, SameSite=Lax session cookie. It is Secure in production. All fashion, conversation, memory, generated-asset, SSE, ASR WebSocket, and TTS WebSocket requests require that cookie. Access codes and session secrets are never returned by an API.
+
+When the access code is not configured, the gate is disabled for local development.
+
 ## Start a turn
 
 ```ts
@@ -82,6 +105,8 @@ The model should not hand-write artifact URLs in its natural-language response.
 ## Voice transport
 
 Voice input and output wrap the existing turn API; they do not create a second conversation or a second Agent runtime.
+
+On HTTPS deployments, clients connect with `wss://` to the same host and port. When the team gate is enabled, both WebSocket upgrade requests require the same signed session cookie as HTTP APIs.
 
 ### Capability status
 

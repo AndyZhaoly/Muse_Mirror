@@ -94,3 +94,24 @@ test('ASR gateway closes its provider session when the browser disconnects', asy
   gateway.close();
   await new Promise<void>((resolve) => server.close(() => resolve()));
 });
+
+test('voice WebSocket upgrade rejects unauthenticated requests', async () => {
+  const server = http.createServer((_req, res) => res.end('ok'));
+  const gateway = attachVoiceGateway(server, {
+    config: configuredVoice(),
+    authorizeRequest: () => false,
+  });
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const address = server.address();
+  assert.ok(address && typeof address !== 'string');
+  const browser = new WebSocket(`ws://127.0.0.1:${address.port}/api/voice/asr`);
+  const statusCode = await new Promise<number>((resolve, reject) => {
+    browser.once('unexpected-response', (_request, response) => resolve(response.statusCode ?? 0));
+    browser.once('open', () => reject(new Error('Unauthorized WebSocket unexpectedly opened.')));
+    browser.once('error', () => undefined);
+  });
+  assert.equal(statusCode, 401);
+  browser.terminate();
+  gateway.close();
+  await new Promise<void>((resolve) => server.close(() => resolve()));
+});
