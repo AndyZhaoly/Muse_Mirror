@@ -1,0 +1,51 @@
+{
+  "completedAnalysis": {
+    "status": "completed",
+    "text": "可以，整体是干净又松弛的方向。把白 T 前摆轻塞一点，腰线会更清楚；再加一个棕色小包，整套会更完整。",
+    "artifacts": [
+      {
+        "type": "notice",
+        "id": "analysis_1",
+        "level": "info",
+        "text": "主色：白色、浅蓝；廓形：上松下直；比例建议：提高腰线。"
+      }
+    ],
+    "state": {
+      "currentUserImageId": "snapshot_1"
+    }
+  },
+  "approvalRequired": {
+    "status": "approval_required",
+    "approvals": [
+      {
+        "index": 0,
+        "toolName": "generate_try_on_preview",
+        "arguments": "{\"userImageId\":\"snapshot_1\",\"outfitId\":\"outfit_1\"}",
+        "reason": "生成上身预览需要使用当前照片。"
+      }
+    ],
+    "serializedRunState": "mock_serialized_run_state",
+    "artifacts": []
+  },
+  "completedTryOn": {
+    "status": "completed",
+    "text": "这版保留了轻松感，但短夹克让重心更利落。重点看卡其、白色和浅蓝之间的层次。",
+    "artifacts": [
+      {
+        "type": "image",
+        "id": "tryon_1",
+        "label": "AI 上身预览",
+        "source": "ai_try_on",
+        "url": "/mock/mock-tryon.svg",
+        "mimeType": "image/svg+xml",
+        "aiGenerated": true,
+        "disclaimer": "重点参考颜色、层次和整体感觉；实际尺码、面料垂坠和剪裁以真实试穿为准。"
+      }
+    ],
+    "state": {
+      "activeOutfitId": "outfit_1",
+      "lastGeneratedImageId": "tryon_1",
+      "currentUserImageId": "snapshot_1"
+    }
+  }
+}

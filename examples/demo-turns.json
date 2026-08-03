@@ -1,0 +1,104 @@
+[
+  {
+    "message": "黑色是不是一定比卡其更正式？",
+    "expected": {
+      "skills": [],
+      "tools": [],
+      "note": "Direct answer preferred."
+    }
+  },
+  {
+    "message": "我这身去见客户可以吗？",
+    "expected": {
+      "skills": [
+        "style-diagnosis",
+        "occasion-styling"
+      ],
+      "tools": [
+        "analyze_current_view"
+      ],
+      "note": "Skills may be loaded only as needed."
+    }
+  },
+  {
+    "message": "晚上约会，用我衣柜里的衣服搭一套，外面大概 15 度。",
+    "expected": {
+      "skills": [
+        "occasion-styling"
+      ],
+      "tools": [
+        "search_closet"
+      ],
+      "forbidden": [
+        "get_weather"
+      ],
+      "note": "Weather already supplied."
+    }
+  },
+  {
+    "message": "这是明天面试的完整搭配，帮我最后把关。",
+    "expected": {
+      "skills": [
+        "outfit-review",
+        "occasion-styling"
+      ],
+      "optionalTools": [
+        "verify_outfit_quality"
+      ]
+    }
+  },
+  {
+    "message": "你说的是哪件夹克？给我看看。",
+    "expected": {
+      "tools": [
+        "get_item_images"
+      ],
+      "forbidden": [
+        "generate_outfit_visual",
+        "generate_try_on_preview"
+      ]
+    }
+  },
+  {
+    "message": "把这套做成平铺图。",
+    "expected": {
+      "skills": [
+        "try-on-preparation"
+      ],
+      "tools": [
+        "generate_outfit_visual"
+      ]
+    }
+  },
+  {
+    "message": "那我穿上是什么样？",
+    "expected": {
+      "skills": [
+        "try-on-preparation"
+      ],
+      "tools": [
+        "generate_try_on_preview"
+      ]
+    }
+  },
+  {
+    "message": "外套换成黑色，鞋别动。",
+    "expected": {
+      "skills": [
+        "try-on-preparation"
+      ],
+      "tools": [
+        "edit_try_on_preview"
+      ]
+    }
+  },
+  {
+    "message": "今天先别推荐高跟鞋。",
+    "expected": {
+      "tools": [
+        "save_user_preference"
+      ],
+      "note": "Session scope only."
+    }
+  }
+]

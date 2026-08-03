@@ -1,0 +1,439 @@
+{
+  "metadataVersion": "demo2_presentation_v1",
+  "reviewedAt": "2026-06-20",
+  "items": {
+    "look_001_black_sleeveless_gray_maxi_skirt_item_01_black_sleeveless_top": {
+      "marketedFor": "womens",
+      "presentationMetadata": {
+        "affinity": { "masculine": 0.35, "androgynous": 0.55, "feminine": 0.65 },
+        "intensity": "moderate",
+        "reasonCodes": ["sleeveless", "slim_fit", "minimal_color", "body_close_top"],
+        "metadataVersion": "demo2_presentation_v1",
+        "reviewedAt": "2026-06-20"
+      },
+      "cutProfile": { "shoulder": "narrow", "waist": "straight", "length": "regular" },
+      "fitCompatibilityTags": ["body_close", "try_on_recommended"]
+    },
+    "look_001_black_sleeveless_gray_maxi_skirt_item_02_dark_grey_maxi_skirt": {
+      "marketedFor": "womens",
+      "presentationMetadata": {
+        "affinity": { "masculine": 0.15, "androgynous": 0.35, "feminine": 0.86 },
+        "intensity": "strong",
+        "reasonCodes": ["a_line_skirt", "high_waist", "maxi_skirt", "decorative_chain"],
+        "metadataVersion": "demo2_presentation_v1",
+        "reviewedAt": "2026-06-20"
+      },
+      "cutProfile": { "waist": "shaped", "hip": "relaxed", "rise": "high", "length": "long" },
+      "fitCompatibilityTags": ["waist_fit_required", "try_on_recommended"]
+    },
+    "look_001_black_sleeveless_gray_maxi_skirt_item_03_black_flat_shoes": {
+      "marketedFor": "unisex",
+      "presentationMetadata": {
+        "affinity": { "masculine": 0.55, "androgynous": 0.88, "feminine": 0.45 },
+        "intensity": "neutral",
+        "reasonCodes": ["flat_shoe", "black", "minimal_detail", "low_heel"],
+        "metadataVersion": "demo2_presentation_v1",
+        "reviewedAt": "2026-06-20"
+      },
+      "fitCompatibilityTags": ["shoe_size_required"]
+    },
+    "look_002_black_white_jacket_mini_skirt_boots_item_01_black_white_cropped_jacket": {
+      "marketedFor": "womens",
+      "presentationMetadata": {
+        "affinity": { "masculine": 0.28, "androgynous": 0.5, "feminine": 0.72 },
+        "intensity": "moderate",
+        "reasonCodes": ["cropped_length", "faux_fur_trim", "decorative_collar", "structured_outerwear"],
+        "metadataVersion": "demo2_presentation_v1",
+        "reviewedAt": "2026-06-20"
+      },
+      "cutProfile": { "shoulder": "regular", "waist": "straight", "length": "cropped" },
+      "fitCompatibilityTags": ["cropped_outerwear", "try_on_recommended"]
+    },
+    "look_002_black_white_jacket_mini_skirt_boots_item_02_white_inner_top": {
+      "marketedFor": "womens",
+      "presentationMetadata": {
+        "affinity": { "masculine": 0.45, "androgynous": 0.86, "feminine": 0.45 },
+        "intensity": "neutral",
+        "reasonCodes": ["basic_t_shirt", "white", "minimal_detail", "simple_base_layer"],
+        "metadataVersion": "demo2_presentation_v1",
+        "reviewedAt": "2026-06-20"
+      },
+      "cutProfile": { "shoulder": "regular", "waist": "straight", "length": "regular" },
+      "fitCompatibilityTags": ["base_layer", "try_on_recommended"]
+    },
+    "look_002_black_white_jacket_mini_skirt_boots_item_03_black_mini_skirt": {
+      "marketedFor": "womens",
+      "presentationMetadata": {
+        "affinity": { "masculine": 0.1, "androgynous": 0.22, "feminine": 0.92 },
+        "intensity": "strong",
+        "reasonCodes": ["mini_skirt", "high_waist", "slim_fit", "leg_revealing"],
+        "metadataVersion": "demo2_presentation_v1",
+        "reviewedAt": "2026-06-20"
+      },
+      "cutProfile": { "waist": "shaped", "hip": "shaped", "rise": "high", "length": "short" },
+      "fitCompatibilityTags": ["waist_fit_required", "try_on_recommended"]
+    },
+    "look_002_black_white_jacket_mini_skirt_boots_item_04_black_knee_high_boots": {
+      "marketedFor": "womens",
+      "presentationMetadata": {
+        "affinity": { "masculine": 0.2, "androgynous": 0.42, "feminine": 0.86 },
+        "intensity": "strong",
+        "reasonCodes": ["knee_high_boot", "chunky_heel", "leather_boot", "high_visual_impact"],
+        "metadataVersion": "demo2_presentation_v1",
+        "reviewedAt": "2026-06-20"
+      },
+      "fitCompatibilityTags": ["shoe_size_required", "calf_fit_required"]
+    },
+    "look_003_white_top_black_mini_skirt_black_boots_item_01_white_crop_long_sleeve": {
+      "marketedFor": "womens",
+      "presentationMetadata": {
+        "affinity": { "masculine": 0.25, "androgynous": 0.45, "feminine": 0.74 },
+        "intensity": "moderate",
+        "reasonCodes": ["cropped_length", "slim_fit", "body_close_top", "minimal_color"],
+        "metadataVersion": "demo2_presentation_v1",
+        "reviewedAt": "2026-06-20"
+      },
+      "cutProfile": { "shoulder": "narrow", "waist": "shaped", "length": "cropped" },
+      "fitCompatibilityTags": ["body_close", "try_on_recommended"]
+    },
+    "look_003_white_top_black_mini_skirt_black_boots_item_02_black_sport_shorts": {
+      "marketedFor": "womens",
+      "presentationMetadata": {
+        "affinity": { "masculine": 0.35, "androgynous": 0.46, "feminine": 0.66 },
+        "intensity": "moderate",
+        "reasonCodes": ["tight_short", "high_waist", "sporty", "body_close_bottom"],
+        "metadataVersion": "demo2_presentation_v1",
+        "reviewedAt": "2026-06-20"
+      },
+      "cutProfile": { "waist": "shaped", "hip": "shaped", "rise": "high", "length": "short" },
+      "fitCompatibilityTags": ["body_close", "try_on_recommended"]
+    },
+    "look_003_white_top_black_mini_skirt_black_boots_item_03_black_sport_shoes": {
+      "marketedFor": "unisex",
+      "presentationMetadata": {
+        "affinity": { "masculine": 0.62, "androgynous": 0.9, "feminine": 0.32 },
+        "intensity": "neutral",
+        "reasonCodes": ["slip_on_sneaker", "black", "flat", "minimal_detail"],
+        "metadataVersion": "demo2_presentation_v1",
+        "reviewedAt": "2026-06-20"
+      },
+      "fitCompatibilityTags": ["shoe_size_required"]
+    },
+    "look_004_houndstooth_set_white_boots_item_01_houndstooth_blazer": {
+      "marketedFor": "womens",
+      "presentationMetadata": {
+        "affinity": { "masculine": 0.45, "androgynous": 0.78, "feminine": 0.55 },
+        "intensity": "subtle",
+        "reasonCodes": ["blazer", "structured_shoulder", "classic_pattern", "slim_fit"],
+        "metadataVersion": "demo2_presentation_v1",
+        "reviewedAt": "2026-06-20"
+      },
+      "cutProfile": { "shoulder": "regular", "waist": "straight", "length": "regular" },
+      "fitCompatibilityTags": ["shoulder_fit_recommended"]
+    },
+    "look_004_houndstooth_set_white_boots_item_02_white_turtleneck": {
+      "marketedFor": "womens",
+      "presentationMetadata": {
+        "affinity": { "masculine": 0.46, "androgynous": 0.76, "feminine": 0.5 },
+        "intensity": "subtle",
+        "reasonCodes": ["turtleneck", "white", "minimal_detail", "base_layer"],
+        "metadataVersion": "demo2_presentation_v1",
+        "reviewedAt": "2026-06-20"
+      },
+      "cutProfile": { "shoulder": "regular", "waist": "straight", "length": "regular" },
+      "fitCompatibilityTags": ["base_layer", "try_on_recommended"]
+    },
+    "look_004_houndstooth_set_white_boots_item_03_houndstooth_skirt": {
+      "marketedFor": "womens",
+      "presentationMetadata": {
+        "affinity": { "masculine": 0.12, "androgynous": 0.28, "feminine": 0.86 },
+        "intensity": "strong",
+        "reasonCodes": ["mini_skirt", "high_waist", "houndstooth_pattern", "leg_revealing"],
+        "metadataVersion": "demo2_presentation_v1",
+        "reviewedAt": "2026-06-20"
+      },
+      "cutProfile": { "waist": "shaped", "hip": "shaped", "rise": "high", "length": "short" },
+      "fitCompatibilityTags": ["waist_fit_required", "try_on_recommended"]
+    },
+    "look_004_houndstooth_set_white_boots_item_04_white_overknee_boots": {
+      "marketedFor": "womens",
+      "presentationMetadata": {
+        "affinity": { "masculine": 0.08, "androgynous": 0.2, "feminine": 0.94 },
+        "intensity": "strong",
+        "reasonCodes": ["over_the_knee_boot", "high_heel", "white_leather", "strong_feminine_footwear"],
+        "metadataVersion": "demo2_presentation_v1",
+        "reviewedAt": "2026-06-20"
+      },
+      "fitCompatibilityTags": ["shoe_size_required", "calf_fit_required"]
+    },
+    "look_005_white_shirt_dress_black_boots_item_01_white_blazer_mini_dress": {
+      "marketedFor": "womens",
+      "presentationMetadata": {
+        "affinity": { "masculine": 0.24, "androgynous": 0.38, "feminine": 0.82 },
+        "intensity": "strong",
+        "reasonCodes": ["mini_dress", "blazer_style", "slim_fit", "leg_revealing"],
+        "metadataVersion": "demo2_presentation_v1",
+        "reviewedAt": "2026-06-20"
+      },
+      "cutProfile": { "shoulder": "regular", "waist": "shaped", "hip": "shaped", "length": "short" },
+      "fitCompatibilityTags": ["shoulder_fit_recommended", "waist_fit_required"]
+    },
+    "look_005_white_shirt_dress_black_boots_item_02_black_chunky_knee_boots": {
+      "marketedFor": "womens",
+      "presentationMetadata": {
+        "affinity": { "masculine": 0.35, "androgynous": 0.55, "feminine": 0.7 },
+        "intensity": "moderate",
+        "reasonCodes": ["chunky_boot", "knee_high_boot", "platform_sole", "structured_footwear"],
+        "metadataVersion": "demo2_presentation_v1",
+        "reviewedAt": "2026-06-20"
+      },
+      "fitCompatibilityTags": ["shoe_size_required", "calf_fit_required"]
+    },
+    "look_006_cream_cardigan_black_pleated_skirt_item_01_beige_inner_top": {
+      "marketedFor": "womens",
+      "presentationMetadata": {
+        "affinity": { "masculine": 0.42, "androgynous": 0.74, "feminine": 0.5 },
+        "intensity": "subtle",
+        "reasonCodes": ["base_layer", "long_sleeve", "minimal_detail", "neutral_color"],
+        "metadataVersion": "demo2_presentation_v1",
+        "reviewedAt": "2026-06-20"
+      },
+      "cutProfile": { "shoulder": "regular", "waist": "straight", "length": "regular" },
+      "fitCompatibilityTags": ["base_layer", "try_on_recommended"]
+    },
+    "look_006_cream_cardigan_black_pleated_skirt_item_02_beige_light_outerwear": {
+      "marketedFor": "womens",
+      "presentationMetadata": {
+        "affinity": { "masculine": 0.45, "androgynous": 0.7, "feminine": 0.55 },
+        "intensity": "subtle",
+        "reasonCodes": ["lightweight_jacket", "neutral_color", "short_length", "minimal_detail"],
+        "metadataVersion": "demo2_presentation_v1",
+        "reviewedAt": "2026-06-20"
+      },
+      "cutProfile": { "shoulder": "regular", "waist": "straight", "length": "short" },
+      "fitCompatibilityTags": ["try_on_recommended"]
+    },
+    "look_006_cream_cardigan_black_pleated_skirt_item_03_black_mini_skirt": {
+      "marketedFor": "womens",
+      "presentationMetadata": {
+        "affinity": { "masculine": 0.1, "androgynous": 0.25, "feminine": 0.9 },
+        "intensity": "strong",
+        "reasonCodes": ["a_line_mini_skirt", "high_waist", "leg_revealing", "feminine_bottom"],
+        "metadataVersion": "demo2_presentation_v1",
+        "reviewedAt": "2026-06-20"
+      },
+      "cutProfile": { "waist": "shaped", "hip": "relaxed", "rise": "high", "length": "short" },
+      "fitCompatibilityTags": ["waist_fit_required", "try_on_recommended"]
+    },
+    "look_007_white_long_dress_item_01_white_lace_mermaid_dress": {
+      "marketedFor": "womens",
+      "presentationMetadata": {
+        "affinity": { "masculine": 0.03, "androgynous": 0.08, "feminine": 0.98 },
+        "intensity": "strong",
+        "reasonCodes": ["lace", "strapless", "mermaid_fit", "body_contouring", "formal_dress"],
+        "metadataVersion": "demo2_presentation_v1",
+        "reviewedAt": "2026-06-20"
+      },
+      "cutProfile": { "shoulder": "narrow", "waist": "shaped", "hip": "shaped", "length": "long" },
+      "fitCompatibilityTags": ["body_close", "waist_fit_required", "try_on_required"]
+    },
+    "look_008_navy_tennis_dress_item_01_navy_tennis_dress": {
+      "marketedFor": "womens",
+      "presentationMetadata": {
+        "affinity": { "masculine": 0.14, "androgynous": 0.32, "feminine": 0.78 },
+        "intensity": "strong",
+        "reasonCodes": ["tennis_dress", "sleeveless", "pleated_skirt", "white_collar_detail"],
+        "metadataVersion": "demo2_presentation_v1",
+        "reviewedAt": "2026-06-20"
+      },
+      "cutProfile": { "shoulder": "narrow", "waist": "shaped", "hip": "relaxed", "length": "short" },
+      "fitCompatibilityTags": ["try_on_recommended"]
+    },
+    "look_008_navy_tennis_dress_item_02_black_sport_shoes": {
+      "marketedFor": "unisex",
+      "presentationMetadata": {
+        "affinity": { "masculine": 0.65, "androgynous": 0.9, "feminine": 0.32 },
+        "intensity": "neutral",
+        "reasonCodes": ["athletic_sneaker", "black", "flat", "sporty"],
+        "metadataVersion": "demo2_presentation_v1",
+        "reviewedAt": "2026-06-20"
+      },
+      "fitCompatibilityTags": ["shoe_size_required"]
+    },
+    "look_009_white_one_shoulder_top_wide_pants_item_01_white_off_shoulder_top": {
+      "marketedFor": "womens",
+      "presentationMetadata": {
+        "affinity": { "masculine": 0.08, "androgynous": 0.25, "feminine": 0.92 },
+        "intensity": "strong",
+        "reasonCodes": ["off_shoulder", "slim_fit", "asymmetric_neckline", "skin_revealing"],
+        "metadataVersion": "demo2_presentation_v1",
+        "reviewedAt": "2026-06-20"
+      },
+      "cutProfile": { "shoulder": "narrow", "waist": "shaped", "length": "regular" },
+      "fitCompatibilityTags": ["body_close", "try_on_required"]
+    },
+    "look_009_white_one_shoulder_top_wide_pants_item_02_white_wide_leg_pants": {
+      "marketedFor": "womens",
+      "presentationMetadata": {
+        "affinity": { "masculine": 0.5, "androgynous": 0.8, "feminine": 0.45 },
+        "intensity": "subtle",
+        "reasonCodes": ["wide_leg_pants", "draped_trouser", "straight_line", "minimal_color"],
+        "metadataVersion": "demo2_presentation_v1",
+        "reviewedAt": "2026-06-20"
+      },
+      "cutProfile": { "waist": "straight", "hip": "relaxed", "rise": "high", "length": "long" },
+      "fitCompatibilityTags": ["inseam_check_recommended"]
+    },
+    "look_009_white_one_shoulder_top_wide_pants_item_03_silver_pointed_heels": {
+      "marketedFor": "womens",
+      "presentationMetadata": {
+        "affinity": { "masculine": 0.04, "androgynous": 0.12, "feminine": 0.97 },
+        "intensity": "strong",
+        "reasonCodes": ["stiletto_heel", "pointed_toe", "metallic", "formal_high_heel"],
+        "metadataVersion": "demo2_presentation_v1",
+        "reviewedAt": "2026-06-20"
+      },
+      "fitCompatibilityTags": ["shoe_size_required", "comfort_check_required"]
+    },
+    "look_010_camel_coat_red_scarf_black_boots_item_01_camel_long_coat": {
+      "marketedFor": "unisex",
+      "presentationMetadata": {
+        "affinity": { "masculine": 0.62, "androgynous": 0.88, "feminine": 0.42 },
+        "intensity": "neutral",
+        "reasonCodes": ["long_coat", "double_breasted", "classic_silhouette", "neutral_color"],
+        "metadataVersion": "demo2_presentation_v1",
+        "reviewedAt": "2026-06-20"
+      },
+      "cutProfile": { "shoulder": "regular", "waist": "straight", "length": "long" },
+      "fitCompatibilityTags": ["shoulder_fit_recommended"]
+    },
+    "look_010_camel_coat_red_scarf_black_boots_item_02_black_inner_top": {
+      "marketedFor": "unisex",
+      "presentationMetadata": {
+        "affinity": { "masculine": 0.52, "androgynous": 0.82, "feminine": 0.42 },
+        "intensity": "neutral",
+        "reasonCodes": ["black", "long_sleeve", "minimal_detail", "base_layer"],
+        "metadataVersion": "demo2_presentation_v1",
+        "reviewedAt": "2026-06-20"
+      },
+      "cutProfile": { "shoulder": "regular", "waist": "straight", "length": "regular" },
+      "fitCompatibilityTags": ["base_layer", "try_on_recommended"]
+    },
+    "look_010_camel_coat_red_scarf_black_boots_item_03_black_leggings_pants": {
+      "marketedFor": "womens",
+      "presentationMetadata": {
+        "affinity": { "masculine": 0.28, "androgynous": 0.45, "feminine": 0.72 },
+        "intensity": "moderate",
+        "reasonCodes": ["leggings", "slim_fit", "body_close_bottom", "minimal_color"],
+        "metadataVersion": "demo2_presentation_v1",
+        "reviewedAt": "2026-06-20"
+      },
+      "cutProfile": { "waist": "shaped", "hip": "shaped", "rise": "high", "length": "long" },
+      "fitCompatibilityTags": ["body_close", "try_on_recommended"]
+    },
+    "look_010_camel_coat_red_scarf_black_boots_item_04_black_leather_boots": {
+      "marketedFor": "womens",
+      "presentationMetadata": {
+        "affinity": { "masculine": 0.42, "androgynous": 0.62, "feminine": 0.62 },
+        "intensity": "moderate",
+        "reasonCodes": ["leather_boot", "mid_calf_boot", "chunky_heel", "structured_footwear"],
+        "metadataVersion": "demo2_presentation_v1",
+        "reviewedAt": "2026-06-20"
+      },
+      "fitCompatibilityTags": ["shoe_size_required", "calf_fit_recommended"]
+    },
+    "look_011_white_short_set_sneakers_item_01_white_shirt_dress": {
+      "marketedFor": "womens",
+      "presentationMetadata": {
+        "affinity": { "masculine": 0.28, "androgynous": 0.52, "feminine": 0.72 },
+        "intensity": "moderate",
+        "reasonCodes": ["shirt_dress", "short_length", "structured_long_sleeve", "leg_revealing"],
+        "metadataVersion": "demo2_presentation_v1",
+        "reviewedAt": "2026-06-20"
+      },
+      "cutProfile": { "shoulder": "regular", "waist": "straight", "length": "short" },
+      "fitCompatibilityTags": ["try_on_recommended"]
+    },
+    "look_011_white_short_set_sneakers_item_02_beige_knit_cardigan": {
+      "marketedFor": "womens",
+      "presentationMetadata": {
+        "affinity": { "masculine": 0.35, "androgynous": 0.66, "feminine": 0.62 },
+        "intensity": "subtle",
+        "reasonCodes": ["knit_cardigan", "soft_texture", "relaxed_fit", "neutral_color"],
+        "metadataVersion": "demo2_presentation_v1",
+        "reviewedAt": "2026-06-20"
+      },
+      "cutProfile": { "shoulder": "regular", "waist": "relaxed", "length": "regular" },
+      "fitCompatibilityTags": ["relaxed_fit"]
+    },
+    "look_011_white_short_set_sneakers_item_03_beige_sneakers": {
+      "marketedFor": "unisex",
+      "presentationMetadata": {
+        "affinity": { "masculine": 0.58, "androgynous": 0.9, "feminine": 0.4 },
+        "intensity": "neutral",
+        "reasonCodes": ["low_top_sneaker", "flat", "neutral_color", "casual"],
+        "metadataVersion": "demo2_presentation_v1",
+        "reviewedAt": "2026-06-20"
+      },
+      "fitCompatibilityTags": ["shoe_size_required"]
+    },
+    "look_012_cream_blazer_short_set_item_01_cream_shirt_dress": {
+      "marketedFor": "womens",
+      "presentationMetadata": {
+        "affinity": { "masculine": 0.22, "androgynous": 0.42, "feminine": 0.84 },
+        "intensity": "strong",
+        "reasonCodes": ["shirt_dress", "cinched_waist", "short_length", "long_sleeve"],
+        "metadataVersion": "demo2_presentation_v1",
+        "reviewedAt": "2026-06-20"
+      },
+      "cutProfile": { "shoulder": "regular", "waist": "shaped", "hip": "shaped", "length": "short" },
+      "fitCompatibilityTags": ["waist_fit_required", "try_on_recommended"]
+    },
+    "look_012_cream_blazer_short_set_item_02_black_platform_boots": {
+      "marketedFor": "womens",
+      "presentationMetadata": {
+        "affinity": { "masculine": 0.38, "androgynous": 0.58, "feminine": 0.66 },
+        "intensity": "moderate",
+        "reasonCodes": ["platform_boot", "black_leather", "structured_footwear", "high_visual_impact"],
+        "metadataVersion": "demo2_presentation_v1",
+        "reviewedAt": "2026-06-20"
+      },
+      "fitCompatibilityTags": ["shoe_size_required"]
+    },
+    "look_013_mint_tank_white_shorts_sneakers_item_01_light_green_tank_top": {
+      "marketedFor": "womens",
+      "presentationMetadata": {
+        "affinity": { "masculine": 0.18, "androgynous": 0.34, "feminine": 0.78 },
+        "intensity": "strong",
+        "reasonCodes": ["spaghetti_strap", "ribbed_tank", "body_close_top", "light_color"],
+        "metadataVersion": "demo2_presentation_v1",
+        "reviewedAt": "2026-06-20"
+      },
+      "cutProfile": { "shoulder": "narrow", "waist": "shaped", "length": "regular" },
+      "fitCompatibilityTags": ["body_close", "try_on_recommended"]
+    },
+    "look_013_mint_tank_white_shorts_sneakers_item_02_white_denim_shorts": {
+      "marketedFor": "womens",
+      "presentationMetadata": {
+        "affinity": { "masculine": 0.48, "androgynous": 0.68, "feminine": 0.55 },
+        "intensity": "subtle",
+        "reasonCodes": ["denim_shorts", "high_waist", "casual", "straight_denim"],
+        "metadataVersion": "demo2_presentation_v1",
+        "reviewedAt": "2026-06-20"
+      },
+      "cutProfile": { "waist": "straight", "hip": "straight", "rise": "high", "length": "short" },
+      "fitCompatibilityTags": ["waist_fit_recommended", "try_on_recommended"]
+    },
+    "look_013_mint_tank_white_shorts_sneakers_item_03_white_chunky_sneakers": {
+      "marketedFor": "unisex",
+      "presentationMetadata": {
+        "affinity": { "masculine": 0.6, "androgynous": 0.9, "feminine": 0.38 },
+        "intensity": "neutral",
+        "reasonCodes": ["chunky_sneaker", "white", "flat", "casual"],
+        "metadataVersion": "demo2_presentation_v1",
+        "reviewedAt": "2026-06-20"
+      },
+      "fitCompatibilityTags": ["shoe_size_required"]
+    }
+  }
+}

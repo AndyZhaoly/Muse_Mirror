@@ -1,0 +1,58 @@
+[
+  {
+    "id": "dev_greeting",
+    "split": "development",
+    "message": "你好",
+    "toolDependent": false,
+    "expectedTools": []
+  },
+  {
+    "id": "dev_current_frame",
+    "split": "development",
+    "message": "你能看一下我现在这身吗？",
+    "toolDependent": true,
+    "expectedTools": ["observe_current_frame"]
+  },
+  {
+    "id": "dev_closet",
+    "split": "development",
+    "message": "用我的衣柜搭一套今晚聚餐的",
+    "toolDependent": true,
+    "expectedTools": ["recommend_from_closet"]
+  },
+  {
+    "id": "dev_mixed",
+    "split": "development",
+    "message": "看一下我现在这身，再用衣柜搭一套",
+    "toolDependent": true,
+    "expectedTools": ["observe_current_frame", "recommend_from_closet"]
+  },
+  {
+    "id": "holdout_status_then_closet",
+    "split": "holdout",
+    "message": "刚才看清了吗？如果看清了就用我已有的衣服搭一套",
+    "toolDependent": true,
+    "expectedTools": ["observe_current_frame", "recommend_from_closet"]
+  },
+  {
+    "id": "holdout_weather",
+    "split": "holdout",
+    "message": "今天外面降温，帮我看要不要加外套",
+    "toolDependent": true,
+    "expectedTools": ["get_weather"]
+  },
+  {
+    "id": "holdout_visual",
+    "split": "holdout",
+    "message": "上一套我想看看效果图",
+    "toolDependent": true,
+    "expectedTools": ["create_style_visual"]
+  },
+  {
+    "id": "holdout_ambiguous",
+    "split": "holdout",
+    "message": "那个可以吗？",
+    "toolDependent": false,
+    "expectedTools": []
+  }
+]

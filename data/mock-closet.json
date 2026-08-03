@@ -1,0 +1,104 @@
+[
+  {
+    "id": "top_white_tee",
+    "name": "白色圆领短袖 T 恤",
+    "category": "top",
+    "color": "white",
+    "fit": "relaxed",
+    "formality": "casual",
+    "styleTags": [
+      "minimal",
+      "relaxed"
+    ],
+    "imageUrl": "./public/mock-items/white-tee.svg"
+  },
+  {
+    "id": "jacket_khaki",
+    "name": "浅卡其短款夹克",
+    "category": "outerwear",
+    "color": "light khaki",
+    "fit": "structured-relaxed",
+    "formality": "smart_casual",
+    "styleTags": [
+      "relaxed",
+      "minimal"
+    ],
+    "imageUrl": "./public/mock-items/khaki-jacket.svg"
+  },
+  {
+    "id": "jacket_black",
+    "name": "黑色短款夹克",
+    "category": "outerwear",
+    "color": "black",
+    "fit": "structured",
+    "formality": "smart_casual",
+    "styleTags": [
+      "minimal",
+      "urban"
+    ],
+    "imageUrl": "./public/mock-items/black-jacket.svg"
+  },
+  {
+    "id": "jeans_lightblue",
+    "name": "浅蓝高腰直筒牛仔裤",
+    "category": "bottom",
+    "color": "light blue",
+    "fit": "straight",
+    "formality": "casual",
+    "styleTags": [
+      "relaxed"
+    ],
+    "imageUrl": "./public/mock-items/light-jeans.svg"
+  },
+  {
+    "id": "trousers_charcoal",
+    "name": "炭灰高腰直筒西裤",
+    "category": "bottom",
+    "color": "charcoal",
+    "fit": "straight",
+    "formality": "business_casual",
+    "styleTags": [
+      "commute",
+      "minimal"
+    ],
+    "imageUrl": "./public/mock-items/charcoal-trousers.svg"
+  },
+  {
+    "id": "shoes_white",
+    "name": "白色简洁运动鞋",
+    "category": "shoes",
+    "color": "white",
+    "fit": "regular",
+    "formality": "casual",
+    "styleTags": [
+      "minimal",
+      "walking"
+    ],
+    "imageUrl": "./public/mock-items/white-sneakers.svg"
+  },
+  {
+    "id": "shoes_loafers",
+    "name": "黑色乐福鞋",
+    "category": "shoes",
+    "color": "black",
+    "fit": "regular",
+    "formality": "business_casual",
+    "styleTags": [
+      "commute",
+      "classic"
+    ],
+    "imageUrl": "./public/mock-items/black-loafers.svg"
+  },
+  {
+    "id": "bag_brown",
+    "name": "深棕小号软皮包",
+    "category": "bag",
+    "color": "dark brown",
+    "fit": "compact",
+    "formality": "smart_casual",
+    "styleTags": [
+      "classic"
+    ],
+    "imageUrl": "./public/mock-items/brown-bag.svg"
+  }
+]

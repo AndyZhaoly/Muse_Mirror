@@ -1,0 +1,11 @@
+.env
+.env.*
+.DS_Store
+*.log
+node_modules
+web/node_modules
+dist
+web/dist
+out
+examples/captured
+*.tsbuildinfo

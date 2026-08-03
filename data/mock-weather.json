@@ -1,0 +1,30 @@
+{
+  "default": {
+    "temperatureC": 15,
+    "condition": "partly_cloudy",
+    "feelsLikeC": 14,
+    "precipitationChance": 20,
+    "windKph": 11
+  },
+  "Shanghai": {
+    "temperatureC": 24,
+    "condition": "light_rain",
+    "feelsLikeC": 25,
+    "precipitationChance": 65,
+    "windKph": 9
+  },
+  "Beijing": {
+    "temperatureC": 19,
+    "condition": "sunny",
+    "feelsLikeC": 18,
+    "precipitationChance": 5,
+    "windKph": 14
+  },
+  "New York": {
+    "temperatureC": 21,
+    "condition": "partly_cloudy",
+    "feelsLikeC": 21,
+    "precipitationChance": 25,
+    "windKph": 13
+  }
+}

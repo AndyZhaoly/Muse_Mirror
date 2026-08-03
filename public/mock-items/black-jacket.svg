@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="800" viewBox="0 0 640 800">
+<rect width="640" height="800" fill="#272727"/>
+<rect x="50" y="50" width="540" height="700" rx="36" fill="none" stroke="#ffffff" stroke-width="4" opacity="0.5"/>
+<text x="320" y="390" text-anchor="middle" font-family="Arial, sans-serif" font-size="30" fill="#ffffff">Black cropped jacket</text>
+<text x="320" y="435" text-anchor="middle" font-family="Arial, sans-serif" font-size="18" fill="#ffffff" opacity="0.75">mock real-item image</text>
+</svg>

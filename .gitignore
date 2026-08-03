@@ -1,0 +1,12 @@
+node_modules/
+dist/
+out/*
+!out/.gitkeep
+examples/captured/*
+!examples/captured/.gitkeep
+*.tsbuildinfo
+.env
+.env.*
+!.env.example
+*.log
+.DS_Store

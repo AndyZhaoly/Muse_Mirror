@@ -1,0 +1,2222 @@
+[
+  {
+    "id": "look_001_black_sleeveless_gray_maxi_skirt_item_01_black_sleeveless_top",
+    "category": "top",
+    "subcategory": "sleeveless_round_neck_top",
+    "color_family": "black",
+    "length_bucket": "regular",
+    "fit_volume": "slim",
+    "formality_band": "casual",
+    "availability": "available",
+    "retrieval_text": "black sleeveless round neck slim fit top",
+    "image_embedding_id": "pending_image:look_001_black_sleeveless_gray_maxi_skirt_item_01_black_sleeveless_top",
+    "text_embedding_id": "pending_text:look_001_black_sleeveless_gray_maxi_skirt_item_01_black_sleeveless_top",
+    "recognition_confidence": 0.98,
+    "normalized_product_image_path": "../demo2-product-images/look_001_black_sleeveless_gray_maxi_skirt_item_01_black_sleeveless_top.product.jpg",
+    "risk_attributes": {
+      "drape": {
+        "value": "柔软",
+        "confidence": 0.75,
+        "source": "vlm"
+      },
+      "exposure": {
+        "value": "medium",
+        "confidence": 0.72,
+        "source": "vlm"
+      }
+    },
+    "shoe_type": "not_applicable",
+    "heel_height": "not_applicable",
+    "boot_height": "not_applicable",
+    "toe_shape": "not_applicable",
+    "bottom_length": "not_applicable",
+    "waistline": "not_applicable",
+    "outerwear_length": "not_applicable",
+    "tagging": {
+      "tagger": "ollama-local-vision",
+      "model": "gemma4:26b",
+      "tagged_at": "2026-06-08T04:05:58.336086+00:00",
+      "safe_merge": true,
+      "applied_fields": [
+        "category",
+        "subcategory",
+        "color_family",
+        "length_bucket",
+        "fit_volume",
+        "formality_band",
+        "retrieval_text",
+        "recognition_confidence",
+        "shoe_type",
+        "heel_height",
+        "boot_height",
+        "toe_shape",
+        "bottom_length",
+        "waistline",
+        "outerwear_length"
+      ],
+      "review_flags": []
+    }
+  },
+  {
+    "id": "look_001_black_sleeveless_gray_maxi_skirt_item_02_dark_grey_maxi_skirt",
+    "category": "bottom",
+    "subcategory": "high_waisted_maxi_skirt",
+    "color_family": "grey",
+    "length_bucket": "long",
+    "fit_volume": "relaxed",
+    "formality_band": "smart_casual",
+    "availability": "available",
+    "retrieval_text": "dark grey high-waisted A-line maxi skirt with metal chain detail",
+    "image_embedding_id": "pending_image:look_001_black_sleeveless_gray_maxi_skirt_item_02_dark_grey_maxi_skirt",
+    "text_embedding_id": "pending_text:look_001_black_sleeveless_gray_maxi_skirt_item_02_dark_grey_maxi_skirt",
+    "recognition_confidence": 0.98,
+    "normalized_product_image_path": "../demo2-product-images/look_001_black_sleeveless_gray_maxi_skirt_item_02_dark_grey_maxi_skirt.product.jpg",
+    "risk_attributes": {
+      "waistline": {
+        "value": "high",
+        "confidence": 0.95,
+        "source": "vlm"
+      },
+      "drape": {
+        "value": "垂坠",
+        "confidence": 0.75,
+        "source": "vlm"
+      },
+      "exposure": {
+        "value": "low",
+        "confidence": 0.72,
+        "source": "vlm"
+      }
+    },
+    "shoe_type": "not_applicable",
+    "heel_height": "not_applicable",
+    "boot_height": "not_applicable",
+    "toe_shape": "not_applicable",
+    "bottom_length": "maxi",
+    "waistline": "high",
+    "outerwear_length": "not_applicable",
+    "tagging": {
+      "tagger": "ollama-local-vision",
+      "model": "gemma4:26b",
+      "tagged_at": "2026-06-08T04:06:18.222116+00:00",
+      "safe_merge": true,
+      "applied_fields": [
+        "category",
+        "subcategory",
+        "color_family",
+        "length_bucket",
+        "fit_volume",
+        "formality_band",
+        "retrieval_text",
+        "recognition_confidence",
+        "shoe_type",
+        "heel_height",
+        "boot_height",
+        "toe_shape",
+        "bottom_length",
+        "waistline",
+        "outerwear_length"
+      ],
+      "review_flags": []
+    }
+  },
+  {
+    "id": "look_001_black_sleeveless_gray_maxi_skirt_item_03_black_flat_shoes",
+    "category": "shoes",
+    "subcategory": "flat_shoes",
+    "color_family": "black",
+    "length_bucket": "not_applicable",
+    "fit_volume": "not_applicable",
+    "formality_band": "smart_casual",
+    "availability": "available",
+    "retrieval_text": "black pointed toe flat shoes",
+    "image_embedding_id": "pending_image:look_001_black_sleeveless_gray_maxi_skirt_item_03_black_flat_shoes",
+    "text_embedding_id": "pending_text:look_001_black_sleeveless_gray_maxi_skirt_item_03_black_flat_shoes",
+    "recognition_confidence": 0.98,
+    "normalized_product_image_path": "../demo2-product-images/look_001_black_sleeveless_gray_maxi_skirt_item_03_black_flat_shoes.product.jpg",
+    "risk_attributes": {
+      "drape": {
+        "value": "未知",
+        "confidence": 0.75,
+        "source": "vlm"
+      },
+      "exposure": {
+        "value": "medium",
+        "confidence": 0.72,
+        "source": "vlm"
+      }
+    },
+    "shoe_type": "flat",
+    "heel_height": "low",
+    "boot_height": "not_applicable",
+    "toe_shape": "pointed",
+    "bottom_length": "not_applicable",
+    "waistline": "not_applicable",
+    "outerwear_length": "not_applicable",
+    "tagging": {
+      "tagger": "ollama-local-vision",
+      "model": "gemma4:26b",
+      "tagged_at": "2026-06-08T04:06:23.769283+00:00",
+      "safe_merge": true,
+      "applied_fields": [
+        "category",
+        "subcategory",
+        "color_family",
+        "length_bucket",
+        "fit_volume",
+        "formality_band",
+        "retrieval_text",
+        "recognition_confidence",
+        "shoe_type",
+        "heel_height",
+        "boot_height",
+        "toe_shape",
+        "bottom_length",
+        "waistline",
+        "outerwear_length"
+      ],
+      "review_flags": []
+    }
+  },
+  {
+    "id": "look_002_black_white_jacket_mini_skirt_boots_item_01_black_white_cropped_jacket",
+    "category": "outerwear",
+    "subcategory": "cropped_jacket",
+    "color_family": "black",
+    "length_bucket": "cropped",
+    "fit_volume": "relaxed",
+    "formality_band": "casual",
+    "availability": "available",
+    "retrieval_text": "Black cropped jacket with white faux fur collar and trim",
+    "image_embedding_id": "pending_image:look_002_black_white_jacket_mini_skirt_boots_item_01_black_white_cropped_jacket",
+    "text_embedding_id": "pending_text:look_002_black_white_jacket_mini_skirt_boots_item_01_black_white_cropped_jacket",
+    "recognition_confidence": 0.98,
+    "normalized_product_image_path": "../demo2-product-images/look_002_black_white_jacket_mini_skirt_boots_item_01_black_white_cropped_jacket.product.jpg",
+    "risk_attributes": {
+      "drape": {
+        "value": "挺括",
+        "confidence": 0.75,
+        "source": "vlm"
+      },
+      "exposure": {
+        "value": "low",
+        "confidence": 0.72,
+        "source": "vlm"
+      }
+    },
+    "shoe_type": "not_applicable",
+    "heel_height": "not_applicable",
+    "boot_height": "not_applicable",
+    "toe_shape": "not_applicable",
+    "bottom_length": "not_applicable",
+    "waistline": "not_applicable",
+    "outerwear_length": "cropped",
+    "tagging": {
+      "tagger": "ollama-local-vision",
+      "model": "gemma4:26b",
+      "tagged_at": "2026-06-08T04:06:29.275719+00:00",
+      "safe_merge": true,
+      "applied_fields": [
+        "category",
+        "subcategory",
+        "color_family",
+        "length_bucket",
+        "fit_volume",
+        "formality_band",
+        "retrieval_text",
+        "recognition_confidence",
+        "shoe_type",
+        "heel_height",
+        "boot_height",
+        "toe_shape",
+        "bottom_length",
+        "waistline",
+        "outerwear_length"
+      ],
+      "review_flags": []
+    }
+  },
+  {
+    "id": "look_002_black_white_jacket_mini_skirt_boots_item_02_white_inner_top",
+    "category": "top",
+    "subcategory": "t-shirt",
+    "color_family": "white",
+    "length_bucket": "regular",
+    "fit_volume": "slim",
+    "formality_band": "casual",
+    "availability": "available",
+    "retrieval_text": "White slim fit basic top",
+    "image_embedding_id": "pending_image:look_002_black_white_jacket_mini_skirt_boots_item_02_white_inner_top",
+    "text_embedding_id": "pending_text:look_002_black_white_jacket_mini_skirt_boots_item_02_white_inner_top",
+    "recognition_confidence": 1,
+    "normalized_product_image_path": "../demo2-product-images/look_002_black_white_jacket_mini_skirt_boots_item_02_white_inner_top.product.jpg",
+    "risk_attributes": {
+      "drape": {
+        "value": "柔软",
+        "confidence": 0.75,
+        "source": "vlm"
+      },
+      "exposure": {
+        "value": "low",
+        "confidence": 0.72,
+        "source": "vlm"
+      }
+    },
+    "shoe_type": "not_applicable",
+    "heel_height": "not_applicable",
+    "boot_height": "not_applicable",
+    "toe_shape": "not_applicable",
+    "bottom_length": "not_applicable",
+    "waistline": "not_applicable",
+    "outerwear_length": "not_applicable",
+    "tagging": {
+      "tagger": "ollama-local-vision",
+      "model": "gemma4:26b",
+      "tagged_at": "2026-06-08T04:06:35.012078+00:00",
+      "safe_merge": true,
+      "applied_fields": [
+        "category",
+        "subcategory",
+        "color_family",
+        "length_bucket",
+        "fit_volume",
+        "formality_band",
+        "retrieval_text",
+        "recognition_confidence",
+        "shoe_type",
+        "heel_height",
+        "boot_height",
+        "toe_shape",
+        "bottom_length",
+        "waistline",
+        "outerwear_length"
+      ],
+      "review_flags": []
+    }
+  },
+  {
+    "id": "look_002_black_white_jacket_mini_skirt_boots_item_03_black_mini_skirt",
+    "category": "bottom",
+    "subcategory": "mini_skirt",
+    "color_family": "black",
+    "length_bucket": "short",
+    "fit_volume": "slim",
+    "formality_band": "formal",
+    "availability": "available",
+    "retrieval_text": "Black high-waisted slim mini skirt",
+    "image_embedding_id": "pending_image:look_002_black_white_jacket_mini_skirt_boots_item_03_black_mini_skirt",
+    "text_embedding_id": "pending_text:look_002_black_white_jacket_mini_skirt_boots_item_03_black_mini_skirt",
+    "recognition_confidence": 0.98,
+    "normalized_product_image_path": "../demo2-product-images/look_002_black_white_jacket_mini_skirt_boots_item_03_black_mini_skirt.product.jpg",
+    "risk_attributes": {
+      "waistline": {
+        "value": "high",
+        "confidence": 0.9,
+        "source": "vlm"
+      },
+      "drape": {
+        "value": "挺括",
+        "confidence": 0.75,
+        "source": "vlm"
+      },
+      "exposure": {
+        "value": "high",
+        "confidence": 0.72,
+        "source": "vlm"
+      }
+    },
+    "shoe_type": "not_applicable",
+    "heel_height": "not_applicable",
+    "boot_height": "not_applicable",
+    "toe_shape": "not_applicable",
+    "bottom_length": "mini",
+    "waistline": "high",
+    "outerwear_length": "not_applicable",
+    "tagging": {
+      "tagger": "ollama-local-vision",
+      "model": "gemma4:26b",
+      "tagged_at": "2026-06-08T04:06:40.595628+00:00",
+      "safe_merge": true,
+      "applied_fields": [
+        "category",
+        "subcategory",
+        "color_family",
+        "length_bucket",
+        "fit_volume",
+        "formality_band",
+        "retrieval_text",
+        "recognition_confidence",
+        "shoe_type",
+        "heel_height",
+        "boot_height",
+        "toe_shape",
+        "bottom_length",
+        "waistline",
+        "outerwear_length"
+      ],
+      "review_flags": []
+    }
+  },
+  {
+    "id": "look_002_black_white_jacket_mini_skirt_boots_item_04_black_knee_high_boots",
+    "category": "shoes",
+    "subcategory": "black_chunky_knee_high_boots",
+    "color_family": "black",
+    "length_bucket": "not_applicable",
+    "fit_volume": "not_applicable",
+    "formality_band": "smart_casual",
+    "availability": "available",
+    "retrieval_text": "Black leather knee-high boots with chunky heels",
+    "image_embedding_id": "pending_image:look_002_black_white_jacket_mini_skirt_boots_item_04_black_knee_high_boots",
+    "text_embedding_id": "pending_text:look_002_black_white_jacket_mini_skirt_boots_item_04_black_knee_high_boots",
+    "recognition_confidence": 0.98,
+    "normalized_product_image_path": "../demo2-product-images/look_002_black_white_jacket_mini_skirt_boots_item_04_black_knee_high_boots.product.jpg",
+    "risk_attributes": {
+      "drape": {
+        "value": "挺括",
+        "confidence": 0.75,
+        "source": "vlm"
+      },
+      "exposure": {
+        "value": "low",
+        "confidence": 0.72,
+        "source": "vlm"
+      }
+    },
+    "shoe_type": "boot",
+    "heel_height": "high",
+    "boot_height": "knee_high",
+    "toe_shape": "round",
+    "bottom_length": "not_applicable",
+    "waistline": "not_applicable",
+    "outerwear_length": "not_applicable",
+    "tagging": {
+      "tagger": "ollama-local-vision",
+      "model": "gemma4:26b",
+      "tagged_at": "2026-06-08T04:06:46.795600+00:00",
+      "safe_merge": true,
+      "applied_fields": [
+        "category",
+        "subcategory",
+        "color_family",
+        "length_bucket",
+        "fit_volume",
+        "formality_band",
+        "retrieval_text",
+        "recognition_confidence",
+        "shoe_type",
+        "heel_height",
+        "boot_height",
+        "toe_shape",
+        "bottom_length",
+        "waistline",
+        "outerwear_length"
+      ],
+      "review_flags": [
+        "risk_attributes_not_object"
+      ]
+    }
+  },
+  {
+    "id": "look_003_white_top_black_mini_skirt_black_boots_item_01_white_crop_long_sleeve",
+    "category": "top",
+    "subcategory": "cropped_long_sleeve_top",
+    "color_family": "white",
+    "length_bucket": "cropped",
+    "fit_volume": "slim",
+    "formality_band": "casual",
+    "availability": "available",
+    "retrieval_text": "white slim fit cropped long sleeve top",
+    "image_embedding_id": "pending_image:look_003_white_top_black_mini_skirt_black_boots_item_01_white_crop_long_sleeve",
+    "text_embedding_id": "pending_text:look_003_white_top_black_mini_skirt_black_boots_item_01_white_crop_long_sleeve",
+    "recognition_confidence": 0.98,
+    "normalized_product_image_path": "../demo2-product-images/look_003_white_top_black_mini_skirt_black_boots_item_01_white_crop_long_sleeve.product.jpg",
+    "risk_attributes": {
+      "drape": {
+        "value": "柔软",
+        "confidence": 0.75,
+        "source": "vlm"
+      },
+      "exposure": {
+        "value": "medium",
+        "confidence": 0.72,
+        "source": "vlm"
+      }
+    },
+    "shoe_type": "not_applicable",
+    "heel_height": "not_applicable",
+    "boot_height": "not_applicable",
+    "toe_shape": "not_applicable",
+    "bottom_length": "not_applicable",
+    "waistline": "not_applicable",
+    "outerwear_length": "not_applicable",
+    "tagging": {
+      "tagger": "ollama-local-vision",
+      "model": "gemma4:26b",
+      "tagged_at": "2026-06-08T04:06:53.345362+00:00",
+      "safe_merge": true,
+      "applied_fields": [
+        "category",
+        "subcategory",
+        "color_family",
+        "length_bucket",
+        "fit_volume",
+        "formality_band",
+        "retrieval_text",
+        "recognition_confidence",
+        "shoe_type",
+        "heel_height",
+        "boot_height",
+        "toe_shape",
+        "bottom_length",
+        "waistline",
+        "outerwear_length"
+      ],
+      "review_flags": []
+    }
+  },
+  {
+    "id": "look_003_white_top_black_mini_skirt_black_boots_item_02_black_sport_shorts",
+    "category": "bottom",
+    "subcategory": "tight_sport_shorts",
+    "color_family": "black",
+    "length_bucket": "short",
+    "fit_volume": "slim",
+    "formality_band": "sport",
+    "availability": "available",
+    "retrieval_text": "black high waist tight sport shorts",
+    "image_embedding_id": "pending_image:look_003_white_top_black_mini_skirt_black_boots_item_02_black_sport_shorts",
+    "text_embedding_id": "pending_text:look_003_white_top_black_mini_skirt_black_boots_item_02_black_sport_shorts",
+    "recognition_confidence": 1,
+    "normalized_product_image_path": "../demo2-product-images/look_003_white_top_black_mini_skirt_black_boots_item_02_black_sport_shorts.product.jpg",
+    "risk_attributes": {
+      "waistline": {
+        "value": "high",
+        "confidence": 0.95,
+        "source": "vlm"
+      },
+      "drape": {
+        "value": "挺括",
+        "confidence": 0.75,
+        "source": "vlm"
+      },
+      "exposure": {
+        "value": "high",
+        "confidence": 0.72,
+        "source": "vlm"
+      }
+    },
+    "shoe_type": "not_applicable",
+    "heel_height": "not_applicable",
+    "boot_height": "not_applicable",
+    "toe_shape": "not_applicable",
+    "bottom_length": "not_applicable",
+    "waistline": "high",
+    "outerwear_length": "not_applicable",
+    "tagging": {
+      "tagger": "ollama-local-vision",
+      "model": "gemma4:26b",
+      "tagged_at": "2026-06-08T04:06:59.878714+00:00",
+      "safe_merge": true,
+      "applied_fields": [
+        "category",
+        "subcategory",
+        "color_family",
+        "length_bucket",
+        "fit_volume",
+        "formality_band",
+        "retrieval_text",
+        "recognition_confidence",
+        "shoe_type",
+        "heel_height",
+        "boot_height",
+        "toe_shape",
+        "bottom_length",
+        "waistline",
+        "outerwear_length"
+      ],
+      "review_flags": []
+    }
+  },
+  {
+    "id": "look_003_white_top_black_mini_skirt_black_boots_item_03_black_sport_shoes",
+    "category": "shoes",
+    "subcategory": "slip_on_sneakers",
+    "color_family": "black",
+    "length_bucket": "not_applicable",
+    "fit_volume": "not_applicable",
+    "formality_band": "casual",
+    "availability": "available",
+    "retrieval_text": "black slip on sneakers",
+    "image_embedding_id": "pending_image:look_003_white_top_black_mini_skirt_black_boots_item_03_black_sport_shoes",
+    "text_embedding_id": "pending_text:look_003_white_top_black_mini_skirt_black_boots_item_03_black_sport_shoes",
+    "recognition_confidence": 0.98,
+    "normalized_product_image_path": "../demo2-product-images/look_003_white_top_black_mini_skirt_black_boots_item_03_black_sport_shoes.product.jpg",
+    "risk_attributes": {
+      "drape": {
+        "value": "未知",
+        "confidence": 0.75,
+        "source": "vlm"
+      },
+      "exposure": {
+        "value": "low",
+        "confidence": 0.72,
+        "source": "vlm"
+      }
+    },
+    "shoe_type": "sneaker",
+    "heel_height": "flat",
+    "boot_height": "not_applicable",
+    "toe_shape": "round",
+    "bottom_length": "not_applicable",
+    "waistline": "not_applicable",
+    "outerwear_length": "not_applicable",
+    "tagging": {
+      "tagger": "ollama-local-vision",
+      "model": "gemma4:26b",
+      "tagged_at": "2026-06-08T04:07:05.714147+00:00",
+      "safe_merge": true,
+      "applied_fields": [
+        "category",
+        "subcategory",
+        "color_family",
+        "length_bucket",
+        "fit_volume",
+        "formality_band",
+        "retrieval_text",
+        "recognition_confidence",
+        "shoe_type",
+        "heel_height",
+        "boot_height",
+        "toe_shape",
+        "bottom_length",
+        "waistline",
+        "outerwear_length"
+      ],
+      "review_flags": []
+    }
+  },
+  {
+    "id": "look_004_houndstooth_set_white_boots_item_01_houndstooth_blazer",
+    "category": "outerwear",
+    "subcategory": "houndstooth_blazer",
+    "color_family": "black",
+    "length_bucket": "regular",
+    "fit_volume": "slim",
+    "formality_band": "formal",
+    "availability": "available",
+    "retrieval_text": "Black and white houndstooth tweed blazer, slim fit, bicolor weave",
+    "image_embedding_id": "pending_image:look_004_houndstooth_set_white_boots_item_01_houndstooth_blazer",
+    "text_embedding_id": "pending_text:look_004_houndstooth_set_white_boots_item_01_houndstooth_blazer",
+    "recognition_confidence": 0.98,
+    "normalized_product_image_path": "../demo2-product-images/look_004_houndstooth_set_white_boots_item_01_houndstooth_blazer.product.jpg",
+    "risk_attributes": {
+      "drape": {
+        "value": "挺括",
+        "confidence": 0.75,
+        "source": "vlm"
+      },
+      "exposure": {
+        "value": "low",
+        "confidence": 0.72,
+        "source": "vlm"
+      }
+    },
+    "shoe_type": "not_applicable",
+    "heel_height": "not_applicable",
+    "boot_height": "not_applicable",
+    "toe_shape": "not_applicable",
+    "bottom_length": "not_applicable",
+    "waistline": "not_applicable",
+    "outerwear_length": "hip",
+    "tagging": {
+      "tagger": "ollama-local-vision",
+      "model": "gemma4:26b",
+      "tagged_at": "2026-06-08T04:07:13.531902+00:00",
+      "safe_merge": true,
+      "applied_fields": [
+        "category",
+        "subcategory",
+        "color_family",
+        "length_bucket",
+        "fit_volume",
+        "formality_band",
+        "retrieval_text",
+        "recognition_confidence",
+        "shoe_type",
+        "heel_height",
+        "boot_height",
+        "toe_shape",
+        "bottom_length",
+        "waistline",
+        "outerwear_length"
+      ],
+      "review_flags": []
+    }
+  },
+  {
+    "id": "look_004_houndstooth_set_white_boots_item_02_white_turtleneck",
+    "category": "top",
+    "subcategory": "turtleneck_top",
+    "color_family": "white",
+    "length_bucket": "regular",
+    "fit_volume": "slim",
+    "formality_band": "smart_casual",
+    "availability": "available",
+    "retrieval_text": "White slim fit turtleneck knit top",
+    "image_embedding_id": "pending_image:look_004_houndstooth_set_white_boots_item_02_white_turtleneck",
+    "text_embedding_id": "pending_text:look_004_houndstooth_set_white_boots_item_02_white_turtleneck",
+    "recognition_confidence": 1,
+    "normalized_product_image_path": "../demo2-product-images/look_004_houndstooth_set_white_boots_item_02_white_turtleneck.product.jpg",
+    "risk_attributes": {
+      "drape": {
+        "value": "柔软",
+        "confidence": 0.75,
+        "source": "vlm"
+      },
+      "exposure": {
+        "value": "low",
+        "confidence": 0.72,
+        "source": "vlm"
+      }
+    },
+    "shoe_type": "not_applicable",
+    "heel_height": "not_applicable",
+    "boot_height": "not_applicable",
+    "toe_shape": "not_applicable",
+    "bottom_length": "not_applicable",
+    "waistline": "not_applicable",
+    "outerwear_length": "not_applicable",
+    "tagging": {
+      "tagger": "ollama-local-vision",
+      "model": "gemma4:26b",
+      "tagged_at": "2026-06-08T04:07:19.387560+00:00",
+      "safe_merge": true,
+      "applied_fields": [
+        "category",
+        "subcategory",
+        "color_family",
+        "length_bucket",
+        "fit_volume",
+        "formality_band",
+        "retrieval_text",
+        "recognition_confidence",
+        "shoe_type",
+        "heel_height",
+        "boot_height",
+        "toe_shape",
+        "bottom_length",
+        "waistline",
+        "outerwear_length"
+      ],
+      "review_flags": []
+    }
+  },
+  {
+    "id": "look_004_houndstooth_set_white_boots_item_03_houndstooth_skirt",
+    "category": "bottom",
+    "subcategory": "houndstooth_mini_skirt",
+    "color_family": "black",
+    "length_bucket": "short",
+    "fit_volume": "structured",
+    "formality_band": "smart_casual",
+    "availability": "available",
+    "retrieval_text": "Black and white houndstooth mini skirt",
+    "image_embedding_id": "pending_image:look_004_houndstooth_set_white_boots_item_03_houndstooth_skirt",
+    "text_embedding_id": "pending_text:look_004_houndstooth_set_white_boots_item_03_houndstooth_skirt",
+    "recognition_confidence": 0.98,
+    "normalized_product_image_path": "../demo2-product-images/look_004_houndstooth_set_white_boots_item_03_houndstooth_skirt.product.jpg",
+    "risk_attributes": {
+      "waistline": {
+        "value": "high",
+        "confidence": 0.95,
+        "source": "vlm"
+      },
+      "drape": {
+        "value": "挺括",
+        "confidence": 0.75,
+        "source": "vlm"
+      },
+      "exposure": {
+        "value": "high",
+        "confidence": 0.72,
+        "source": "vlm"
+      }
+    },
+    "shoe_type": "not_applicable",
+    "heel_height": "not_applicable",
+    "boot_height": "not_applicable",
+    "toe_shape": "not_applicable",
+    "bottom_length": "mini",
+    "waistline": "high",
+    "outerwear_length": "not_applicable",
+    "tagging": {
+      "tagger": "ollama-local-vision",
+      "model": "gemma4:26b",
+      "tagged_at": "2026-06-08T04:07:25.194715+00:00",
+      "safe_merge": true,
+      "applied_fields": [
+        "category",
+        "subcategory",
+        "color_family",
+        "length_bucket",
+        "fit_volume",
+        "formality_band",
+        "retrieval_text",
+        "recognition_confidence",
+        "shoe_type",
+        "heel_height",
+        "boot_height",
+        "toe_shape",
+        "bottom_length",
+        "waistline",
+        "outerwear_length"
+      ],
+      "review_flags": []
+    }
+  },
+  {
+    "id": "look_004_houndstooth_set_white_boots_item_04_white_overknee_boots",
+    "category": "shoes",
+    "subcategory": "over_the_knee_boots",
+    "color_family": "white",
+    "length_bucket": "not_applicable",
+    "fit_volume": "slim",
+    "formality_band": "formal",
+    "availability": "available",
+    "retrieval_text": "White leather over-the-knee high heel boots",
+    "image_embedding_id": "pending_image:look_004_houndstooth_set_white_boots_item_04_white_overknee_boots",
+    "text_embedding_id": "pending_text:look_004_houndstooth_set_white_boots_item_04_white_overknee_boots",
+    "recognition_confidence": 1,
+    "normalized_product_image_path": "../demo2-product-images/look_004_houndstooth_set_white_boots_item_04_white_overknee_boots.product.jpg",
+    "risk_attributes": {
+      "drape": {
+        "value": "挺括",
+        "confidence": 0.75,
+        "source": "vlm"
+      },
+      "exposure": {
+        "value": "low",
+        "confidence": 0.72,
+        "source": "vlm"
+      }
+    },
+    "shoe_type": "boot",
+    "heel_height": "high",
+    "boot_height": "over_knee",
+    "toe_shape": "round",
+    "bottom_length": "not_applicable",
+    "waistline": "not_applicable",
+    "outerwear_length": "not_applicable",
+    "tagging": {
+      "tagger": "ollama-local-vision",
+      "model": "gemma4:26b",
+      "tagged_at": "2026-06-08T04:07:30.931816+00:00",
+      "safe_merge": true,
+      "applied_fields": [
+        "category",
+        "subcategory",
+        "color_family",
+        "length_bucket",
+        "fit_volume",
+        "formality_band",
+        "retrieval_text",
+        "recognition_confidence",
+        "shoe_type",
+        "heel_height",
+        "boot_height",
+        "toe_shape",
+        "bottom_length",
+        "waistline",
+        "outerwear_length"
+      ],
+      "review_flags": []
+    }
+  },
+  {
+    "id": "look_005_white_shirt_dress_black_boots_item_01_white_blazer_mini_dress",
+    "category": "dress",
+    "subcategory": "blazer_mini_dress",
+    "color_family": "white",
+    "length_bucket": "short",
+    "fit_volume": "slim",
+    "formality_band": "party",
+    "availability": "available",
+    "retrieval_text": "white blazer style mini dress, slim fit",
+    "image_embedding_id": "pending_image:look_005_white_shirt_dress_black_boots_item_01_white_blazer_mini_dress",
+    "text_embedding_id": "pending_text:look_005_white_shirt_dress_black_boots_item_01_white_blazer_mini_dress",
+    "recognition_confidence": 0.95,
+    "normalized_product_image_path": "../demo2-product-images/look_005_white_shirt_dress_black_boots_item_01_white_blazer_mini_dress.product.jpg",
+    "risk_attributes": {
+      "waistline": {
+        "value": "mid",
+        "confidence": 0.95,
+        "source": "vlm"
+      },
+      "drape": {
+        "value": "挺括",
+        "confidence": 0.75,
+        "source": "vlm"
+      },
+      "exposure": {
+        "value": "medium",
+        "confidence": 0.72,
+        "source": "vlm"
+      }
+    },
+    "shoe_type": "not_applicable",
+    "heel_height": "not_applicable",
+    "boot_height": "not_applicable",
+    "toe_shape": "not_applicable",
+    "bottom_length": "not_applicable",
+    "waistline": "not_applicable",
+    "outerwear_length": "not_applicable",
+    "tagging": {
+      "tagger": "ollama-local-vision",
+      "model": "gemma4:26b",
+      "tagged_at": "2026-06-08T04:07:36.034274+00:00",
+      "safe_merge": true,
+      "applied_fields": [
+        "category",
+        "subcategory",
+        "color_family",
+        "length_bucket",
+        "fit_volume",
+        "formality_band",
+        "retrieval_text",
+        "recognition_confidence",
+        "shoe_type",
+        "heel_height",
+        "boot_height",
+        "toe_shape",
+        "bottom_length",
+        "waistline",
+        "outerwear_length"
+      ],
+      "review_flags": []
+    }
+  },
+  {
+    "id": "look_005_white_shirt_dress_black_boots_item_02_black_chunky_knee_boots",
+    "category": "shoes",
+    "subcategory": "black_chunky_knee_high_boots",
+    "color_family": "black",
+    "length_bucket": "not_applicable",
+    "fit_volume": "structured",
+    "formality_band": "casual",
+    "availability": "available",
+    "retrieval_text": "black leather chunky knee-high boots, platform sole",
+    "image_embedding_id": "pending_image:look_005_white_shirt_dress_black_boots_item_02_black_chunky_knee_boots",
+    "text_embedding_id": "pending_text:look_005_white_shirt_dress_black_boots_item_02_black_chunky_knee_boots",
+    "recognition_confidence": 0.98,
+    "normalized_product_image_path": "../demo2-product-images/look_005_white_shirt_dress_black_boots_item_02_black_chunky_knee_boots.product.jpg",
+    "risk_attributes": {
+      "drape": {
+        "value": "挺括",
+        "confidence": 0.75,
+        "source": "vlm"
+      },
+      "exposure": {
+        "value": "low",
+        "confidence": 0.72,
+        "source": "vlm"
+      }
+    },
+    "shoe_type": "boot",
+    "heel_height": "mid",
+    "boot_height": "knee_high",
+    "toe_shape": "round",
+    "bottom_length": "not_applicable",
+    "waistline": "not_applicable",
+    "outerwear_length": "not_applicable",
+    "tagging": {
+      "tagger": "ollama-local-vision",
+      "model": "gemma4:26b",
+      "tagged_at": "2026-06-08T04:07:41.748788+00:00",
+      "safe_merge": true,
+      "applied_fields": [
+        "category",
+        "subcategory",
+        "color_family",
+        "length_bucket",
+        "fit_volume",
+        "formality_band",
+        "retrieval_text",
+        "recognition_confidence",
+        "shoe_type",
+        "heel_height",
+        "boot_height",
+        "toe_shape",
+        "bottom_length",
+        "waistline",
+        "outerwear_length"
+      ],
+      "review_flags": [
+        "risk_attributes_not_object"
+      ]
+    }
+  },
+  {
+    "id": "look_006_cream_cardigan_black_pleated_skirt_item_01_beige_inner_top",
+    "category": "top",
+    "subcategory": "long_sleeve_base_top",
+    "color_family": "beige",
+    "length_bucket": "regular",
+    "fit_volume": "slim",
+    "formality_band": "casual",
+    "availability": "available",
+    "retrieval_text": "beige slim fit long sleeve round neck top",
+    "image_embedding_id": "pending_image:look_006_cream_cardigan_black_pleated_skirt_item_01_beige_inner_top",
+    "text_embedding_id": "pending_text:look_006_cream_cardigan_black_pleated_skirt_item_01_beige_inner_top",
+    "recognition_confidence": 0.98,
+    "normalized_product_image_path": "../demo2-product-images/look_006_cream_cardigan_black_pleated_skirt_item_01_beige_inner_top.product.jpg",
+    "risk_attributes": {
+      "drape": {
+        "value": "柔软",
+        "confidence": 0.75,
+        "source": "vlm"
+      },
+      "exposure": {
+        "value": "medium",
+        "confidence": 0.72,
+        "source": "vlm"
+      }
+    },
+    "shoe_type": "not_applicable",
+    "heel_height": "not_applicable",
+    "boot_height": "not_applicable",
+    "toe_shape": "not_applicable",
+    "bottom_length": "not_applicable",
+    "waistline": "not_applicable",
+    "outerwear_length": "not_applicable",
+    "tagging": {
+      "tagger": "ollama-local-vision",
+      "model": "gemma4:26b",
+      "tagged_at": "2026-06-08T04:07:47.680687+00:00",
+      "safe_merge": true,
+      "applied_fields": [
+        "category",
+        "subcategory",
+        "color_family",
+        "length_bucket",
+        "fit_volume",
+        "formality_band",
+        "retrieval_text",
+        "recognition_confidence",
+        "shoe_type",
+        "heel_height",
+        "boot_height",
+        "toe_shape",
+        "bottom_length",
+        "waistline",
+        "outerwear_length"
+      ],
+      "review_flags": []
+    }
+  },
+  {
+    "id": "look_006_cream_cardigan_black_pleated_skirt_item_02_beige_light_outerwear",
+    "category": "outerwear",
+    "subcategory": "lightweight_jacket",
+    "color_family": "beige",
+    "length_bucket": "short",
+    "fit_volume": "slim",
+    "formality_band": "smart_casual",
+    "availability": "available",
+    "retrieval_text": "beige slim fit short lightweight jacket",
+    "image_embedding_id": "pending_image:look_006_cream_cardigan_black_pleated_skirt_item_02_beige_light_outerwear",
+    "text_embedding_id": "pending_text:look_006_cream_cardigan_black_pleated_skirt_item_02_beige_light_outerwear",
+    "recognition_confidence": 0.98,
+    "normalized_product_image_path": "../demo2-product-images/look_006_cream_cardigan_black_pleated_skirt_item_02_beige_light_outerwear.product.jpg",
+    "risk_attributes": {
+      "drape": {
+        "value": "挺括",
+        "confidence": 0.75,
+        "source": "vlm"
+      },
+      "exposure": {
+        "value": "low",
+        "confidence": 0.72,
+        "source": "vlm"
+      }
+    },
+    "shoe_type": "not_applicable",
+    "heel_height": "not_applicable",
+    "boot_height": "not_applicable",
+    "toe_shape": "not_applicable",
+    "bottom_length": "not_applicable",
+    "waistline": "not_applicable",
+    "outerwear_length": "hip",
+    "tagging": {
+      "tagger": "ollama-local-vision",
+      "model": "gemma4:26b",
+      "tagged_at": "2026-06-08T04:07:55.928063+00:00",
+      "safe_merge": true,
+      "applied_fields": [
+        "category",
+        "subcategory",
+        "color_family",
+        "length_bucket",
+        "fit_volume",
+        "formality_band",
+        "retrieval_text",
+        "recognition_confidence",
+        "shoe_type",
+        "heel_height",
+        "boot_height",
+        "toe_shape",
+        "bottom_length",
+        "waistline",
+        "outerwear_length"
+      ],
+      "review_flags": []
+    }
+  },
+  {
+    "id": "look_006_cream_cardigan_black_pleated_skirt_item_03_black_mini_skirt",
+    "category": "bottom",
+    "subcategory": "a_line_mini_skirt",
+    "color_family": "black",
+    "length_bucket": "short",
+    "fit_volume": "regular",
+    "formality_band": "casual",
+    "availability": "available",
+    "retrieval_text": "black high waist A-line mini skirt",
+    "image_embedding_id": "pending_image:look_006_cream_cardigan_black_pleated_skirt_item_03_black_mini_skirt",
+    "text_embedding_id": "pending_text:look_006_cream_cardigan_black_pleated_skirt_item_03_black_mini_skirt",
+    "recognition_confidence": 0.98,
+    "normalized_product_image_path": "../demo2-product-images/look_006_cream_cardigan_black_pleated_skirt_item_03_black_mini_skirt.product.jpg",
+    "risk_attributes": {
+      "waistline": {
+        "value": "high",
+        "confidence": 0.98,
+        "source": "vlm"
+      },
+      "drape": {
+        "value": "挺括",
+        "confidence": 0.75,
+        "source": "vlm"
+      },
+      "exposure": {
+        "value": "high",
+        "confidence": 0.72,
+        "source": "vlm"
+      }
+    },
+    "shoe_type": "not_applicable",
+    "heel_height": "not_applicable",
+    "boot_height": "not_applicable",
+    "toe_shape": "not_applicable",
+    "bottom_length": "mini",
+    "waistline": "high",
+    "outerwear_length": "not_applicable",
+    "tagging": {
+      "tagger": "ollama-local-vision",
+      "model": "gemma4:26b",
+      "tagged_at": "2026-06-08T04:08:01.810214+00:00",
+      "safe_merge": true,
+      "applied_fields": [
+        "category",
+        "subcategory",
+        "color_family",
+        "length_bucket",
+        "fit_volume",
+        "formality_band",
+        "retrieval_text",
+        "recognition_confidence",
+        "shoe_type",
+        "heel_height",
+        "boot_height",
+        "toe_shape",
+        "bottom_length",
+        "waistline",
+        "outerwear_length"
+      ],
+      "review_flags": []
+    }
+  },
+  {
+    "id": "look_007_white_long_dress_item_01_white_lace_mermaid_dress",
+    "category": "dress",
+    "subcategory": "mermaid_maxi_dress",
+    "color_family": "white",
+    "length_bucket": "long",
+    "fit_volume": "slim",
+    "formality_band": "formal",
+    "availability": "available",
+    "retrieval_text": "white lace strapless mermaid fit maxi dress",
+    "image_embedding_id": "pending_image:look_007_white_long_dress_item_01_white_lace_mermaid_dress",
+    "text_embedding_id": "pending_text:look_007_white_long_dress_item_01_white_lace_mermaid_dress",
+    "recognition_confidence": 0.98,
+    "normalized_product_image_path": "../demo2-product-images/look_007_white_long_dress_item_01_white_lace_mermaid_dress.product.jpg",
+    "risk_attributes": {
+      "waistline": {
+        "value": "mid",
+        "confidence": 0.98,
+        "source": "vlm"
+      },
+      "drape": {
+        "value": "柔软",
+        "confidence": 0.75,
+        "source": "vlm"
+      },
+      "exposure": {
+        "value": "medium",
+        "confidence": 0.72,
+        "source": "vlm"
+      }
+    },
+    "shoe_type": "not_applicable",
+    "heel_height": "not_applicable",
+    "boot_height": "not_applicable",
+    "toe_shape": "not_applicable",
+    "bottom_length": "not_applicable",
+    "waistline": "not_applicable",
+    "outerwear_length": "not_applicable",
+    "tagging": {
+      "tagger": "ollama-local-vision",
+      "model": "gemma4:26b",
+      "tagged_at": "2026-06-08T04:08:08.278752+00:00",
+      "safe_merge": true,
+      "applied_fields": [
+        "category",
+        "subcategory",
+        "color_family",
+        "length_bucket",
+        "fit_volume",
+        "formality_band",
+        "retrieval_text",
+        "recognition_confidence",
+        "shoe_type",
+        "heel_height",
+        "boot_height",
+        "toe_shape",
+        "bottom_length",
+        "waistline",
+        "outerwear_length"
+      ],
+      "review_flags": []
+    }
+  },
+  {
+    "id": "look_008_navy_tennis_dress_item_01_navy_tennis_dress",
+    "category": "dress",
+    "subcategory": "tennis_dress",
+    "color_family": "navy",
+    "length_bucket": "short",
+    "fit_volume": "slim",
+    "formality_band": "sport",
+    "availability": "available",
+    "retrieval_text": "Navy blue sleeveless pleated tennis dress with white collar detail",
+    "image_embedding_id": "pending_image:look_008_navy_tennis_dress_item_01_navy_tennis_dress",
+    "text_embedding_id": "pending_text:look_008_navy_tennis_dress_item_01_navy_tennis_dress",
+    "recognition_confidence": 0.98,
+    "normalized_product_image_path": "../demo2-product-images/look_008_navy_tennis_dress_item_01_navy_tennis_dress.product.jpg",
+    "risk_attributes": {
+      "waistline": {
+        "value": "high",
+        "confidence": 0.95,
+        "source": "vlm"
+      },
+      "drape": {
+        "value": "挺括",
+        "confidence": 0.75,
+        "source": "vlm"
+      },
+      "exposure": {
+        "value": "high",
+        "confidence": 0.72,
+        "source": "vlm"
+      }
+    },
+    "shoe_type": "not_applicable",
+    "heel_height": "not_applicable",
+    "boot_height": "not_applicable",
+    "toe_shape": "not_applicable",
+    "bottom_length": "not_applicable",
+    "waistline": "not_applicable",
+    "outerwear_length": "not_applicable",
+    "tagging": {
+      "tagger": "ollama-local-vision",
+      "model": "gemma4:26b",
+      "tagged_at": "2026-06-08T04:08:14.381481+00:00",
+      "safe_merge": true,
+      "applied_fields": [
+        "category",
+        "subcategory",
+        "color_family",
+        "length_bucket",
+        "fit_volume",
+        "formality_band",
+        "retrieval_text",
+        "recognition_confidence",
+        "shoe_type",
+        "heel_height",
+        "boot_height",
+        "toe_shape",
+        "bottom_length",
+        "waistline",
+        "outerwear_length"
+      ],
+      "review_flags": []
+    }
+  },
+  {
+    "id": "look_008_navy_tennis_dress_item_02_black_sport_shoes",
+    "category": "shoes",
+    "subcategory": "athletic_sneakers",
+    "color_family": "black",
+    "length_bucket": "not_applicable",
+    "fit_volume": "not_applicable",
+    "formality_band": "sport",
+    "availability": "available",
+    "retrieval_text": "black low-top athletic sneakers",
+    "image_embedding_id": "pending_image:look_008_navy_tennis_dress_item_02_black_sport_shoes",
+    "text_embedding_id": "pending_text:look_008_navy_tennis_dress_item_02_black_sport_shoes",
+    "recognition_confidence": 0.98,
+    "normalized_product_image_path": "../demo2-product-images/look_008_navy_tennis_dress_item_02_black_sport_shoes.product.jpg",
+    "risk_attributes": {
+      "drape": {
+        "value": "未知",
+        "confidence": 0.75,
+        "source": "vlm"
+      },
+      "exposure": {
+        "value": "low",
+        "confidence": 0.72,
+        "source": "vlm"
+      }
+    },
+    "shoe_type": "sneaker",
+    "heel_height": "low",
+    "boot_height": "not_applicable",
+    "toe_shape": "round",
+    "bottom_length": "not_applicable",
+    "waistline": "not_applicable",
+    "outerwear_length": "not_applicable",
+    "tagging": {
+      "tagger": "ollama-local-vision",
+      "model": "gemma4:26b",
+      "tagged_at": "2026-06-08T04:08:20.251913+00:00",
+      "safe_merge": true,
+      "applied_fields": [
+        "category",
+        "subcategory",
+        "color_family",
+        "length_bucket",
+        "fit_volume",
+        "formality_band",
+        "retrieval_text",
+        "recognition_confidence",
+        "shoe_type",
+        "heel_height",
+        "boot_height",
+        "toe_shape",
+        "bottom_length",
+        "waistline",
+        "outerwear_length"
+      ],
+      "review_flags": []
+    }
+  },
+  {
+    "id": "look_009_white_one_shoulder_top_wide_pants_item_01_white_off_shoulder_top",
+    "category": "top",
+    "subcategory": "off_the_shoulder_short_sleeve_top",
+    "color_family": "white",
+    "length_bucket": "regular",
+    "fit_volume": "slim",
+    "formality_band": "casual",
+    "availability": "available",
+    "retrieval_text": "white off-the-shoulder slim fit short sleeve top",
+    "image_embedding_id": "pending_image:look_009_white_one_shoulder_top_wide_pants_item_01_white_off_shoulder_top",
+    "text_embedding_id": "pending_text:look_009_white_one_shoulder_top_wide_pants_item_01_white_off_shoulder_top",
+    "recognition_confidence": 0.98,
+    "normalized_product_image_path": "../demo2-product-images/look_009_white_one_shoulder_top_wide_pants_item_01_white_off_shoulder_top.product.jpg",
+    "risk_attributes": {
+      "drape": {
+        "value": "柔软",
+        "confidence": 0.75,
+        "source": "vlm"
+      },
+      "exposure": {
+        "value": "medium",
+        "confidence": 0.72,
+        "source": "vlm"
+      }
+    },
+    "shoe_type": "not_applicable",
+    "heel_height": "not_applicable",
+    "boot_height": "not_applicable",
+    "toe_shape": "not_applicable",
+    "bottom_length": "not_applicable",
+    "waistline": "not_applicable",
+    "outerwear_length": "not_applicable",
+    "tagging": {
+      "tagger": "ollama-local-vision",
+      "model": "gemma4:26b",
+      "tagged_at": "2026-06-08T04:08:26.381214+00:00",
+      "safe_merge": true,
+      "applied_fields": [
+        "category",
+        "subcategory",
+        "color_family",
+        "length_bucket",
+        "fit_volume",
+        "formality_band",
+        "retrieval_text",
+        "recognition_confidence",
+        "shoe_type",
+        "heel_height",
+        "boot_height",
+        "toe_shape",
+        "bottom_length",
+        "waistline",
+        "outerwear_length"
+      ],
+      "review_flags": []
+    }
+  },
+  {
+    "id": "look_009_white_one_shoulder_top_wide_pants_item_02_white_wide_leg_pants",
+    "category": "bottom",
+    "subcategory": "wide_leg_pants",
+    "color_family": "white",
+    "length_bucket": "long",
+    "fit_volume": "relaxed",
+    "formality_band": "formal",
+    "availability": "available",
+    "retrieval_text": "white high-waisted wide-leg trousers with drape",
+    "image_embedding_id": "pending_image:look_009_white_one_shoulder_top_wide_pants_item_02_white_wide_leg_pants",
+    "text_embedding_id": "pending_text:look_009_white_one_shoulder_top_wide_pants_item_02_white_wide_leg_pants",
+    "recognition_confidence": 0.98,
+    "normalized_product_image_path": "../demo2-product-images/look_009_white_one_shoulder_top_wide_pants_item_02_white_wide_leg_pants.product.jpg",
+    "risk_attributes": {
+      "waistline": {
+        "value": "high",
+        "confidence": 0.95,
+        "source": "vlm"
+      },
+      "drape": {
+        "value": "垂坠",
+        "confidence": 0.75,
+        "source": "vlm"
+      },
+      "exposure": {
+        "value": "low",
+        "confidence": 0.72,
+        "source": "vlm"
+      }
+    },
+    "shoe_type": "not_applicable",
+    "heel_height": "not_applicable",
+    "boot_height": "not_applicable",
+    "toe_shape": "not_applicable",
+    "bottom_length": "full_length",
+    "waistline": "high",
+    "outerwear_length": "not_applicable",
+    "tagging": {
+      "tagger": "ollama-local-vision",
+      "model": "gemma4:26b",
+      "tagged_at": "2026-06-08T04:08:32.031776+00:00",
+      "safe_merge": true,
+      "applied_fields": [
+        "category",
+        "subcategory",
+        "color_family",
+        "length_bucket",
+        "fit_volume",
+        "formality_band",
+        "retrieval_text",
+        "recognition_confidence",
+        "shoe_type",
+        "heel_height",
+        "boot_height",
+        "toe_shape",
+        "bottom_length",
+        "waistline",
+        "outerwear_length"
+      ],
+      "review_flags": []
+    }
+  },
+  {
+    "id": "look_009_white_one_shoulder_top_wide_pants_item_03_silver_pointed_heels",
+    "category": "shoes",
+    "subcategory": "silver_pointed_toe_stiletto_heels",
+    "color_family": "metallic",
+    "length_bucket": "not_applicable",
+    "fit_volume": "not_applicable",
+    "formality_band": "formal",
+    "availability": "available",
+    "retrieval_text": "silver metallic pointed-toe stiletto high heels",
+    "image_embedding_id": "pending_image:look_009_white_one_shoulder_top_wide_pants_item_03_silver_pointed_heels",
+    "text_embedding_id": "pending_text:look_009_white_one_shoulder_top_wide_pants_item_03_silver_pointed_heels",
+    "recognition_confidence": 1,
+    "normalized_product_image_path": "../demo2-product-images/look_009_white_one_shoulder_top_wide_pants_item_03_silver_pointed_heels.product.jpg",
+    "risk_attributes": {
+      "drape": {
+        "value": "未知",
+        "confidence": 0.75,
+        "source": "vlm"
+      },
+      "exposure": {
+        "value": "high",
+        "confidence": 0.72,
+        "source": "vlm"
+      }
+    },
+    "shoe_type": "heel",
+    "heel_height": "high",
+    "boot_height": "not_applicable",
+    "toe_shape": "pointed",
+    "bottom_length": "not_applicable",
+    "waistline": "not_applicable",
+    "outerwear_length": "not_applicable",
+    "tagging": {
+      "tagger": "ollama-local-vision",
+      "model": "gemma4:26b",
+      "tagged_at": "2026-06-08T04:08:38.003864+00:00",
+      "safe_merge": true,
+      "applied_fields": [
+        "category",
+        "subcategory",
+        "color_family",
+        "length_bucket",
+        "fit_volume",
+        "formality_band",
+        "retrieval_text",
+        "recognition_confidence",
+        "shoe_type",
+        "heel_height",
+        "boot_height",
+        "toe_shape",
+        "bottom_length",
+        "waistline",
+        "outerwear_length"
+      ],
+      "review_flags": []
+    }
+  },
+  {
+    "id": "look_010_camel_coat_red_scarf_black_boots_item_01_camel_long_coat",
+    "category": "outerwear",
+    "subcategory": "camel_classic_long_coat",
+    "color_family": "brown",
+    "length_bucket": "long",
+    "fit_volume": "structured",
+    "formality_band": "formal",
+    "availability": "available",
+    "retrieval_text": "Camel long wool coat, double-breasted design, classic silhouette",
+    "image_embedding_id": "pending_image:look_010_camel_coat_red_scarf_black_boots_item_01_camel_long_coat",
+    "text_embedding_id": "pending_text:look_010_camel_coat_red_scarf_black_boots_item_01_camel_long_coat",
+    "recognition_confidence": 0.98,
+    "normalized_product_image_path": "../demo2-product-images/look_010_camel_coat_red_scarf_black_boots_item_01_camel_long_coat.product.jpg",
+    "risk_attributes": {
+      "waistline": {
+        "value": "mid",
+        "confidence": 0.95,
+        "source": "vlm"
+      },
+      "drape": {
+        "value": "挺括",
+        "confidence": 0.75,
+        "source": "vlm"
+      },
+      "exposure": {
+        "value": "low",
+        "confidence": 0.72,
+        "source": "vlm"
+      }
+    },
+    "shoe_type": "not_applicable",
+    "heel_height": "not_applicable",
+    "boot_height": "not_applicable",
+    "toe_shape": "not_applicable",
+    "bottom_length": "not_applicable",
+    "waistline": "not_applicable",
+    "outerwear_length": "long",
+    "tagging": {
+      "tagger": "ollama-local-vision",
+      "model": "gemma4:26b",
+      "tagged_at": "2026-06-08T04:08:43.952745+00:00",
+      "safe_merge": true,
+      "applied_fields": [
+        "category",
+        "subcategory",
+        "color_family",
+        "length_bucket",
+        "fit_volume",
+        "formality_band",
+        "retrieval_text",
+        "recognition_confidence",
+        "shoe_type",
+        "heel_height",
+        "boot_height",
+        "toe_shape",
+        "bottom_length",
+        "waistline",
+        "outerwear_length"
+      ],
+      "review_flags": []
+    }
+  },
+  {
+    "id": "look_010_camel_coat_red_scarf_black_boots_item_02_black_inner_top",
+    "category": "top",
+    "subcategory": "long_sleeve_knit_top",
+    "color_family": "black",
+    "length_bucket": "regular",
+    "fit_volume": "slim",
+    "formality_band": "casual",
+    "availability": "available",
+    "retrieval_text": "Black slim fit long sleeve knit top",
+    "image_embedding_id": "pending_image:look_010_camel_coat_red_scarf_black_boots_item_02_black_inner_top",
+    "text_embedding_id": "pending_text:look_010_camel_coat_red_scarf_black_boots_item_02_black_inner_top",
+    "recognition_confidence": 0.98,
+    "normalized_product_image_path": "../demo2-product-images/look_010_camel_coat_red_scarf_black_boots_item_02_black_inner_top.product.jpg",
+    "risk_attributes": {
+      "drape": {
+        "value": "柔软",
+        "confidence": 0.75,
+        "source": "vlm"
+      },
+      "exposure": {
+        "value": "low",
+        "confidence": 0.72,
+        "source": "vlm"
+      }
+    },
+    "shoe_type": "not_applicable",
+    "heel_height": "not_applicable",
+    "boot_height": "not_applicable",
+    "toe_shape": "not_applicable",
+    "bottom_length": "not_applicable",
+    "waistline": "not_applicable",
+    "outerwear_length": "not_applicable",
+    "tagging": {
+      "tagger": "ollama-local-vision",
+      "model": "gemma4:26b",
+      "tagged_at": "2026-06-08T04:08:49.556064+00:00",
+      "safe_merge": true,
+      "applied_fields": [
+        "category",
+        "subcategory",
+        "color_family",
+        "length_bucket",
+        "fit_volume",
+        "formality_band",
+        "retrieval_text",
+        "recognition_confidence",
+        "shoe_type",
+        "heel_height",
+        "boot_height",
+        "toe_shape",
+        "bottom_length",
+        "waistline",
+        "outerwear_length"
+      ],
+      "review_flags": []
+    }
+  },
+  {
+    "id": "look_010_camel_coat_red_scarf_black_boots_item_03_black_leggings_pants",
+    "category": "bottom",
+    "subcategory": "leggings",
+    "color_family": "black",
+    "length_bucket": "long",
+    "fit_volume": "slim",
+    "formality_band": "sport",
+    "availability": "available",
+    "retrieval_text": "black slim fit leggings",
+    "image_embedding_id": "pending_image:look_010_camel_coat_red_scarf_black_boots_item_03_black_leggings_pants",
+    "text_embedding_id": "pending_text:look_010_camel_coat_red_scarf_black_boots_item_03_black_leggings_pants",
+    "recognition_confidence": 0.98,
+    "normalized_product_image_path": "../demo2-product-images/look_010_camel_coat_red_scarf_black_boots_item_03_black_leggings_pants.product.jpg",
+    "risk_attributes": {
+      "waistline": {
+        "value": "mid",
+        "confidence": 0.9,
+        "source": "vlm"
+      },
+      "drape": {
+        "value": "柔软",
+        "confidence": 0.75,
+        "source": "vlm"
+      },
+      "exposure": {
+        "value": "low",
+        "confidence": 0.72,
+        "source": "vlm"
+      }
+    },
+    "shoe_type": "not_applicable",
+    "heel_height": "not_applicable",
+    "boot_height": "not_applicable",
+    "toe_shape": "not_applicable",
+    "bottom_length": "full_length",
+    "waistline": "high",
+    "outerwear_length": "not_applicable",
+    "tagging": {
+      "tagger": "ollama-local-vision",
+      "model": "gemma4:26b",
+      "tagged_at": "2026-06-08T04:08:55.820590+00:00",
+      "safe_merge": true,
+      "applied_fields": [
+        "category",
+        "subcategory",
+        "color_family",
+        "length_bucket",
+        "fit_volume",
+        "formality_band",
+        "retrieval_text",
+        "recognition_confidence",
+        "shoe_type",
+        "heel_height",
+        "boot_height",
+        "toe_shape",
+        "bottom_length",
+        "waistline",
+        "outerwear_length"
+      ],
+      "review_flags": []
+    }
+  },
+  {
+    "id": "look_010_camel_coat_red_scarf_black_boots_item_04_black_leather_boots",
+    "category": "shoes",
+    "subcategory": "black_leather_mid_calf_boots",
+    "color_family": "black",
+    "length_bucket": "not_applicable",
+    "fit_volume": "structured",
+    "formality_band": "smart_casual",
+    "availability": "available",
+    "retrieval_text": "Black leather mid-calf boots with a chunky heel",
+    "image_embedding_id": "pending_image:look_010_camel_coat_red_scarf_black_boots_item_04_black_leather_boots",
+    "text_embedding_id": "pending_text:look_010_camel_coat_red_scarf_black_boots_item_04_black_leather_boots",
+    "recognition_confidence": 0.98,
+    "normalized_product_image_path": "../demo2-product-images/look_010_camel_coat_red_scarf_black_boots_item_04_black_leather_boots.product.jpg",
+    "risk_attributes": {
+      "drape": {
+        "value": "挺括",
+        "confidence": 0.75,
+        "source": "vlm"
+      },
+      "exposure": {
+        "value": "low",
+        "confidence": 0.72,
+        "source": "vlm"
+      }
+    },
+    "shoe_type": "boot",
+    "heel_height": "mid",
+    "boot_height": "mid_calf",
+    "toe_shape": "round",
+    "bottom_length": "not_applicable",
+    "waistline": "not_applicable",
+    "outerwear_length": "not_applicable",
+    "tagging": {
+      "tagger": "ollama-local-vision",
+      "model": "gemma4:26b",
+      "tagged_at": "2026-06-08T04:09:01.776935+00:00",
+      "safe_merge": true,
+      "applied_fields": [
+        "category",
+        "subcategory",
+        "color_family",
+        "length_bucket",
+        "fit_volume",
+        "formality_band",
+        "retrieval_text",
+        "recognition_confidence",
+        "shoe_type",
+        "heel_height",
+        "boot_height",
+        "toe_shape",
+        "bottom_length",
+        "waistline",
+        "outerwear_length"
+      ],
+      "review_flags": []
+    }
+  },
+  {
+    "id": "look_011_white_short_set_sneakers_item_01_white_shirt_dress",
+    "category": "dress",
+    "subcategory": "shirt_dress",
+    "color_family": "white",
+    "length_bucket": "short",
+    "fit_volume": "structured",
+    "formality_band": "smart_casual",
+    "availability": "available",
+    "retrieval_text": "white long sleeve short shirt dress",
+    "image_embedding_id": "pending_image:look_011_white_short_set_sneakers_item_01_white_shirt_dress",
+    "text_embedding_id": "pending_text:look_011_white_short_set_sneakers_item_01_white_shirt_dress",
+    "recognition_confidence": 0.98,
+    "normalized_product_image_path": "../demo2-product-images/look_011_white_short_set_sneakers_item_01_white_shirt_dress.product.jpg",
+    "risk_attributes": {
+      "waistline": {
+        "value": "mid",
+        "confidence": 0.95,
+        "source": "vlm"
+      },
+      "drape": {
+        "value": "挺括",
+        "confidence": 0.75,
+        "source": "vlm"
+      },
+      "exposure": {
+        "value": "medium",
+        "confidence": 0.72,
+        "source": "vlm"
+      }
+    },
+    "shoe_type": "not_applicable",
+    "heel_height": "not_applicable",
+    "boot_height": "not_applicable",
+    "toe_shape": "not_applicable",
+    "bottom_length": "not_applicable",
+    "waistline": "not_applicable",
+    "outerwear_length": "not_applicable",
+    "tagging": {
+      "tagger": "ollama-local-vision",
+      "model": "gemma4:26b",
+      "tagged_at": "2026-06-08T04:09:08.017352+00:00",
+      "safe_merge": true,
+      "applied_fields": [
+        "category",
+        "subcategory",
+        "color_family",
+        "length_bucket",
+        "fit_volume",
+        "formality_band",
+        "retrieval_text",
+        "recognition_confidence",
+        "shoe_type",
+        "heel_height",
+        "boot_height",
+        "toe_shape",
+        "bottom_length",
+        "waistline",
+        "outerwear_length"
+      ],
+      "review_flags": []
+    }
+  },
+  {
+    "id": "look_011_white_short_set_sneakers_item_02_beige_knit_cardigan",
+    "category": "outerwear",
+    "subcategory": "knit_cardigan",
+    "color_family": "beige",
+    "length_bucket": "regular",
+    "fit_volume": "relaxed",
+    "formality_band": "casual",
+    "availability": "available",
+    "retrieval_text": "beige soft knit cardigan",
+    "image_embedding_id": "pending_image:look_011_white_short_set_sneakers_item_02_beige_knit_cardigan",
+    "text_embedding_id": "pending_text:look_011_white_short_set_sneakers_item_02_beige_knit_cardigan",
+    "recognition_confidence": 0.98,
+    "normalized_product_image_path": "../demo2-product-images/look_011_white_short_set_sneakers_item_02_beige_knit_cardigan.product.jpg",
+    "risk_attributes": {
+      "drape": {
+        "value": "柔软",
+        "confidence": 0.75,
+        "source": "vlm"
+      },
+      "exposure": {
+        "value": "low",
+        "confidence": 0.72,
+        "source": "vlm"
+      }
+    },
+    "shoe_type": "not_applicable",
+    "heel_height": "not_applicable",
+    "boot_height": "not_applicable",
+    "toe_shape": "not_applicable",
+    "bottom_length": "not_applicable",
+    "waistline": "not_applicable",
+    "outerwear_length": "mid_thigh",
+    "tagging": {
+      "tagger": "ollama-local-vision",
+      "model": "gemma4:26b",
+      "tagged_at": "2026-06-08T04:09:13.978063+00:00",
+      "safe_merge": true,
+      "applied_fields": [
+        "category",
+        "subcategory",
+        "color_family",
+        "length_bucket",
+        "fit_volume",
+        "formality_band",
+        "retrieval_text",
+        "recognition_confidence",
+        "shoe_type",
+        "heel_height",
+        "boot_height",
+        "toe_shape",
+        "bottom_length",
+        "waistline",
+        "outerwear_length"
+      ],
+      "review_flags": []
+    }
+  },
+  {
+    "id": "look_011_white_short_set_sneakers_item_03_beige_sneakers",
+    "category": "shoes",
+    "subcategory": "low_top_sneakers",
+    "color_family": "beige",
+    "length_bucket": "not_applicable",
+    "fit_volume": "not_applicable",
+    "formality_band": "casual",
+    "availability": "available",
+    "retrieval_text": "beige and white low-top casual sneakers",
+    "image_embedding_id": "pending_image:look_011_white_short_set_sneakers_item_03_beige_sneakers",
+    "text_embedding_id": "pending_text:look_011_white_short_set_sneakers_item_03_beige_sneakers",
+    "recognition_confidence": 0.98,
+    "normalized_product_image_path": "../demo2-product-images/look_011_white_short_set_sneakers_item_03_beige_sneakers.product.jpg",
+    "risk_attributes": {
+      "drape": {
+        "value": "未知",
+        "confidence": 0.75,
+        "source": "vlm"
+      },
+      "exposure": {
+        "value": "low",
+        "confidence": 0.72,
+        "source": "vlm"
+      }
+    },
+    "shoe_type": "sneaker",
+    "heel_height": "low",
+    "boot_height": "not_applicable",
+    "toe_shape": "round",
+    "bottom_length": "not_applicable",
+    "waistline": "not_applicable",
+    "outerwear_length": "not_applicable",
+    "tagging": {
+      "tagger": "ollama-local-vision",
+      "model": "gemma4:26b",
+      "tagged_at": "2026-06-08T04:09:19.988740+00:00",
+      "safe_merge": true,
+      "applied_fields": [
+        "category",
+        "subcategory",
+        "color_family",
+        "length_bucket",
+        "fit_volume",
+        "formality_band",
+        "retrieval_text",
+        "recognition_confidence",
+        "shoe_type",
+        "heel_height",
+        "boot_height",
+        "toe_shape",
+        "bottom_length",
+        "waistline",
+        "outerwear_length"
+      ],
+      "review_flags": []
+    }
+  },
+  {
+    "id": "look_012_cream_blazer_short_set_item_01_cream_shirt_dress",
+    "category": "dress",
+    "subcategory": "shirt_dress",
+    "color_family": "beige",
+    "length_bucket": "short",
+    "fit_volume": "regular",
+    "formality_band": "smart_casual",
+    "availability": "available",
+    "retrieval_text": "cream short shirt dress, long sleeves, cinched waist",
+    "image_embedding_id": "pending_image:look_012_cream_blazer_short_set_item_01_cream_shirt_dress",
+    "text_embedding_id": "pending_text:look_012_cream_blazer_short_set_item_01_cream_shirt_dress",
+    "recognition_confidence": 0.98,
+    "normalized_product_image_path": "../demo2-product-images/look_012_cream_blazer_short_set_item_01_cream_shirt_dress.product.jpg",
+    "risk_attributes": {
+      "waistline": {
+        "value": "high",
+        "confidence": 0.95,
+        "source": "vlm"
+      },
+      "drape": {
+        "value": "挺括",
+        "confidence": 0.75,
+        "source": "vlm"
+      },
+      "exposure": {
+        "value": "medium",
+        "confidence": 0.72,
+        "source": "vlm"
+      }
+    },
+    "shoe_type": "not_applicable",
+    "heel_height": "not_applicable",
+    "boot_height": "not_applicable",
+    "toe_shape": "not_applicable",
+    "bottom_length": "not_applicable",
+    "waistline": "not_applicable",
+    "outerwear_length": "not_applicable",
+    "tagging": {
+      "tagger": "ollama-local-vision",
+      "model": "gemma4:26b",
+      "tagged_at": "2026-06-08T04:09:26.015396+00:00",
+      "safe_merge": true,
+      "applied_fields": [
+        "category",
+        "subcategory",
+        "color_family",
+        "length_bucket",
+        "fit_volume",
+        "formality_band",
+        "retrieval_text",
+        "recognition_confidence",
+        "shoe_type",
+        "heel_height",
+        "boot_height",
+        "toe_shape",
+        "bottom_length",
+        "waistline",
+        "outerwear_length"
+      ],
+      "review_flags": []
+    }
+  },
+  {
+    "id": "look_012_cream_blazer_short_set_item_02_black_platform_boots",
+    "category": "shoes",
+    "subcategory": "platform_boots",
+    "color_family": "black",
+    "length_bucket": "not_applicable",
+    "fit_volume": "structured",
+    "formality_band": "casual",
+    "availability": "available",
+    "retrieval_text": "black leather platform boots",
+    "image_embedding_id": "pending_image:look_012_cream_blazer_short_set_item_02_black_platform_boots",
+    "text_embedding_id": "pending_text:look_012_cream_blazer_short_set_item_02_black_platform_boots",
+    "recognition_confidence": 0.98,
+    "normalized_product_image_path": "../demo2-product-images/look_012_cream_blazer_short_set_item_02_black_platform_boots.product.jpg",
+    "risk_attributes": {
+      "drape": {
+        "value": "挺括",
+        "confidence": 0.75,
+        "source": "vlm"
+      },
+      "exposure": {
+        "value": "low",
+        "confidence": 0.72,
+        "source": "vlm"
+      }
+    },
+    "shoe_type": "boot",
+    "heel_height": "high",
+    "boot_height": "mid_calf",
+    "toe_shape": "round",
+    "bottom_length": "not_applicable",
+    "waistline": "not_applicable",
+    "outerwear_length": "not_applicable",
+    "tagging": {
+      "tagger": "ollama-local-vision",
+      "model": "gemma4:26b",
+      "tagged_at": "2026-06-08T04:09:31.691703+00:00",
+      "safe_merge": true,
+      "applied_fields": [
+        "category",
+        "subcategory",
+        "color_family",
+        "length_bucket",
+        "fit_volume",
+        "formality_band",
+        "retrieval_text",
+        "recognition_confidence",
+        "shoe_type",
+        "heel_height",
+        "boot_height",
+        "toe_shape",
+        "bottom_length",
+        "waistline",
+        "outerwear_length"
+      ],
+      "review_flags": []
+    }
+  },
+  {
+    "id": "look_013_mint_tank_white_shorts_sneakers_item_01_light_green_tank_top",
+    "category": "top",
+    "subcategory": "spaghetti_strap_tank_top",
+    "color_family": "green",
+    "length_bucket": "short",
+    "fit_volume": "slim",
+    "formality_band": "casual",
+    "availability": "available",
+    "retrieval_text": "light green ribbed spaghetti strap tank top",
+    "image_embedding_id": "pending_image:look_013_mint_tank_white_shorts_sneakers_item_01_light_green_tank_top",
+    "text_embedding_id": "pending_text:look_013_mint_tank_white_shorts_sneakers_item_01_light_green_tank_top",
+    "recognition_confidence": 0.98,
+    "normalized_product_image_path": "../demo2-product-images/look_013_mint_tank_white_shorts_sneakers_item_01_light_green_tank_top.product.jpg",
+    "risk_attributes": {
+      "drape": {
+        "value": "柔软",
+        "confidence": 0.75,
+        "source": "vlm"
+      },
+      "exposure": {
+        "value": "high",
+        "confidence": 0.72,
+        "source": "vlm"
+      }
+    },
+    "shoe_type": "not_applicable",
+    "heel_height": "not_applicable",
+    "boot_height": "not_applicable",
+    "toe_shape": "not_applicable",
+    "bottom_length": "not_applicable",
+    "waistline": "not_applicable",
+    "outerwear_length": "not_applicable",
+    "tagging": {
+      "tagger": "ollama-local-vision",
+      "model": "gemma4:26b",
+      "tagged_at": "2026-06-08T04:09:37.961120+00:00",
+      "safe_merge": true,
+      "applied_fields": [
+        "category",
+        "subcategory",
+        "color_family",
+        "length_bucket",
+        "fit_volume",
+        "formality_band",
+        "retrieval_text",
+        "recognition_confidence",
+        "shoe_type",
+        "heel_height",
+        "boot_height",
+        "toe_shape",
+        "bottom_length",
+        "waistline",
+        "outerwear_length"
+      ],
+      "review_flags": []
+    }
+  },
+  {
+    "id": "look_013_mint_tank_white_shorts_sneakers_item_02_white_denim_shorts",
+    "category": "bottom",
+    "subcategory": "denim_shorts",
+    "color_family": "white",
+    "length_bucket": "short",
+    "fit_volume": "regular",
+    "formality_band": "casual",
+    "availability": "available",
+    "retrieval_text": "white high-waisted denim shorts",
+    "image_embedding_id": "pending_image:look_013_mint_tank_white_shorts_sneakers_item_02_white_denim_shorts",
+    "text_embedding_id": "pending_text:look_013_mint_tank_white_shorts_sneakers_item_02_white_denim_shorts",
+    "recognition_confidence": 0.98,
+    "normalized_product_image_path": "../demo2-product-images/look_013_mint_tank_white_shorts_sneakers_item_02_white_denim_shorts.product.jpg",
+    "risk_attributes": {
+      "waistline": {
+        "value": "high",
+        "confidence": 0.95,
+        "source": "vlm"
+      },
+      "drape": {
+        "value": "挺括",
+        "confidence": 0.75,
+        "source": "vlm"
+      },
+      "exposure": {
+        "value": "high",
+        "confidence": 0.72,
+        "source": "vlm"
+      }
+    },
+    "shoe_type": "not_applicable",
+    "heel_height": "not_applicable",
+    "boot_height": "not_applicable",
+    "toe_shape": "not_applicable",
+    "bottom_length": "mini",
+    "waistline": "high",
+    "outerwear_length": "not_applicable",
+    "tagging": {
+      "tagger": "ollama-local-vision",
+      "model": "gemma4:26b",
+      "tagged_at": "2026-06-08T04:09:44.119637+00:00",
+      "safe_merge": true,
+      "applied_fields": [
+        "category",
+        "subcategory",
+        "color_family",
+        "length_bucket",
+        "fit_volume",
+        "formality_band",
+        "retrieval_text",
+        "recognition_confidence",
+        "shoe_type",
+        "heel_height",
+        "boot_height",
+        "toe_shape",
+        "bottom_length",
+        "waistline",
+        "outerwear_length"
+      ],
+      "review_flags": []
+    }
+  },
+  {
+    "id": "look_013_mint_tank_white_shorts_sneakers_item_03_white_chunky_sneakers",
+    "category": "shoes",
+    "subcategory": "chunky_sneakers",
+    "color_family": "white",
+    "length_bucket": "not_applicable",
+    "fit_volume": "not_applicable",
+    "formality_band": "casual",
+    "availability": "available",
+    "retrieval_text": "white chunky sneakers",
+    "image_embedding_id": "pending_image:look_013_mint_tank_white_shorts_sneakers_item_03_white_chunky_sneakers",
+    "text_embedding_id": "pending_text:look_013_mint_tank_white_shorts_sneakers_item_03_white_chunky_sneakers",
+    "recognition_confidence": 0.98,
+    "normalized_product_image_path": "../demo2-product-images/look_013_mint_tank_white_shorts_sneakers_item_03_white_chunky_sneakers.product.jpg",
+    "risk_attributes": {
+      "drape": {
+        "value": "挺括",
+        "confidence": 0.75,
+        "source": "vlm"
+      },
+      "exposure": {
+        "value": "low",
+        "confidence": 0.72,
+        "source": "vlm"
+      }
+    },
+    "shoe_type": "sneaker",
+    "heel_height": "low",
+    "boot_height": "not_applicable",
+    "toe_shape": "round",
+    "bottom_length": "not_applicable",
+    "waistline": "not_applicable",
+    "outerwear_length": "not_applicable",
+    "tagging": {
+      "tagger": "ollama-local-vision",
+      "model": "gemma4:26b",
+      "tagged_at": "2026-06-08T04:09:50.703041+00:00",
+      "safe_merge": true,
+      "applied_fields": [
+        "category",
+        "subcategory",
+        "color_family",
+        "length_bucket",
+        "fit_volume",
+        "formality_band",
+        "retrieval_text",
+        "recognition_confidence",
+        "shoe_type",
+        "heel_height",
+        "boot_height",
+        "toe_shape",
+        "bottom_length",
+        "waistline",
+        "outerwear_length"
+      ],
+      "review_flags": []
+    }
+  }
+]

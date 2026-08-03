@@ -1,0 +1,44 @@
+{
+  "name": "conversational-fashion-agent-camera-first-web-shell",
+  "version": "0.6.0",
+  "private": true,
+  "packageManager": "npm@10.9.2",
+  "type": "module",
+  "description": "Chat-first fashion agent with runtime Skills, autonomous Tools, policy gates, Nano Banana try-on, and a runnable camera-first editorial React web shell.",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "build": "tsc",
+    "test": "node --import tsx --test tests/**/*.test.ts",
+    "demo:services": "tsx src/cli/demoServices.ts",
+    "chat": "tsx src/cli/chat.ts",
+    "start": "node dist/cli/chat.js",
+    "validate:skills": "node scripts/validate-skills.mjs",
+    "check": "npm run validate:skills && npm run validate:ui && npm run typecheck && npm test && npm run build && npm run demo:services",
+    "web:install": "npm --prefix web install",
+    "web:dev": "npm --prefix web run dev",
+    "web:typecheck": "npm --prefix web run typecheck",
+    "web:build": "npm --prefix web run build",
+    "check:all": "npm run check && npm run web:typecheck && npm run web:build",
+    "validate:ui": "node scripts/validate-ui.mjs",
+    "web:preview": "npm --prefix web run preview",
+    "ui:reference": "npm run web:dev",
+    "server": "tsx src/server/webServer.ts",
+    "demo:web": "npm run web:build && npm run server"
+  },
+  "engines": {
+    "node": ">=20 <24",
+    "npm": ">=10 <11"
+  },
+  "dependencies": {
+    "@google/genai": "2.8.0",
+    "@openai/agents": "0.11.7",
+    "openai": "6.44.0",
+    "zod": "4.4.3",
+    "dotenv": "17.4.2"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.0",
+    "tsx": "4.22.4",
+    "typescript": "^5.9.0"
+  }
+}

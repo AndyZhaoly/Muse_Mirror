@@ -1,0 +1,38 @@
+[
+  {
+    "id": "product_101",
+    "title": "浅卡其短款工装夹克",
+    "brand": "Example Studio",
+    "price": 399,
+    "currency": "CNY",
+    "color": "light khaki",
+    "category": "outerwear",
+    "imageUrl": "./public/mock-products/product-khaki-jacket.svg",
+    "productUrl": "https://example.invalid/products/101",
+    "source": "mock_catalog"
+  },
+  {
+    "id": "product_102",
+    "title": "深蓝无垫肩短西装",
+    "brand": "Example Office",
+    "price": 529,
+    "currency": "CNY",
+    "color": "navy",
+    "category": "outerwear",
+    "imageUrl": "./public/mock-products/product-navy-blazer.svg",
+    "productUrl": "https://example.invalid/products/102",
+    "source": "mock_catalog"
+  },
+  {
+    "id": "product_103",
+    "title": "黑色简洁乐福鞋",
+    "brand": "Example Steps",
+    "price": 459,
+    "currency": "CNY",
+    "color": "black",
+    "category": "shoes",
+    "imageUrl": "./public/mock-products/product-black-loafers.svg",
+    "productUrl": "https://example.invalid/products/103",
+    "source": "mock_catalog"
+  }
+]

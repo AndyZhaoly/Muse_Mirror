@@ -1,0 +1,43 @@
+{
+  "camera": {
+    "permission": "granted",
+    "status": "live",
+    "mirrored": true,
+    "autoAnalyze": false
+  },
+  "activeVisual": {
+    "id": "live_camera",
+    "kind": "live_camera",
+    "label": "实时镜子"
+  },
+  "analysis": {
+    "mainColors": ["白色", "浅蓝"],
+    "silhouette": "上身宽松，下身直筒",
+    "proportionNotes": ["前摆轻塞会让腰线更清楚"],
+    "occasion": "日常见朋友",
+    "status": "适合，建议微调"
+  },
+  "messages": [
+    {
+      "id": "m1",
+      "role": "assistant",
+      "text": "我可以根据当前画面帮你看颜色、廓形和场合是否合适。摄像头画面会先在本地显示，只有需要分析时才截取当前画面。"
+    },
+    {
+      "id": "m2",
+      "role": "user",
+      "text": "我这样去和朋友吃饭可以吗？"
+    },
+    {
+      "id": "m3",
+      "role": "assistant",
+      "text": "可以，整体干净又轻松。最有效的调整是把白 T 前摆轻塞一点，让腰线更清楚；再加一个棕色小包，整套会更完整。"
+    }
+  ],
+  "quickActions": [
+    "我这样可以吗？",
+    "用衣柜搭一套",
+    "看上身效果",
+    "换个更松弛的版本"
+  ]
+}
