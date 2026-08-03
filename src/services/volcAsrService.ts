@@ -55,6 +55,27 @@ function authHeaders(config: VoiceConfig): Record<string, string> {
   return headers;
 }
 
+export function buildVolcAsrRequest(sampleRate: number) {
+  return {
+    user: { uid: randomUUID() },
+    audio: {
+      format: 'pcm',
+      codec: 'raw',
+      rate: sampleRate,
+      bits: 16,
+      channel: 1,
+    },
+    request: {
+      model_name: 'bigmodel',
+      enable_itn: true,
+      enable_punc: true,
+      enable_ddc: true,
+      show_utterances: true,
+      enable_nonstream: false,
+    },
+  };
+}
+
 export class VolcAsrSession implements AsrSession {
   private socket?: WebSocket;
   private sequence = 1;
@@ -77,24 +98,7 @@ export class VolcAsrSession implements AsrSession {
       let settled = false;
 
       socket.once('open', () => {
-        const request = {
-          user: { uid: randomUUID() },
-          audio: {
-            format: 'raw',
-            codec: 'raw',
-            rate: this.config.volcAsrSampleRate,
-            bits: 16,
-            channel: 1,
-          },
-          request: {
-            model_name: 'bigmodel',
-            enable_itn: true,
-            enable_punc: true,
-            enable_ddc: true,
-            show_utterances: true,
-            enable_nonstream: false,
-          },
-        };
+        const request = buildVolcAsrRequest(this.config.volcAsrSampleRate);
         socket.send(encodeAsrFullRequest(request, this.sequence));
         settled = true;
         this.handlers.onReady();

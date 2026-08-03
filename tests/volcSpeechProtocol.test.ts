@@ -10,6 +10,7 @@ import {
   VolcMessageFlags,
   VolcMessageType,
 } from '../src/services/volcSpeechProtocol.js';
+import { buildVolcAsrRequest } from '../src/services/volcAsrService.js';
 
 function uint32(value: number): Buffer {
   const buffer = Buffer.allocUnsafe(4);
@@ -29,6 +30,17 @@ test('ASR full request round-trips JSON and sequence through the binary protocol
   assert.equal(frame.messageType, VolcMessageType.FullClientRequest);
   assert.equal(frame.sequence, 7);
   assert.deepEqual(parseJsonPayload(frame), request);
+});
+
+test('ASR initialization declares PCM16LE audio with the provider PCM format', () => {
+  const request = buildVolcAsrRequest(16000);
+  assert.deepEqual(request.audio, {
+    format: 'pcm',
+    codec: 'raw',
+    rate: 16000,
+    bits: 16,
+    channel: 1,
+  });
 });
 
 test('ASR final audio request preserves PCM and uses a negative sequence', () => {
