@@ -457,13 +457,18 @@ async function handleTurnStream(
 ): Promise<void> {
   const requestId = makeId('stream');
   const startedAt = performance.now();
+  let stage = 'read_request';
   sseHeaders(res);
   try {
     const input = (await readJson(req)) as WebTurnRequest;
+    stage = 'runtime_ready';
     await ensureRuntimeReady();
+    stage = 'prepare_turn';
     const prepared = await prepareTurnInput(input);
+    stage = 'capture_image';
     const captured = await saveCapturedImage(input);
     const attachments = [...(input.attachments ?? []), ...(captured ? [captured] : [])];
+    stage = 'agent_runtime';
     const result = await runtime.runTurn({
       ...prepared.input,
       attachments,
@@ -480,6 +485,7 @@ async function handleTurnStream(
         writeSse(res, 'artifact', normalizeArtifact(artifact));
       },
     });
+    stage = 'memory_finalize';
     const memoryStartedAt = performance.now();
     const finalized = await finalizeTurnMemory({
       input: prepared.input,
@@ -491,14 +497,34 @@ async function handleTurnStream(
     traceWebTiming(requestId, 'memory_finalize_completed', startedAt, {
       memoryElapsedMs: Math.round(performance.now() - memoryStartedAt),
     });
+    stage = 'result_write';
     writeSse(res, 'result', normalizeResult(finalized));
     res.end();
     traceWebTiming(requestId, 'turn_completed', startedAt);
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unexpected server error.';
+    logSafeStreamError(requestId, stage, error);
     writeSse(res, 'error', { error: message });
     res.end();
   }
+}
+
+function logSafeStreamError(requestId: string, stage: string, error: unknown): void {
+  const status = typeof (error as any)?.status === 'number' ? (error as any).status : undefined;
+  const code = typeof (error as any)?.code === 'string' ? (error as any).code : undefined;
+  const message = error instanceof Error ? error.message : String(error);
+  console.warn(
+    `[MuseStreamError] ${JSON.stringify({
+      requestId,
+      stage,
+      status,
+      code,
+      name: error instanceof Error ? error.name : undefined,
+      message: message
+        .replace(/sk-[A-Za-z0-9_-]+/g, '[redacted_api_key]')
+        .replace(/data:image\/[a-zA-Z+.-]+;base64,[A-Za-z0-9+/=]+/g, '[redacted_image_data]'),
+    })}`,
+  );
 }
 
 function traceWebTiming(
