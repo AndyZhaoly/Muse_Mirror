@@ -51,6 +51,21 @@ const result = await runFashionTurn({
 }
 ```
 
+## Streaming turn events
+
+`POST /api/fashion/turn/stream` uses the existing SSE event names:
+
+- `commentary`: an optional public pre-tool sentence; it is not assistant message text.
+- `activity`: actual runtime/tool lifecycle events.
+- `delta`: an incremental OpenAI `final_answer` text fragment, written as soon as it arrives.
+- `artifact`: grounded UI artifacts.
+- `result`: the completed, authoritative turn result.
+- `error`: a product-safe failure.
+
+Clients may concatenate `delta` payloads for immediate display, but must replace that temporary text with `result.text` when `result` arrives. `result.text` may differ because the runtime applies visual grounding, closet-gap, and fit-uncertainty guards after model completion. Only `result.text` is stored in conversation history.
+
+If the provider does not expose a stream or an output item's phase cannot be safely identified, the server sends one complete `delta` after completion. Commentary, reasoning, function arguments, and encrypted reasoning content never enter `delta`.
+
 ## Approval required and resume
 
 Sensitive Tools can return `status: "approval_required"`, approval items, and `serializedRunState`. Resume with `resumeFashionTurn(...)` and the user's decisions. Skill loading itself requires no approval because it reads bundled instructions and performs no external action.
@@ -116,3 +131,5 @@ Connect to `WS /api/voice/tts` and send:
 The server returns `ready` with PCM format metadata, binary PCM16LE audio chunks, then `done`; failures use `error`. The browser must wait until all queued PCM buffers finish playing before resuming ASR.
 
 Activity, commentary, deltas, artifacts, errors, and approval prompts are never sent to TTS. Only the completed turn's `result.text` is spoken.
+
+Real-time final-answer deltas improve webpage time to first visible text. They do not reduce tool/model completion time, and TTS still waits for the complete authoritative result.

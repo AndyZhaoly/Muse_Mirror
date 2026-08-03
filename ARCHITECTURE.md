@@ -62,3 +62,24 @@ Ordinary outfit review is a Skill. `verify_outfit_quality` remains a Tool only f
 ## Approval resume
 
 Sensitive tools can pause the run through Agents SDK approvals. The serialized RunState is resumed after a user decision rather than restarting the conversation turn.
+
+## OpenAI final-answer streaming
+
+The Muse OpenAI runtime keeps one Responses API tool loop and tracks every streamed message item by `item_id` / `output_index` and assistant `phase`.
+
+```text
+Responses stream
+  ├─ commentary message       → commentary UI only
+  ├─ function call            → runtime tool lifecycle
+  └─ final_answer text delta  → onDelta → SSE delta → live assistant text
+                                      ↓
+                              response completed
+                                      ↓
+                     grounding and product-policy calibration
+                                      ↓
+                          authoritative result.text
+```
+
+Only text explicitly associated with `phase: "final_answer"` is emitted incrementally. Unknown-phase text is buffered until its phase is known; unresolved text is never guessed from wording and falls back to one complete response after completion. The runtime still collects the complete response output for stateless tool replay, incomplete handling, grounding, history, and final result construction.
+
+Automatic retry is allowed only before any final-answer delta has become visible. Once visible text has been emitted, a failed stream ends safely instead of silently restarting and duplicating the answer. Trace mode records timing milestones and opaque IDs only; it never records prompts, reasoning, images, credentials, or audio.
