@@ -63,3 +63,56 @@ Sensitive Tools can return `status: "approval_required"`, approval items, and `s
 - `notice`: limitation, error, or disclaimer.
 
 The model should not hand-write artifact URLs in its natural-language response.
+
+## Voice transport
+
+Voice input and output wrap the existing turn API; they do not create a second conversation or a second Agent runtime.
+
+### Capability status
+
+`GET /api/voice/status` returns provider-independent readiness without credentials:
+
+```json
+{
+  "ok": true,
+  "mode": "semi_duplex",
+  "asr": {
+    "provider": "volcengine",
+    "configured": true,
+    "ready": true,
+    "sampleRate": 16000,
+    "resourceId": "volc.seedasr.sauc.duration"
+  },
+  "tts": {
+    "provider": "volcengine",
+    "configured": true,
+    "ready": true,
+    "sampleRate": 24000,
+    "model": "seed-tts-2.0-standard",
+    "resourceId": "seed-tts-2.0",
+    "speakerConfigured": true
+  }
+}
+```
+
+### Streaming ASR WebSocket
+
+Connect to `WS /api/voice/asr` and send:
+
+```json
+{"type":"start","language":"zh-CN","format":"pcm_s16le","sampleRate":16000,"channels":1}
+```
+
+After `{"type":"ready"}`, send binary PCM16LE mono chunks. End the utterance with `{"type":"stop"}`. Server JSON events are `ready`, `partial`, `final`, `utterance_end`, and `error`. Only a non-empty `final` transcript enters `/api/fashion/turn/stream`; partial transcripts are temporary UI state.
+
+### Streaming TTS WebSocket
+
+Connect to `WS /api/voice/tts` and send:
+
+```json
+{"type":"start","text":"Muse 的最终回答"}
+```
+
+The server returns `ready` with PCM format metadata, binary PCM16LE audio chunks, then `done`; failures use `error`. The browser must wait until all queued PCM buffers finish playing before resuming ASR.
+
+Activity, commentary, deltas, artifacts, errors, and approval prompts are never sent to TTS. Only the completed turn's `result.text` is spoken.

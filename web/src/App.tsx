@@ -34,6 +34,7 @@ import {
 	  type TurnRequest,
   type UserMemory,
 	} from './agentClient';
+import { useVoiceSession } from './voice/useVoiceSession';
 
 type CameraState = 'idle' | 'requesting' | 'active' | 'paused' | 'error';
 type VisualMode =
@@ -53,7 +54,10 @@ type IconName =
   | 'check'
   | 'sun'
   | 'chevron'
-  | 'image';
+  | 'image'
+  | 'mic';
+
+type MessageSource = 'text' | 'voice';
 
 type Message = {
   id: string;
@@ -185,6 +189,20 @@ function imagePreviewLabel(artifact: Extract<AgentArtifact, { type: 'image' }>):
   return 'AI 上身预览 · 仅供视觉参考';
 }
 
+function voiceStatusLabel(state: ReturnType<typeof useVoiceSession>['state']): string {
+  const labels = {
+    disabled: '语音模式未开启',
+    idle: '正在准备聆听',
+    requesting_permission: '正在请求麦克风权限',
+    listening: '正在聆听',
+    recognizing: '正在确认你说的话',
+    thinking: 'Muse 正在回复',
+    speaking: 'Muse 正在说话',
+    error: '语音暂不可用',
+  } as const;
+  return labels[state];
+}
+
 async function loadCanvasImage(src: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
     const image = new Image();
@@ -307,6 +325,7 @@ function Icon({ name, size = 18 }: { name: IconName; size?: number }) {
     sun: <><circle cx="12" cy="12" r="3.5"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></>,
     chevron: <path d="m9 18 6-6-6-6"/>,
     image: <><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8.5" cy="9" r="1.5"/><path d="m4 17 4.5-4.5 3.5 3 2.5-2.5L20 18"/></>,
+    mic: <><rect x="9" y="3" width="6" height="12" rx="3"/><path d="M5.5 11.5a6.5 6.5 0 0 0 13 0M12 18v3M9 21h6"/></>,
   };
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -1742,7 +1761,10 @@ function App() {
     }
   };
 
-  const sendAgentMessage = async (text: string) => {
+  const sendAgentMessage = async (
+    text: string,
+    source: MessageSource,
+  ): Promise<AgentTurnResult | undefined> => {
     const capturedImageDataUrl =
       cameraState === 'active' && streamRef.current ? takeSnapshot(1280, 0.85) : null;
     const stylingOverrideForTurn = pendingStylingOverride;
@@ -1777,6 +1799,7 @@ function App() {
         {
           sessionId,
           userId,
+          inputSource: source,
           conversationId,
           temporary: temporaryChat,
           message: text,
@@ -1829,9 +1852,11 @@ function App() {
       setPendingPreferenceUiEvents([]);
       applyAgentResult(result, assistantId);
       void refreshConversations();
+      return result;
     } catch (error) {
       clearWaitingState();
       runAgentFailure(error, assistantId);
+      return undefined;
     } finally {
       if (typingTimerRef.current) {
         window.clearTimeout(typingTimerRef.current);
@@ -1974,31 +1999,44 @@ function App() {
     }));
   };
 
+  const submitUserMessage = async (
+    message: string,
+    source: MessageSource,
+  ): Promise<AgentTurnResult | undefined> => {
+    const value = message.trim();
+    if (!value) return;
+    if (pendingApproval) {
+      const approvalReply = parsePendingApprovalReply(value);
+      if (approvalReply === 'include' || approvalReply === 'conceal') {
+        addMessage({ role: 'user', text: value });
+        await approveTryOn(approvalReply);
+        return undefined;
+      }
+      if (approvalReply === 'cancel') {
+        addMessage({ role: 'user', text: value });
+        await cancelTryOn();
+        return undefined;
+      }
+      if (approvalReply === 'needs_face_choice') {
+        addMessage({ role: 'user', text: value });
+        addMessage({ role: 'assistant', text: '可以继续，但我还需要你选一下：带脸生成，还是不露脸只看穿搭？你也可以直接点下面的按钮。' });
+        return undefined;
+      }
+    }
+    return sendAgentMessage(value, source);
+  };
+
   const submitMessage = (event: FormEvent) => {
     event.preventDefault();
     const value = draft.trim();
     if (!value) return;
     setDraft('');
-    if (pendingApproval) {
-      const approvalReply = parsePendingApprovalReply(value);
-      if (approvalReply === 'include' || approvalReply === 'conceal') {
-        addMessage({ role: 'user', text: value });
-        void approveTryOn(approvalReply);
-        return;
-      }
-      if (approvalReply === 'cancel') {
-        addMessage({ role: 'user', text: value });
-        void cancelTryOn();
-        return;
-      }
-      if (approvalReply === 'needs_face_choice') {
-        addMessage({ role: 'user', text: value });
-        addMessage({ role: 'assistant', text: '可以继续，但我还需要你选一下：带脸生成，还是不露脸只看穿搭？你也可以直接点下面的按钮。' });
-        return;
-      }
-    }
-    void sendAgentMessage(value);
+    void submitUserMessage(value, 'text');
   };
+
+  const voice = useVoiceSession({
+    submitMessage: (message) => submitUserMessage(message, 'voice'),
+  });
 
   const visualTabs = useMemo(() => [
     { id: 'live' as const, label: '实时镜子' },
@@ -2022,7 +2060,7 @@ function App() {
           visualHistory={visualHistory}
           compareVisual={compareVisual}
           onCompare={() => setCompareVisual((value) => !value)}
-          onRestore={() => { void sendAgentMessage('还是上一版好，帮我恢复上一版视觉结果'); }}
+          onRestore={() => { void submitUserMessage('还是上一版好，帮我恢复上一版视觉结果', 'text'); }}
           onEdit={() => setDraft('把当前视觉版本里的外套换成黑色')}
           onSelect={(artifact) => {
             setStageArtifact({ kind: 'image', artifact });
@@ -2179,11 +2217,32 @@ function App() {
           </div>
 
           <div className="agent-composer-area">
+            {(voice.enabled || voice.partialTranscript || voice.lastError) && (
+              <div className={`voice-session voice-${voice.state}`} aria-live="polite">
+                <span className="voice-session-dot" />
+                <div>
+                  <strong>{voiceStatusLabel(voice.state)}</strong>
+                  {voice.partialTranscript && <span>{voice.partialTranscript}</span>}
+                  {!voice.partialTranscript && voice.lastError && <span>{voice.lastError}</span>}
+                </div>
+              </div>
+            )}
             <form className="composer" onSubmit={submitMessage}>
               <button type="button" className="composer-icon" aria-label="上传图片"><Icon name="image" size={19} /></button>
               <input value={draft} onChange={(event) => setDraft(event.target.value)} placeholder="跟 Muse 说点什么..." aria-label="输入消息" />
+              <button
+                type="button"
+                className={`voice-button ${voice.enabled ? 'is-active' : ''} voice-${voice.state}`}
+                aria-label={voice.enabled ? '停止或关闭语音模式' : '开启语音模式'}
+                aria-pressed={voice.enabled}
+                title={voice.available ? voiceStatusLabel(voice.state) : '语音服务尚未配置'}
+                onClick={voice.toggle}
+              >
+                <Icon name="mic" size={18} />
+              </button>
               <button className="send-button" type="submit" aria-label="发送消息"><Icon name="send" size={18} /></button>
             </form>
+            <span className="voice-privacy">摄像头默认不录音。只有开启语音模式后才会使用麦克风；音频用于实时识别，不在本地持久化保存。</span>
             <span className={`mock-note transport-${transport}`}>{statusNote}</span>
           </div>
         </aside>

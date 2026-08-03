@@ -12,6 +12,7 @@ import {
   ensureGemma4Endpoint,
 } from './gemma4Tunnel.js';
 import { ProviderReadinessCache } from './providerReadiness.js';
+import { attachVoiceGateway } from './voiceGateway.js';
 import { extractPreferenceIntents } from '../runtime/memoryExtractor.js';
 import {
   defaultMemoryPolicy,
@@ -55,6 +56,7 @@ const runtime =
       : new OpenAIMuseRuntime({ config });
 
 const port = Number(process.env.PORT ?? process.env.FASHION_AGENT_WEB_PORT ?? 8787);
+let voiceGateway: ReturnType<typeof attachVoiceGateway> | undefined;
 
 interface WebTurnRequest extends Omit<FashionTurnInput, 'attachments'> {
   attachments?: AttachmentInput[];
@@ -803,6 +805,10 @@ async function route(req: http.IncomingMessage, res: http.ServerResponse): Promi
       });
       return;
     }
+    if (req.method === 'GET' && url.pathname === '/api/voice/status') {
+      jsonResponse(res, 200, { ok: true, ...voiceGateway?.getStatus() });
+      return;
+    }
     if (req.method === 'GET' && url.pathname === '/api/fashion/perception/status') {
       handlePerceptionStatus(url, res);
       return;
@@ -865,6 +871,7 @@ async function route(req: http.IncomingMessage, res: http.ServerResponse): Promi
 const server = http.createServer((req, res) => {
   void route(req, res);
 });
+voiceGateway = attachVoiceGateway(server, { config: config.voice });
 
 server.listen(port, () => {
   console.log(
@@ -873,6 +880,7 @@ server.listen(port, () => {
 });
 
 function shutdown(): void {
+  voiceGateway?.close();
   closeGemma4Tunnel();
   void runtime.close();
   void memoryStore.close();
