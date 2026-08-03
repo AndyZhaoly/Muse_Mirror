@@ -213,7 +213,10 @@ export function loadConfig(): AppConfig {
   const gemma4OllamaModel = process.env.GEMMA4_OLLAMA_MODEL ?? 'gemma4:26b';
   const openaiAgentModel = process.env.OPENAI_AGENT_MODEL ?? 'gpt-5.4';
   const agentProvider = providerEnv(process.env.FASHION_AGENT_LLM_PROVIDER);
-  const mockTools = boolEnv('FASHION_AGENT_MOCK_TOOLS', true);
+  // Real providers are the product default. Mock behavior must always be
+  // explicitly enabled so a missing deployment setting cannot fabricate
+  // camera observations or generated images.
+  const mockTools = boolEnv('FASHION_AGENT_MOCK_TOOLS', false);
   const demo2ProductImageDir = path.resolve(
     process.env.FASHION_AGENT_DEMO2_PRODUCT_IMAGE_DIR ??
       './data/demo2-product-images',
