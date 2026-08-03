@@ -458,9 +458,11 @@ async function handleTurnStream(
   const requestId = makeId('stream');
   const startedAt = performance.now();
   let stage = 'read_request';
-  sseHeaders(res);
+  let sseStarted = false;
   try {
     const input = (await readJson(req)) as WebTurnRequest;
+    sseHeaders(res);
+    sseStarted = true;
     stage = 'runtime_ready';
     await ensureRuntimeReady();
     stage = 'prepare_turn';
@@ -504,8 +506,12 @@ async function handleTurnStream(
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unexpected server error.';
     logSafeStreamError(requestId, stage, error);
-    writeSse(res, 'error', { error: message });
-    res.end();
+    if (sseStarted) {
+      writeSse(res, 'error', { error: message });
+      res.end();
+    } else {
+      jsonResponse(res, 400, { error: message });
+    }
   }
 }
 
