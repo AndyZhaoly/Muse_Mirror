@@ -53,11 +53,7 @@ services:
         value: volcengine
       - key: FASHION_AGENT_TTS_PROVIDER
         value: volcengine
-      - key: VOLC_SPEECH_APP_ID
-        sync: false
       - key: VOLC_SPEECH_APP_KEY
-        sync: false
-      - key: VOLC_SPEECH_ACCESS_KEY
         sync: false
       - key: VOLC_ASR_ENDPOINT
         value: wss://openspeech.bytedance.com/api/v3/sauc/bigmodel
@@ -70,8 +66,8 @@ services:
       - key: VOLC_TTS_MODEL
         value: seed-tts-2.0-standard
       - key: VOLC_TTS_SPEAKER_ID
-        value: zh_male_taocheng_uranus_bigtts
+        sync: false
       - key: MUSE_TEAM_DEMO_ACCESS_CODE
         sync: false
       - key: MUSE_TEAM_DEMO_SESSION_SECRET
-        sync: false
+        generateValue: true

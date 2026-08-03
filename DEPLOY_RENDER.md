@@ -21,15 +21,13 @@ Set these in Render's secret environment-variable form:
 ```text
 OPENAI_API_KEY
 MUSE_TEAM_DEMO_ACCESS_CODE
-MUSE_TEAM_DEMO_SESSION_SECRET
-VOLC_SPEECH_APP_ID
 VOLC_SPEECH_APP_KEY
-VOLC_SPEECH_ACCESS_KEY
+VOLC_TTS_SPEAKER_ID
 ```
 
-`MUSE_TEAM_DEMO_SESSION_SECRET` should be a new high-entropy random string. The team access code is shared with testers; the session secret is never shared and only signs HttpOnly cookies.
+Render generates `MUSE_TEAM_DEMO_SESSION_SECRET` from the Blueprint. The team access code is shared with testers; the generated session secret is never shared and only signs HttpOnly cookies.
 
-The Volcengine account can use the modern app-key path without a legacy app ID. If the enabled resource requires only `VOLC_SPEECH_APP_KEY`, leave unused credential fields empty in Render. Keep `VOLC_ASR_RESOURCE_ID`, `VOLC_TTS_RESOURCE_ID`, and `VOLC_TTS_SPEAKER_ID` aligned with capabilities enabled in the Volcengine console.
+This deployment uses Volcengine's API-key path, so only `VOLC_SPEECH_APP_KEY` is required for speech authentication. `VOLC_TTS_SPEAKER_ID` is entered separately because it must match a speaker enabled for the account. The application still supports legacy App ID plus Access Key credentials for other environments, but this Blueprint does not request unused legacy values.
 
 ## Local Docker smoke test
 
