@@ -1023,6 +1023,16 @@ button:focus-visible, input:focus-visible { outline: 3px solid rgba(102, 112, 90
 .agent-composer-area { flex: 0 0 auto; padding: 10px 14px 13px; border-top: 1px solid var(--line); background: rgba(255,253,248,.93); }
 .composer { height: 48px; display: flex; align-items: center; gap: 8px; padding: 5px 5px 5px 8px; border: 1px solid rgba(65,57,46,.14); border-radius: 18px; background: #fff; box-shadow: 0 8px 24px rgba(51,43,34,.06); }
 .composer-icon { width: 32px; height: 32px; flex: 0 0 auto; display: grid; place-items: center; border: 0; background: transparent; color: var(--muted); }
+.voice-button { width: 34px; height: 34px; flex: 0 0 auto; display: grid; place-items: center; border: 1px solid rgba(65,57,46,.12); border-radius: 12px; background: #f6f2ea; color: var(--muted); transition: background .18s ease, color .18s ease, border-color .18s ease; }
+.voice-button.is-active { color: #fff; background: #697557; border-color: #697557; }
+.voice-button.voice-listening { animation: voicePulse 1.5s ease-in-out infinite; }
+.voice-session { display: flex; align-items: flex-start; gap: 8px; min-height: 36px; margin: 0 4px 8px; padding: 8px 10px; border-radius: 12px; background: #f2f4ed; color: #58604f; }
+.voice-session-dot { width: 8px; height: 8px; flex: 0 0 auto; margin-top: 4px; border-radius: 50%; background: #829073; }
+.voice-session > div { min-width: 0; display: grid; gap: 2px; }
+.voice-session strong { font-size: 9px; font-weight: 700; }
+.voice-session span { overflow-wrap: anywhere; color: var(--muted); font-size: 10px; line-height: 1.4; }
+.voice-session.voice-error { background: #f7ece8; color: #9b5e54; }
+.voice-privacy { display: block; padding: 7px 8px 0; color: #a39b90; font-size: 8px; line-height: 1.45; text-align: center; }
 .composer input { flex: 1; min-width: 0; border: 0; outline: 0; background: transparent; color: var(--ink); font-size: 11px; }
 .composer input::placeholder { color: #aaa296; }
 .send-button { width: 36px; height: 36px; flex: 0 0 auto; border: 0; border-radius: 13px; display: grid; place-items: center; background: var(--espresso); color: white; }
@@ -1035,6 +1045,7 @@ button:focus-visible, input:focus-visible { outline: 3px solid rgba(102, 112, 90
 @keyframes scan { from { transform: translateY(0); } to { transform: translateY(41px); } }
 @keyframes pulse { 0%,100% { transform: scale(.9); opacity: .7; } 50% { transform: scale(1.08); opacity: 1; } }
 @keyframes orbit { to { transform: rotate(360deg); } }
+@keyframes voicePulse { 0%,100% { box-shadow: 0 0 0 0 rgba(105,117,87,.22); } 50% { box-shadow: 0 0 0 7px rgba(105,117,87,0); } }
 
 @media (max-width: 1100px) {
 	  .workspace { grid-template-columns: minmax(0, 1.35fr) minmax(340px, .9fr); }

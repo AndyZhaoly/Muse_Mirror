@@ -51,6 +51,21 @@ const result = await runFashionTurn({
 }
 ```
 
+## Streaming turn events
+
+`POST /api/fashion/turn/stream` uses the existing SSE event names:
+
+- `commentary`: an optional public pre-tool sentence; it is not assistant message text.
+- `activity`: actual runtime/tool lifecycle events.
+- `delta`: an incremental OpenAI `final_answer` text fragment, written as soon as it arrives.
+- `artifact`: grounded UI artifacts.
+- `result`: the completed, authoritative turn result.
+- `error`: a product-safe failure.
+
+Clients may concatenate `delta` payloads for immediate display, but must replace that temporary text with `result.text` when `result` arrives. `result.text` may differ because the runtime applies visual grounding, closet-gap, and fit-uncertainty guards after model completion. Only `result.text` is stored in conversation history.
+
+If the provider does not expose a stream or an output item's phase cannot be safely identified, the server sends one complete `delta` after completion. Commentary, reasoning, function arguments, and encrypted reasoning content never enter `delta`.
+
 ## Approval required and resume
 
 Sensitive Tools can return `status: "approval_required"`, approval items, and `serializedRunState`. Resume with `resumeFashionTurn(...)` and the user's decisions. Skill loading itself requires no approval because it reads bundled instructions and performs no external action.
@@ -63,3 +78,58 @@ Sensitive Tools can return `status: "approval_required"`, approval items, and `s
 - `notice`: limitation, error, or disclaimer.
 
 The model should not hand-write artifact URLs in its natural-language response.
+
+## Voice transport
+
+Voice input and output wrap the existing turn API; they do not create a second conversation or a second Agent runtime.
+
+### Capability status
+
+`GET /api/voice/status` returns provider-independent readiness without credentials:
+
+```json
+{
+  "ok": true,
+  "mode": "semi_duplex",
+  "asr": {
+    "provider": "volcengine",
+    "configured": true,
+    "ready": true,
+    "sampleRate": 16000,
+    "resourceId": "volc.seedasr.sauc.duration"
+  },
+  "tts": {
+    "provider": "volcengine",
+    "configured": true,
+    "ready": true,
+    "sampleRate": 24000,
+    "model": "seed-tts-2.0-standard",
+    "resourceId": "seed-tts-2.0",
+    "speakerConfigured": true
+  }
+}
+```
+
+### Streaming ASR WebSocket
+
+Connect to `WS /api/voice/asr` and send:
+
+```json
+{"type":"start","language":"zh-CN","format":"pcm_s16le","sampleRate":16000,"channels":1}
+```
+
+After `{"type":"ready"}`, send binary PCM16LE mono chunks. End the utterance with `{"type":"stop"}`. Server JSON events are `ready`, `partial`, `final`, `utterance_end`, and `error`. Only a non-empty `final` transcript enters `/api/fashion/turn/stream`; partial transcripts are temporary UI state.
+
+### Streaming TTS WebSocket
+
+Connect to `WS /api/voice/tts` and send:
+
+```json
+{"type":"start","text":"Muse 的最终回答"}
+```
+
+The server returns `ready` with PCM format metadata, binary PCM16LE audio chunks, then `done`; failures use `error`. The browser must wait until all queued PCM buffers finish playing before resuming ASR.
+
+Activity, commentary, deltas, artifacts, errors, and approval prompts are never sent to TTS. Only the completed turn's `result.text` is spoken.
+
+Real-time final-answer deltas improve webpage time to first visible text. They do not reduce tool/model completion time, and TTS still waits for the complete authoritative result.

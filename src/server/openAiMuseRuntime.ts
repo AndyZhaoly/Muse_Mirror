@@ -228,6 +228,14 @@ interface ToolLedger {
 interface ConsumedResponse {
   response: any;
   outputText: string;
+  streamedFinalAnswerText: string;
+  didStreamFinalAnswer: boolean;
+}
+
+interface ResponseStreamObserver {
+  onStreamEvent?: () => void;
+  onFinalAnswerDelta?: (delta: string) => void;
+  hasVisibleFinalAnswerDelta?: () => boolean;
 }
 
 class TryOnApprovalRequired extends Error {
@@ -365,6 +373,7 @@ export class OpenAIMuseRuntime {
   readonly stateStore: SessionStateStore;
   private readonly histories = new Map<string, ChatMessage[]>();
   private readonly mirrorFrameJobs = new Map<string, Promise<void>>();
+  private readonly turnTimingStarts = new Map<string, number>();
   private readonly responseCreate?: (args: any) => Promise<any>;
 
   constructor(options?: {
@@ -404,6 +413,8 @@ export class OpenAIMuseRuntime {
       personalization: input.personalizationContext,
     };
     currentTurnId = context.turnId;
+    this.turnTimingStarts.set(context.turnId, performance.now());
+    this.traceTiming(context, 'turn_started');
     context.state.activeTurnId = context.turnId;
     for (const attachment of input.attachments ?? []) {
       this.services.imageStore.registerAttachment(context, attachment);
@@ -430,7 +441,19 @@ export class OpenAIMuseRuntime {
 
     try {
       for (let round = 0; round < MAX_TOOL_ROUNDS; round += 1) {
-        const consumed = await this.callResponses(responseInput, context, round);
+        const forwardDelta = input.onDelta;
+        const consumed = await this.callResponses(responseInput, context, round, {
+          hasVisibleFinalAnswerDelta: () => streamedFinalText,
+          onFinalAnswerDelta: forwardDelta
+            ? (delta) => {
+                if (!delta) return;
+                const firstDelta = !streamedFinalText;
+                streamedFinalText = true;
+                if (firstDelta) this.traceTiming(context, 'first_final_answer_delta', { round });
+                forwardDelta(delta);
+              }
+            : undefined,
+        });
         const response = consumed.response;
         responseInput.push(...(Array.isArray(response.output) ? response.output : []));
 
@@ -472,10 +495,14 @@ export class OpenAIMuseRuntime {
       }
       emit(activityItem('model', 'error', 'Muse 暂时没有成功返回', '没有展示模拟答案。'));
       if (this.config.trace) logSafeProviderError('responses_loop', error);
+      this.traceTiming(context, 'turn_failed');
+      this.turnTimingStarts.delete(context.turnId);
       throw new Error(productErrorMessage(error));
     }
 
     if (!finalText.trim()) {
+      this.traceTiming(context, 'turn_failed');
+      this.turnTimingStarts.delete(context.turnId);
       throw new Error('Muse 这轮没有成功返回，所以我不展示模拟答案。');
     }
     finalText = enforceGroundedFinalText(finalText.trim(), context, ledger);
@@ -487,6 +514,7 @@ export class OpenAIMuseRuntime {
     const artifacts = ledger.artifacts;
     const grounding = this.buildGrounding(context, ledger, artifacts);
     const decisionSummary = buildOpenAIDecisionSummary(context, ledger, grounding);
+    this.traceTiming(context, 'final_result_ready');
     return this.completedTurn(
       input,
       context,
@@ -773,6 +801,7 @@ export class OpenAIMuseRuntime {
     input: any[],
     context: FashionAgentContext,
     round: number,
+    observer: ResponseStreamObserver,
   ): Promise<ConsumedResponse> {
     const request = {
       model: this.config.openaiAgentModel,
@@ -787,14 +816,50 @@ export class OpenAIMuseRuntime {
         ? { max_output_tokens: this.config.openaiMaxOutputTokens }
         : {}),
     };
-    try {
-      const stream = await this.createResponse(request);
-      return consumeResponseStream(stream);
-    } catch (error) {
-      if (!isRetryableOpenAIError(error)) throw error;
-      const stream = await this.createResponse(request);
-      return consumeResponseStream(stream);
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      this.traceTiming(context, 'model_round_started', { round, attempt });
+      let receivedStreamEvent = false;
+      try {
+        const stream = await this.createResponse(request);
+        const consumed = await consumeResponseStream(stream, {
+          ...observer,
+          onStreamEvent: () => {
+            if (!receivedStreamEvent) {
+              receivedStreamEvent = true;
+              this.traceTiming(context, 'first_stream_event', { round, attempt });
+            }
+            observer.onStreamEvent?.();
+          },
+        });
+        this.traceTiming(context, 'model_round_completed', { round, attempt });
+        return consumed;
+      } catch (error) {
+        const mayRetry =
+          attempt === 0 &&
+          isRetryableOpenAIError(error) &&
+          !observer.hasVisibleFinalAnswerDelta?.();
+        if (!mayRetry) throw error;
+        this.traceTiming(context, 'model_round_retrying', { round, attempt });
+      }
     }
+    throw new Error('OpenAI response retry exhausted.');
+  }
+
+  private traceTiming(
+    context: FashionAgentContext,
+    event: string,
+    detail: Record<string, unknown> = {},
+  ): void {
+    if (!this.config.trace) return;
+    const startedAt = this.turnTimingStarts.get(context.turnId);
+    console.info(
+      `[MuseTiming] ${JSON.stringify({
+        turnId: context.turnId,
+        event,
+        elapsedMs: startedAt === undefined ? undefined : Math.round(performance.now() - startedAt),
+        ...detail,
+      })}`,
+    );
   }
 
   private async createResponse(request: any): Promise<any> {
@@ -887,6 +952,7 @@ ${JSON.stringify(context.personalization ?? { persistentMemories: [], contextOve
   ): Promise<unknown> {
     const started = performance.now();
     const activityId = toolActivityId(call);
+    this.traceTiming(args.context, 'tool_execution_started', { tool: call.name });
     args.emit(toolLifecycleActivity(call.name, 'started', activityId));
     const stageArgs = {
       ...args,
@@ -903,6 +969,7 @@ ${JSON.stringify(context.personalization ?? { persistentMemories: [], contextOve
         elapsedMs: duration,
       });
       args.emit(toolLifecycleActivity(call.name, 'completed', activityId, duration));
+      this.traceTiming(args.context, 'tool_execution_completed', { tool: call.name, toolElapsedMs: duration });
       return { ok: true, data };
     } catch (error) {
       const duration = elapsedMs(started);
@@ -919,6 +986,7 @@ ${JSON.stringify(context.personalization ?? { persistentMemories: [], contextOve
         elapsedMs: duration,
       });
       args.emit(toolLifecycleActivity(call.name, 'failed', activityId, duration));
+      this.traceTiming(args.context, 'tool_execution_failed', { tool: call.name, toolElapsedMs: duration });
       return { ok: false, error: message };
     }
   }
@@ -3544,6 +3612,8 @@ ${JSON.stringify(context.personalization ?? { persistentMemories: [], contextOve
     this.stateStore.set(input.sessionId, context.state);
     this.appendHistory(input.sessionId, input.message, text);
     if (!streamedText) input.onDelta?.(text);
+    this.traceTiming(context, 'turn_completed');
+    this.turnTimingStarts.delete(context.turnId);
     return {
       status: 'completed',
       text,
@@ -3575,6 +3645,8 @@ ${JSON.stringify(context.personalization ?? { persistentMemories: [], contextOve
       ? '当前照片没有完整全身。要生成 AI 全身概念预览，需要使用当前镜子照片，并由 AI 推测下半身、腿长和鞋部效果。要带脸，还是不露脸？'
       : '生成上身预览需要使用当前镜子照片。要带脸，还是只看穿搭不露脸？';
     this.appendHistory(input.sessionId, input.message, text);
+    this.traceTiming(context, 'turn_completed', { status: 'approval_required' });
+    this.turnTimingStarts.delete(context.turnId);
     return {
       status: 'approval_required',
       approvals: [
@@ -3697,18 +3769,80 @@ function compactOutfitSnapshotForPrompt(snapshot: OutfitSnapshot): unknown {
   };
 }
 
-async function consumeResponseStream(streamOrResponse: any): Promise<ConsumedResponse> {
+type ResponseMessagePhase = 'commentary' | 'final_answer';
+
+interface PendingResponseTextDelta {
+  itemId?: string;
+  outputIndex?: number;
+  delta: string;
+}
+
+async function consumeResponseStream(
+  streamOrResponse: any,
+  observer: ResponseStreamObserver = {},
+): Promise<ConsumedResponse> {
   if (!streamOrResponse || typeof streamOrResponse[Symbol.asyncIterator] !== 'function') {
     return {
       response: streamOrResponse,
       outputText: streamOrResponse?.output_text ?? textFromOutput(streamOrResponse?.output ?? []),
+      streamedFinalAnswerText: '',
+      didStreamFinalAnswer: false,
     };
   }
   let outputText = '';
+  let streamedFinalAnswerText = '';
   let response: any;
+  const phaseByItemId = new Map<string, ResponseMessagePhase>();
+  const phaseByOutputIndex = new Map<number, ResponseMessagePhase>();
+  const pendingDeltas: PendingResponseTextDelta[] = [];
+
+  const phaseFor = (chunk: PendingResponseTextDelta): ResponseMessagePhase | undefined => {
+    if (chunk.itemId) {
+      const phase = phaseByItemId.get(chunk.itemId);
+      if (phase) return phase;
+    }
+    if (chunk.outputIndex !== undefined) return phaseByOutputIndex.get(chunk.outputIndex);
+    return undefined;
+  };
+  const flushPending = (discardUnknown = false): void => {
+    while (pendingDeltas.length > 0) {
+      const chunk = pendingDeltas[0];
+      if (!chunk) break;
+      const phase = phaseFor(chunk);
+      if (!phase && !discardUnknown) break;
+      pendingDeltas.shift();
+      if (phase !== 'final_answer') continue;
+      streamedFinalAnswerText += chunk.delta;
+      observer.onFinalAnswerDelta?.(chunk.delta);
+    }
+  };
+  const rememberPhase = (
+    value: unknown,
+    itemId?: unknown,
+    outputIndex?: unknown,
+  ): void => {
+    const phase = responseMessagePhase(value);
+    if (!phase) return;
+    if (typeof itemId === 'string' && itemId) phaseByItemId.set(itemId, phase);
+    if (typeof outputIndex === 'number') phaseByOutputIndex.set(outputIndex, phase);
+    flushPending();
+  };
+
   for await (const event of streamOrResponse) {
+    observer.onStreamEvent?.();
+    const eventItem = event?.item;
+    const eventPart = event?.part;
+    rememberPhase(event, event?.item_id ?? eventItem?.id, event?.output_index);
+    rememberPhase(eventItem, event?.item_id ?? eventItem?.id, event?.output_index);
+    rememberPhase(eventPart, event?.item_id ?? eventItem?.id, event?.output_index);
     if (event?.type === 'response.output_text.delta' && typeof event.delta === 'string') {
       outputText += event.delta;
+      pendingDeltas.push({
+        itemId: typeof event.item_id === 'string' ? event.item_id : undefined,
+        outputIndex: typeof event.output_index === 'number' ? event.output_index : undefined,
+        delta: event.delta,
+      });
+      flushPending();
     }
     if (
       event?.type === 'response.completed' ||
@@ -3716,15 +3850,40 @@ async function consumeResponseStream(streamOrResponse: any): Promise<ConsumedRes
       event?.type === 'response.failed'
     ) {
       response = event.response;
+      rememberResponseOutputPhases(response, rememberPhase);
+      flushPending(true);
     }
   }
   if (!response && typeof streamOrResponse.finalResponse === 'function') {
     response = await streamOrResponse.finalResponse();
+    rememberResponseOutputPhases(response, rememberPhase);
   }
+  flushPending(true);
   return {
     response,
     outputText: response?.output_text ?? outputText ?? textFromOutput(response?.output ?? []),
+    streamedFinalAnswerText,
+    didStreamFinalAnswer: streamedFinalAnswerText.length > 0,
   };
+}
+
+function responseMessagePhase(value: unknown): ResponseMessagePhase | undefined {
+  if (!value || typeof value !== 'object') return undefined;
+  const candidate = value as { phase?: unknown; metadata?: { phase?: unknown } };
+  const phase = candidate.phase ?? candidate.metadata?.phase;
+  return phase === 'commentary' || phase === 'final_answer' ? phase : undefined;
+}
+
+function rememberResponseOutputPhases(
+  response: any,
+  remember: (value: unknown, itemId?: unknown, outputIndex?: unknown) => void,
+): void {
+  const output = Array.isArray(response?.output) ? response.output : [];
+  output.forEach((item: any, outputIndex: number) => {
+    remember(item, item?.id, outputIndex);
+    const content = Array.isArray(item?.content) ? item.content : [];
+    for (const part of content) remember(part, item?.id, outputIndex);
+  });
 }
 
 function extractFunctionCalls(response: any): OpenAIToolCall[] {

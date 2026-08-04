@@ -12,6 +12,9 @@ import {
   ensureGemma4Endpoint,
 } from './gemma4Tunnel.js';
 import { ProviderReadinessCache } from './providerReadiness.js';
+import { attachVoiceGateway } from './voiceGateway.js';
+import { writeSse } from './sse.js';
+import { makeId } from '../utils/ids.js';
 import { extractPreferenceIntents } from '../runtime/memoryExtractor.js';
 import {
   defaultMemoryPolicy,
@@ -55,6 +58,7 @@ const runtime =
       : new OpenAIMuseRuntime({ config });
 
 const port = Number(process.env.PORT ?? process.env.FASHION_AGENT_WEB_PORT ?? 8787);
+let voiceGateway: ReturnType<typeof attachVoiceGateway> | undefined;
 
 interface WebTurnRequest extends Omit<FashionTurnInput, 'attachments'> {
   attachments?: AttachmentInput[];
@@ -87,15 +91,6 @@ function sseHeaders(res: http.ServerResponse): void {
     'x-accel-buffering': 'no',
   });
   res.flushHeaders?.();
-}
-
-function writeSse(
-  res: http.ServerResponse,
-  event: 'activity' | 'commentary' | 'delta' | 'artifact' | 'result' | 'error',
-  payload: unknown,
-): void {
-  res.write(`event: ${event}\n`);
-  res.write(`data: ${JSON.stringify(payload)}\n\n`);
 }
 
 function textResponse(
@@ -445,6 +440,8 @@ async function handleTurnStream(
   req: http.IncomingMessage,
   res: http.ServerResponse,
 ): Promise<void> {
+  const requestId = makeId('stream');
+  const startedAt = performance.now();
   sseHeaders(res);
   try {
     const input = (await readJson(req)) as WebTurnRequest;
@@ -468,6 +465,7 @@ async function handleTurnStream(
         writeSse(res, 'artifact', normalizeArtifact(artifact));
       },
     });
+    const memoryStartedAt = performance.now();
     const finalized = await finalizeTurnMemory({
       input: prepared.input,
       result,
@@ -475,13 +473,34 @@ async function handleTurnStream(
       userMessage: prepared.userMessage,
       memoryPolicy: prepared.memoryPolicy,
     });
+    traceWebTiming(requestId, 'memory_finalize_completed', startedAt, {
+      memoryElapsedMs: Math.round(performance.now() - memoryStartedAt),
+    });
     writeSse(res, 'result', normalizeResult(finalized));
     res.end();
+    traceWebTiming(requestId, 'turn_completed', startedAt);
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unexpected server error.';
     writeSse(res, 'error', { error: message });
     res.end();
   }
+}
+
+function traceWebTiming(
+  requestId: string,
+  event: string,
+  startedAt: number,
+  detail: Record<string, unknown> = {},
+): void {
+  if (!config.trace) return;
+  console.info(
+    `[MuseTiming] ${JSON.stringify({
+      requestId,
+      event,
+      elapsedMs: Math.round(performance.now() - startedAt),
+      ...detail,
+    })}`,
+  );
 }
 
 async function handleConversations(
@@ -803,6 +822,10 @@ async function route(req: http.IncomingMessage, res: http.ServerResponse): Promi
       });
       return;
     }
+    if (req.method === 'GET' && url.pathname === '/api/voice/status') {
+      jsonResponse(res, 200, { ok: true, ...voiceGateway?.getStatus() });
+      return;
+    }
     if (req.method === 'GET' && url.pathname === '/api/fashion/perception/status') {
       handlePerceptionStatus(url, res);
       return;
@@ -865,6 +888,7 @@ async function route(req: http.IncomingMessage, res: http.ServerResponse): Promi
 const server = http.createServer((req, res) => {
   void route(req, res);
 });
+voiceGateway = attachVoiceGateway(server, { config: config.voice });
 
 server.listen(port, () => {
   console.log(
@@ -873,6 +897,7 @@ server.listen(port, () => {
 });
 
 function shutdown(): void {
+  voiceGateway?.close();
   closeGemma4Tunnel();
   void runtime.close();
   void memoryStore.close();

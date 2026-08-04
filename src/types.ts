@@ -1167,6 +1167,7 @@ export interface FashionAgentContext {
 export interface FashionTurnInput {
   sessionId: string;
   userId: string;
+  inputSource?: 'text' | 'voice';
   conversationId?: string;
   temporary?: boolean;
   message: string;

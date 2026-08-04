@@ -11,6 +11,23 @@ export type FashionAgentRuntimeProvider = 'muse' | 'legacy';
 export type ImageProvider = 'mock' | 'openai' | 'gemini';
 export type CapabilityProvider = 'local' | 'mock' | 'disabled';
 export type OpenAIReasoningEffort = 'minimal' | 'low' | 'medium' | 'high';
+export type SpeechProvider = 'volcengine' | 'disabled';
+
+export interface VoiceConfig {
+  asrProvider: SpeechProvider;
+  ttsProvider: SpeechProvider;
+  volcSpeechAppId: string;
+  volcSpeechAppKey: string;
+  volcSpeechAccessKey: string;
+  volcAsrEndpoint: string;
+  volcAsrResourceId: string;
+  volcAsrSampleRate: number;
+  volcTtsEndpoint: string;
+  volcTtsResourceId: string;
+  volcTtsModel: string;
+  volcTtsSpeakerId: string;
+  volcTtsSampleRate: number;
+}
 
 export interface AppConfig {
   runtimeProvider: FashionAgentRuntimeProvider;
@@ -49,6 +66,7 @@ export interface AppConfig {
   skillsDir: string;
   trace: boolean;
   visualQcEnabled: boolean;
+  voice: VoiceConfig;
 }
 
 function boolEnv(name: string, fallback: boolean): boolean {
@@ -147,6 +165,44 @@ function reasoningEffortEnv(value: string | undefined): OpenAIReasoningEffort {
   return 'low';
 }
 
+function speechProviderEnv(value: string | undefined): SpeechProvider {
+  return value?.trim().toLowerCase() === 'volcengine' ? 'volcengine' : 'disabled';
+}
+
+function numberFromEnv(
+  env: NodeJS.ProcessEnv,
+  name: string,
+  fallback: number,
+): number {
+  const value = env[name];
+  if (value === undefined) return fallback;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+export function loadVoiceConfig(env: NodeJS.ProcessEnv = process.env): VoiceConfig {
+  return {
+    asrProvider: speechProviderEnv(env.FASHION_AGENT_ASR_PROVIDER),
+    ttsProvider: speechProviderEnv(env.FASHION_AGENT_TTS_PROVIDER),
+    volcSpeechAppId: env.VOLC_SPEECH_APP_ID?.trim() ?? '',
+    volcSpeechAppKey: env.VOLC_SPEECH_APP_KEY?.trim() ?? '',
+    volcSpeechAccessKey: env.VOLC_SPEECH_ACCESS_KEY?.trim() ?? '',
+    volcAsrEndpoint:
+      env.VOLC_ASR_ENDPOINT?.trim() ??
+      'wss://openspeech.bytedance.com/api/v3/sauc/bigmodel',
+    volcAsrResourceId:
+      env.VOLC_ASR_RESOURCE_ID?.trim() ?? 'volc.seedasr.sauc.duration',
+    volcAsrSampleRate: numberFromEnv(env, 'VOLC_ASR_SAMPLE_RATE', 16000),
+    volcTtsEndpoint:
+      env.VOLC_TTS_ENDPOINT?.trim() ??
+      'wss://openspeech.bytedance.com/api/v3/tts/unidirectional/stream',
+    volcTtsResourceId: env.VOLC_TTS_RESOURCE_ID?.trim() ?? 'seed-tts-2.0',
+    volcTtsModel: env.VOLC_TTS_MODEL?.trim() ?? 'seed-tts-2.0-standard',
+    volcTtsSpeakerId: env.VOLC_TTS_SPEAKER_ID?.trim() ?? '',
+    volcTtsSampleRate: numberFromEnv(env, 'VOLC_TTS_SAMPLE_RATE', 24000),
+  };
+}
+
 function firstExistingPath(paths: string[]): string {
   return paths.find((candidate) => fs.existsSync(candidate)) ?? paths[paths.length - 1]!;
 }
@@ -157,7 +213,10 @@ export function loadConfig(): AppConfig {
   const gemma4OllamaModel = process.env.GEMMA4_OLLAMA_MODEL ?? 'gemma4:26b';
   const openaiAgentModel = process.env.OPENAI_AGENT_MODEL ?? 'gpt-5.4';
   const agentProvider = providerEnv(process.env.FASHION_AGENT_LLM_PROVIDER);
-  const mockTools = boolEnv('FASHION_AGENT_MOCK_TOOLS', true);
+  // Real providers are the product default. Mock behavior must always be
+  // explicitly enabled so a missing deployment setting cannot fabricate
+  // camera observations or generated images.
+  const mockTools = boolEnv('FASHION_AGENT_MOCK_TOOLS', false);
   const demo2ProductImageDir = path.resolve(
     process.env.FASHION_AGENT_DEMO2_PRODUCT_IMAGE_DIR ??
       './data/demo2-product-images',
@@ -238,6 +297,7 @@ export function loadConfig(): AppConfig {
     skillsDir: path.resolve(process.env.FASHION_AGENT_SKILLS_DIR ?? './skills'),
     trace: boolEnv('FASHION_AGENT_TRACE', false),
     visualQcEnabled: boolEnv('FASHION_AGENT_VISUAL_QC', true),
+    voice: loadVoiceConfig(),
   };
 }
 

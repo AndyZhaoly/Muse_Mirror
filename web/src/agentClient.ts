@@ -435,6 +435,7 @@ export type AgentTurnResult =
 export interface TurnRequest {
   sessionId: string;
   userId: string;
+  inputSource?: 'text' | 'voice';
   conversationId?: string;
   temporary?: boolean;
   message: string;
