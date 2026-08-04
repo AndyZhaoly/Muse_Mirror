@@ -12,7 +12,7 @@ This deployment is an internal smoke-test setup, not a production environment. T
 6. Apply the Blueprint and wait for the Docker build and `/healthz` check to pass.
 7. Open `https://<service>.onrender.com/healthz`, then open the root URL and sign in with the team access code.
 
-The Blueprint is pinned to `codex/render-team-demo-deploy` for this deployment PR. After merging and validating the PR, change `branch` to `main` if `main` should become the deployment source.
+The Blueprint tracks `main`, so the team demo deploys the latest validated release after deployment changes are merged.
 
 ## Required secrets
 

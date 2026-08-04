@@ -7,7 +7,7 @@ services:
     runtime: docker
     plan: free
     region: singapore
-    branch: codex/render-team-demo-deploy
+    branch: main
     numInstances: 1
     dockerfilePath: ./Dockerfile
     healthCheckPath: /healthz
