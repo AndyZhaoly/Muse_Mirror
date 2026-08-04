@@ -1,11 +1,15 @@
 .env
 .env.*
 .DS_Store
+.git
+.github
 *.log
+coverage
 node_modules
 web/node_modules
 dist
 web/dist
 out
 examples/captured
+*.zip
 *.tsbuildinfo

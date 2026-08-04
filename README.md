@@ -85,6 +85,8 @@ Open [http://localhost:8787](http://localhost:8787).
 
 Camera access works on `localhost`. A remote deployment must use HTTPS for browser camera permission.
 
+For the Free Render team-demo Blueprint, shared-passcode protection, required secrets, and smoke-test procedure, see [DEPLOY_RENDER.md](DEPLOY_RENDER.md).
+
 ### Optional voice mode
 
 Voice mode is a transport around the same Muse turn API and conversation history. It does not add a voice agent, planner, or intent router. The browser sends 16 kHz mono PCM to the backend ASR gateway; only the final transcript is submitted through the existing `/api/fashion/turn/stream` flow. After the turn completes, only `result.text` is sent to TTS and played as 24 kHz mono PCM.
@@ -140,6 +142,10 @@ FASHION_AGENT_MEMORY_DATA=./out/muse-memory-v1.json
 
 FASHION_AGENT_ASR_PROVIDER=disabled
 FASHION_AGENT_TTS_PROVIDER=disabled
+
+# Optional for a public team-demo URL
+MUSE_TEAM_DEMO_ACCESS_CODE=
+MUSE_TEAM_DEMO_SESSION_SECRET=
 ```
 
 `FASHION_AGENT_VISUAL_QC=false` reproduces the time-constrained demo behavior in which image QC does not block a generated result. Set it to `true` when you want failed visual checks to block artifacts.
@@ -167,15 +173,19 @@ Open [http://localhost:8080](http://localhost:8080).
 
 The Docker image includes the standalone wardrobe fixture and canonical garment images. Mount `/app/out` if you want generated artifacts and local conversation data to survive container replacement.
 
+The production server reads Render's `PORT`, binds `0.0.0.0`, and serves React, HTTP APIs, SSE, and ASR/TTS WebSockets from the same process. `GET /healthz` is intentionally independent of OpenAI and Volcengine readiness.
+
 ## Data and privacy boundaries
 
-- Live video stays in the browser. The app uploads individual still frames only when visual capability is active.
+- Continuous live video stays in the browser. While the mirror is active, the app can upload low-frequency still frames to the configured vision provider to maintain a current observation.
 - The camera does not record audio. Microphone access begins only after voice mode is enabled.
 - Raw ASR audio and streamed TTS audio are kept in memory only and are not written to disk by Muse Mirror.
 - Speech credentials remain on the backend and are never included in `/api/voice/status`.
 - OpenAI Responses calls use `store: false` in the Muse runtime.
 - Try-on requires photo-use permission. Synthetic full-body extension has a separate confirmation path.
 - Generated images, captured frames, memory data, and conversation data are written under ignored local directories and are not committed.
+- Team-demo access uses a signed HttpOnly cookie when `MUSE_TEAM_DEMO_ACCESS_CODE` is configured. The access code is never stored in browser localStorage.
+- Each browser stores a random `team_demo_<uuid>` identifier locally so text and voice share one history without sharing another tester's default identity. This UUID is an isolation key, not authentication.
 - AI concept items are labeled and are never presented as real products or closet items.
 - Try-on output is a styling preview, not a sizing, tailoring, or body-measurement guarantee.
 - Never commit `.env.local`. Rotate any API key that has appeared in chat, logs, screenshots, or terminal output.
@@ -183,6 +193,7 @@ The Docker image includes the standalone wardrobe fixture and canonical garment 
 ## Persistence and demo limitations
 
 - Conversation history and explicit memories use a local JSON store under `out/`.
+- Render Free storage is ephemeral; restarts, redeploys, and spin-down lifecycle events can remove `out/` data.
 - Live session, pending visual requests, approvals, and visual-version pointers are in memory and reset when the server restarts.
 - Weather is mocked by default.
 - Product search is disabled by default.

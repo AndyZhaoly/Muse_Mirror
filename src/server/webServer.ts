@@ -2,7 +2,6 @@ import fs from 'node:fs/promises';
 import { createReadStream } from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { loadConfig } from '../config.js';
 import { FashionAgentRuntime } from '../agent/runtime.js';
 import { GemmaFashionRuntime } from './gemmaFashionRuntime.js';
@@ -13,6 +12,11 @@ import {
 } from './gemma4Tunnel.js';
 import { ProviderReadinessCache } from './providerReadiness.js';
 import { attachVoiceGateway } from './voiceGateway.js';
+import { loadDemoAccessControl } from './demoAccess.js';
+import {
+  handleDeploymentRoute,
+  isLoginBootstrapRequest,
+} from './deploymentRoutes.js';
 import { writeSse } from './sse.js';
 import { makeId } from '../utils/ids.js';
 import { extractPreferenceIntents } from '../runtime/memoryExtractor.js';
@@ -42,10 +46,11 @@ import type {
   UserMemory,
 } from '../types.js';
 
-const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
+const rootDir = path.resolve(process.cwd());
 const webDistDir = path.join(rootDir, 'web/dist');
 const publicDir = path.join(rootDir, 'public');
 const config = loadConfig();
+const demoAccess = loadDemoAccessControl();
 let gemma4EndpointStatus = await ensureGemma4Endpoint(config);
 const providerReadiness = new ProviderReadinessCache(config);
 const memoryStore = new JsonMuseMemoryStore(config.memoryDataPath);
@@ -103,6 +108,16 @@ function textResponse(
     'cache-control': 'no-store',
   });
   res.end(body);
+}
+
+function requireUserId(
+  res: http.ServerResponse,
+  value: string | null | undefined,
+): string | undefined {
+  const userId = value?.trim();
+  if (userId) return userId;
+  jsonResponse(res, 400, { error: 'userId is required.' });
+  return undefined;
 }
 
 async function readJson(req: http.IncomingMessage): Promise<any> {
@@ -442,13 +457,20 @@ async function handleTurnStream(
 ): Promise<void> {
   const requestId = makeId('stream');
   const startedAt = performance.now();
-  sseHeaders(res);
+  let stage = 'read_request';
+  let sseStarted = false;
   try {
     const input = (await readJson(req)) as WebTurnRequest;
+    sseHeaders(res);
+    sseStarted = true;
+    stage = 'runtime_ready';
     await ensureRuntimeReady();
+    stage = 'prepare_turn';
     const prepared = await prepareTurnInput(input);
+    stage = 'capture_image';
     const captured = await saveCapturedImage(input);
     const attachments = [...(input.attachments ?? []), ...(captured ? [captured] : [])];
+    stage = 'agent_runtime';
     const result = await runtime.runTurn({
       ...prepared.input,
       attachments,
@@ -465,6 +487,7 @@ async function handleTurnStream(
         writeSse(res, 'artifact', normalizeArtifact(artifact));
       },
     });
+    stage = 'memory_finalize';
     const memoryStartedAt = performance.now();
     const finalized = await finalizeTurnMemory({
       input: prepared.input,
@@ -476,14 +499,38 @@ async function handleTurnStream(
     traceWebTiming(requestId, 'memory_finalize_completed', startedAt, {
       memoryElapsedMs: Math.round(performance.now() - memoryStartedAt),
     });
+    stage = 'result_write';
     writeSse(res, 'result', normalizeResult(finalized));
     res.end();
     traceWebTiming(requestId, 'turn_completed', startedAt);
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unexpected server error.';
-    writeSse(res, 'error', { error: message });
-    res.end();
+    logSafeStreamError(requestId, stage, error);
+    if (sseStarted) {
+      writeSse(res, 'error', { error: message });
+      res.end();
+    } else {
+      jsonResponse(res, 400, { error: message });
+    }
   }
+}
+
+function logSafeStreamError(requestId: string, stage: string, error: unknown): void {
+  const status = typeof (error as any)?.status === 'number' ? (error as any).status : undefined;
+  const code = typeof (error as any)?.code === 'string' ? (error as any).code : undefined;
+  const message = error instanceof Error ? error.message : String(error);
+  console.warn(
+    `[MuseStreamError] ${JSON.stringify({
+      requestId,
+      stage,
+      status,
+      code,
+      name: error instanceof Error ? error.name : undefined,
+      message: message
+        .replace(/sk-[A-Za-z0-9_-]+/g, '[redacted_api_key]')
+        .replace(/data:image\/[a-zA-Z+.-]+;base64,[A-Za-z0-9+/=]+/g, '[redacted_image_data]'),
+    })}`,
+  );
 }
 
 function traceWebTiming(
@@ -508,10 +555,12 @@ async function handleConversations(
   url: URL,
   res: http.ServerResponse,
 ): Promise<void> {
-  const userId = url.searchParams.get('userId') ?? 'investor_demo_user';
+  const queryUserId = url.searchParams.get('userId');
   const parts = url.pathname.split('/').filter(Boolean);
   const conversationId = parts[2];
   if (req.method === 'GET' && !conversationId) {
+    const userId = requireUserId(res, queryUserId);
+    if (!userId) return;
     const conversations = await memoryStore.listConversations(userId, {
       includeArchived: url.searchParams.get('includeArchived') === '1',
       query: url.searchParams.get('q') ?? undefined,
@@ -521,8 +570,10 @@ async function handleConversations(
   }
   if (req.method === 'POST' && !conversationId) {
     const body = (await readJson(req)) as { title?: string; temporary?: boolean; userId?: string };
+    const userId = requireUserId(res, body.userId ?? queryUserId);
+    if (!userId) return;
     const conversation = await memoryStore.ensureConversation({
-      userId: body.userId ?? userId,
+      userId,
       title: body.title,
       temporary: body.temporary,
     });
@@ -530,11 +581,15 @@ async function handleConversations(
     return;
   }
   if (req.method === 'GET' && parts[3] === 'messages' && conversationId) {
+    const userId = requireUserId(res, queryUserId);
+    if (!userId) return;
     const messages = await memoryStore.getMessages(userId, conversationId);
     jsonResponse(res, 200, { messages });
     return;
   }
   if (req.method === 'DELETE' && conversationId) {
+    const userId = requireUserId(res, queryUserId);
+    if (!userId) return;
     const memoryAction = url.searchParams.get('memoryAction') === 'delete' ? 'delete' : 'keep';
     const result = await memoryStore.deleteConversation({ userId, conversationId, memoryAction });
     jsonResponse(res, 200, result);
@@ -548,11 +603,13 @@ async function handleMemories(
   url: URL,
   res: http.ServerResponse,
 ): Promise<void> {
-  const userId = url.searchParams.get('userId') ?? 'investor_demo_user';
+  const queryUserId = url.searchParams.get('userId');
   const parts = url.pathname.split('/').filter(Boolean);
   const memoryId = parts[2];
   const action = parts[3];
   if (req.method === 'GET' && !memoryId) {
+    const userId = requireUserId(res, queryUserId);
+    if (!userId) return;
     jsonResponse(res, 200, { memories: await memoryStore.listMemories(userId, true) });
     return;
   }
@@ -566,10 +623,12 @@ async function handleMemories(
       jsonResponse(res, 400, { error: 'value is required.' });
       return;
     }
+    const userId = requireUserId(res, body.userId ?? queryUserId);
+    if (!userId) return;
     const memory = await memoryStore.createMemory({
-      userId: body.userId ?? userId,
+      userId,
       memory: {
-        userId: body.userId ?? userId,
+        userId,
         value: body.value,
         explicitness: 'user_requested',
         authorization: 'explicit',
@@ -583,22 +642,30 @@ async function handleMemories(
     return;
   }
   if (req.method === 'PATCH' && memoryId) {
+    const userId = requireUserId(res, queryUserId);
+    if (!userId) return;
     const body = await readJson(req);
     const memory = await memoryStore.updateMemory(userId, memoryId, body, 'user');
     jsonResponse(res, memory ? 200 : 404, memory ? { memory } : { error: 'Memory not found.' });
     return;
   }
   if (req.method === 'DELETE' && memoryId) {
+    const userId = requireUserId(res, queryUserId);
+    if (!userId) return;
     const memory = await memoryStore.updateMemory(userId, memoryId, { status: 'deleted' }, 'user');
     jsonResponse(res, memory ? 200 : 404, memory ? { memory } : { error: 'Memory not found.' });
     return;
   }
   if (req.method === 'POST' && memoryId && action === 'pause') {
+    const userId = requireUserId(res, queryUserId);
+    if (!userId) return;
     const memory = await memoryStore.updateMemory(userId, memoryId, { status: 'paused' }, 'user');
     jsonResponse(res, memory ? 200 : 404, memory ? { memory } : { error: 'Memory not found.' });
     return;
   }
   if (req.method === 'POST' && memoryId && action === 'restore') {
+    const userId = requireUserId(res, queryUserId);
+    if (!userId) return;
     const memory = await memoryStore.updateMemory(userId, memoryId, { status: 'active' }, 'user');
     jsonResponse(res, memory ? 200 : 404, memory ? { memory } : { error: 'Memory not found.' });
     return;
@@ -611,7 +678,8 @@ async function handleMemoryCandidates(
   url: URL,
   res: http.ServerResponse,
 ): Promise<void> {
-  const userId = url.searchParams.get('userId') ?? 'investor_demo_user';
+  const userId = requireUserId(res, url.searchParams.get('userId'));
+  if (!userId) return;
   const parts = url.pathname.split('/').filter(Boolean);
   const candidateId = parts[2];
   const action = parts[3];
@@ -646,7 +714,8 @@ async function handleContextOverrides(
   url: URL,
   res: http.ServerResponse,
 ): Promise<void> {
-  const userId = url.searchParams.get('userId') ?? 'investor_demo_user';
+  const userId = requireUserId(res, url.searchParams.get('userId'));
+  if (!userId) return;
   if (req.method === 'GET') {
     const conversationId = url.searchParams.get('conversationId') ?? undefined;
     jsonResponse(res, 200, { overrides: await memoryStore.listContextOverrides(userId, conversationId) });
@@ -773,6 +842,12 @@ async function serveFile(
       return;
     }
     filePath = path.join(baseDir, 'index.html');
+    try {
+      await fs.access(filePath);
+    } catch {
+      textResponse(res, 404, 'Not found');
+      return;
+    }
   }
 
   res.writeHead(200, {
@@ -789,6 +864,19 @@ async function serveFile(
 async function route(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
   const url = new URL(req.url ?? '/', `http://${req.headers.host ?? 'localhost'}`);
   try {
+    if (await handleDeploymentRoute(req, res, demoAccess)) return;
+    if (
+      demoAccess.enabled &&
+      !demoAccess.isAuthenticated(req) &&
+      !isLoginBootstrapRequest(req, url.pathname)
+    ) {
+      if (url.pathname.startsWith('/api/')) {
+        jsonResponse(res, 401, { error: 'Authentication required.' });
+      } else {
+        textResponse(res, 401, 'Authentication required.');
+      }
+      return;
+    }
     if (req.method === 'GET' && url.pathname === '/api/fashion/status') {
       if (config.agentProvider === 'gemma4') {
         gemma4EndpointStatus = await ensureGemma4Endpoint(config);
@@ -888,12 +976,28 @@ async function route(req: http.IncomingMessage, res: http.ServerResponse): Promi
 const server = http.createServer((req, res) => {
   void route(req, res);
 });
-voiceGateway = attachVoiceGateway(server, { config: config.voice });
+voiceGateway = attachVoiceGateway(server, {
+  config: config.voice,
+  authorizeRequest: (request) => demoAccess.isAuthenticated(request),
+});
 
-server.listen(port, () => {
-  console.log(
-    `Fashion Agent demo server listening on http://localhost:${port} (${config.agentProvider}:${config.agentModel})`,
-  );
+server.listen(port, '0.0.0.0', () => {
+  const version = process.env.RENDER_GIT_COMMIT?.slice(0, 12) || process.env.npm_package_version || '0.6.0';
+  console.log('[MuseServer] ready', {
+    host: '0.0.0.0',
+    port,
+    runtime: config.runtimeProvider,
+    provider: config.agentProvider,
+    voiceConfigured: Boolean(voiceGateway?.getStatus().asr.ready && voiceGateway?.getStatus().tts.ready),
+    accessGateEnabled: demoAccess.enabled,
+    outputDir: config.outputDir,
+    version,
+  });
+  if (!demoAccess.enabled) {
+    console.warn(
+      '[MuseServer] team access gate is disabled; configure MUSE_TEAM_DEMO_ACCESS_CODE before exposing this service publicly.',
+    );
+  }
 });
 
 function shutdown(): void {

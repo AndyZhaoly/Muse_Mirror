@@ -108,7 +108,11 @@ function productErrorMessage(capability: 'ASR' | 'TTS', error: unknown): string 
 
 export function attachVoiceGateway(
   server: http.Server,
-  options: { config: VoiceConfig; factory?: VoiceSessionFactory },
+  options: {
+    config: VoiceConfig;
+    factory?: VoiceSessionFactory;
+    authorizeRequest?: (request: http.IncomingMessage) => boolean;
+  },
 ): VoiceGateway {
   const status = buildVoiceStatus(options.config);
   const factory: VoiceSessionFactory = options.factory ?? {
@@ -120,11 +124,21 @@ export function attachVoiceGateway(
 
   const upgrade = (request: http.IncomingMessage, socket: any, head: Buffer): void => {
     const url = new URL(request.url ?? '/', `http://${request.headers.host ?? 'localhost'}`);
-    if (url.pathname === '/api/voice/asr') {
+    const isAsr = url.pathname === '/api/voice/asr';
+    const isTts = url.pathname === '/api/voice/tts';
+    if (!isAsr && !isTts) return;
+    if (options.authorizeRequest && !options.authorizeRequest(request)) {
+      socket.write(
+        'HTTP/1.1 401 Unauthorized\r\nConnection: close\r\nContent-Length: 0\r\n\r\n',
+      );
+      socket.destroy();
+      return;
+    }
+    if (isAsr) {
       asrServer.handleUpgrade(request, socket, head, (ws) => asrServer.emit('connection', ws, request));
       return;
     }
-    if (url.pathname === '/api/voice/tts') {
+    if (isTts) {
       ttsServer.handleUpgrade(request, socket, head, (ws) => ttsServer.emit('connection', ws, request));
     }
   };

@@ -1179,3 +1179,88 @@ button:focus-visible, input:focus-visible { outline: 3px solid rgba(102, 112, 90
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .001ms !important; animation-iteration-count: 1 !important; transition-duration: .001ms !important; }
 }
+
+.demo-access-shell {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: #f2efe8;
+  color: #2b2823;
+}
+
+.demo-access-panel {
+  width: min(420px, 100%);
+  padding: 38px;
+  border: 1px solid #ded8cd;
+  border-radius: 8px;
+  background: #fbfaf7;
+  box-shadow: 0 22px 60px rgba(53, 47, 38, .12);
+}
+
+.demo-access-mark {
+  width: 54px;
+  height: 54px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: #2b2823;
+  color: #fff;
+  font-family: Georgia, serif;
+  font-size: 28px;
+}
+
+.demo-access-eyebrow {
+  margin: 24px 0 8px;
+  color: #898176;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.demo-access-panel h1 {
+  margin: 0 0 24px;
+  font-family: Georgia, serif;
+  font-size: 32px;
+  font-weight: 500;
+}
+
+.demo-access-copy,
+.demo-access-panel label {
+  color: #6f685f;
+  font-size: 13px;
+}
+
+.demo-access-panel label {
+  display: block;
+  margin-bottom: 8px;
+  font-weight: 650;
+}
+
+.demo-access-panel input {
+  width: 100%;
+  height: 48px;
+  padding: 0 13px;
+  border: 1px solid #cfc8bd;
+  border-radius: 6px;
+  background: #fff;
+  color: inherit;
+  font: inherit;
+}
+
+.demo-access-panel button {
+  width: 100%;
+  height: 48px;
+  margin-top: 14px;
+  border: 0;
+  border-radius: 6px;
+  background: #2b2823;
+  color: #fff;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.demo-access-panel button:disabled { opacity: .55; cursor: wait; }
+.demo-access-error { margin: 10px 0 0; color: #9c3e34; font-size: 12px; }

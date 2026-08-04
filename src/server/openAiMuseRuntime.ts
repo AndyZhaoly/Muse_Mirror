@@ -494,7 +494,7 @@ export class OpenAIMuseRuntime {
         return this.approvalRequiredTurn(input, context, activity, error.pending);
       }
       emit(activityItem('model', 'error', 'Muse 暂时没有成功返回', '没有展示模拟答案。'));
-      if (this.config.trace) logSafeProviderError('responses_loop', error);
+      logSafeProviderError('responses_loop', error, context.turnId);
       this.traceTiming(context, 'turn_failed');
       this.turnTimingStarts.delete(context.turnId);
       throw new Error(productErrorMessage(error));
@@ -5377,7 +5377,7 @@ function isRetryableOpenAIError(error: unknown): boolean {
   return status === 429 || (typeof status === 'number' && status >= 500);
 }
 
-function logSafeProviderError(operation: string, error: unknown): void {
+function logSafeProviderError(operation: string, error: unknown, turnId?: string): void {
   const status = typeof (error as any)?.status === 'number' ? (error as any).status : undefined;
   const code = typeof (error as any)?.code === 'string' ? (error as any).code : undefined;
   const message = error instanceof Error ? error.message : String(error);
@@ -5385,6 +5385,7 @@ function logSafeProviderError(operation: string, error: unknown): void {
     JSON.stringify({
       provider: 'openai',
       operation,
+      turnId,
       status,
       code,
       message: scrubSensitiveText(message),

@@ -38,7 +38,10 @@ export interface VoiceSessionView {
   lastError?: string;
 }
 
-export function voiceWebSocketUrl(path: string): string {
-  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-  return `${protocol}//${window.location.host}${path}`;
+export function voiceWebSocketUrl(
+  path: string,
+  location: Pick<Location, 'protocol' | 'host'> = window.location,
+): string {
+  const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  return `${protocol}//${location.host}${path}`;
 }
