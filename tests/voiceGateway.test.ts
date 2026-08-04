@@ -31,9 +31,17 @@ test('voice config is disabled without provider settings and does not block star
 test('voice status reports capabilities without exposing credentials', () => {
   const status = buildVoiceStatus(configuredVoice());
   assert.equal(status.asr.ready, true);
+  assert.equal(status.asr.endWindowMs, 500);
   assert.equal(status.tts.ready, true);
   const serialized = JSON.stringify(status);
   assert.doesNotMatch(serialized, /app-id-secret|app-key-secret/);
+});
+
+test('ASR endpoint window accepts 200-2000ms and safely falls back for invalid values', () => {
+  assert.equal(loadVoiceConfig({ VOLC_ASR_END_WINDOW_MS: '650' }).volcAsrEndWindowMs, 650);
+  assert.equal(loadVoiceConfig({ VOLC_ASR_END_WINDOW_MS: '199' }).volcAsrEndWindowMs, 500);
+  assert.equal(loadVoiceConfig({ VOLC_ASR_END_WINDOW_MS: '2001' }).volcAsrEndWindowMs, 500);
+  assert.equal(loadVoiceConfig({ VOLC_ASR_END_WINDOW_MS: 'not-a-number' }).volcAsrEndWindowMs, 500);
 });
 
 test('new Volcengine API key auth does not require legacy app id', () => {

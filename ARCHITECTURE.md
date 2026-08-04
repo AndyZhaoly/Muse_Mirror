@@ -83,3 +83,21 @@ Responses stream
 Only text explicitly associated with `phase: "final_answer"` is emitted incrementally. Unknown-phase text is buffered until its phase is known; unresolved text is never guessed from wording and falls back to one complete response after completion. The runtime still collects the complete response output for stateless tool replay, incomplete handling, grounding, history, and final result construction.
 
 Automatic retry is allowed only before any final-answer delta has become visible. Once visible text has been emitted, a failed stream ends safely instead of silently restarting and duplicating the answer. Trace mode records timing milestones and opaque IDs only; it never records prompts, reasoning, images, credentials, or audio.
+
+## Voice-first response mode
+
+Voice is a semi-duplex transport over the same Muse Agent and conversation path:
+
+```text
+Volcengine ASR final transcript
+        ↓ inputSource: voice + traceId
+same Responses API tool loop + voice-only short-answer contract
+        ↓
+grounded authoritative result.text + deterministic result.spokenText
+        ↓
+screen uses text; Volcengine TTS uses spokenText ?? text
+```
+
+The browser never sends ASR partials into the Agent and never speaks streamed model deltas. `spokenText` is built only after visual/closet grounding and is not stored as a second history message. `OPENAI_VOICE_REASONING_EFFORT` is resolved against model capability before each voice request; text turns retain the global effort. Volcengine endpoint detection uses the backend-configured `end_window_size` (500 ms by default).
+
+One safe trace ID links browser speech/ASR/TTS milestones to backend model/tool milestones. Detailed summaries are opt-in (`?latency=1` or localStorage), while backend emission reuses `FASHION_AGENT_TRACE`. Neither side records transcript or answer content, media, credentials, cookies, or reasoning.

@@ -195,6 +195,14 @@ test('streams final-answer deltas before response.completed', async () => {
   const result = await resultPromise;
   assert.equal(result.status, 'completed');
   assert.equal(result.text, '你好');
+  if (result.status === 'completed') {
+    assert.ok(result.telemetry?.timings.first_final_answer_delta !== undefined);
+    assert.ok(result.telemetry?.timings.final_result_ready !== undefined);
+    assert.ok(
+      (result.telemetry?.timings.first_final_answer_delta ?? Infinity) <=
+      (result.telemetry?.timings.final_result_ready ?? -Infinity),
+    );
+  }
 });
 
 test('commentary deltas never enter final text while the tool call still executes', async () => {
@@ -264,6 +272,16 @@ test('streams the second model round after a visual tool completes', async () =>
   const result = await resultPromise;
   assert.equal(result.status, 'completed');
   assert.ok(result.activity.some((item) => item.toolName === 'observe_current_frame' && item.status === 'completed'));
+  if (result.status === 'completed') {
+    const timings = result.telemetry?.timings;
+    assert.equal(result.telemetry?.modelRounds, 2);
+    assert.equal(result.telemetry?.usedVision, true);
+    assert.ok(timings?.tool_started !== undefined);
+    assert.ok(timings?.tool_completed !== undefined);
+    assert.ok(timings?.first_final_answer_delta !== undefined);
+    assert.ok((timings?.tool_started ?? Infinity) <= (timings?.tool_completed ?? -Infinity));
+    assert.ok((timings?.tool_completed ?? Infinity) <= (timings?.first_final_answer_delta ?? -Infinity));
+  }
 });
 
 test('does not resend a completed final answer after streaming its deltas', async () => {

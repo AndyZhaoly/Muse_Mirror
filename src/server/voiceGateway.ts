@@ -20,6 +20,7 @@ export interface VoiceCapabilityStatus {
     ready: boolean;
     sampleRate: number;
     resourceId: string;
+    endWindowMs: number;
   };
   tts: {
     provider: VoiceConfig['ttsProvider'];
@@ -72,6 +73,7 @@ export function buildVoiceStatus(config: VoiceConfig): VoiceCapabilityStatus {
       ready: asrConfigured,
       sampleRate: config.volcAsrSampleRate,
       resourceId: config.volcAsrResourceId,
+      endWindowMs: config.volcAsrEndWindowMs,
     },
     tts: {
       provider: config.ttsProvider,

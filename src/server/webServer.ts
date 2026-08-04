@@ -2,7 +2,7 @@ import fs from 'node:fs/promises';
 import { createReadStream } from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
-import { loadConfig } from '../config.js';
+import { loadConfig, resolveOpenAIReasoningEffort } from '../config.js';
 import { FashionAgentRuntime } from '../agent/runtime.js';
 import { GemmaFashionRuntime } from './gemmaFashionRuntime.js';
 import { OpenAIMuseRuntime } from './openAiMuseRuntime.js';
@@ -904,6 +904,15 @@ async function route(req: http.IncomingMessage, res: http.ServerResponse): Promi
           config.agentProvider === 'gemma4'
             ? gemma4EndpointStatus.ready
             : capabilities.brain.ready,
+        reasoning: {
+          text: config.openaiReasoningEffort,
+          voiceConfigured: config.openaiVoiceReasoningEffort,
+          voiceResolved: resolveOpenAIReasoningEffort(
+            config.openaiAgentModel,
+            config.openaiVoiceReasoningEffort,
+            config.openaiReasoningEffort,
+          ),
+        },
         capabilities,
         transport: gemma4EndpointStatus.transport,
         message: gemma4EndpointStatus.message,

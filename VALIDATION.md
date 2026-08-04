@@ -30,7 +30,9 @@ ruby -e 'require "yaml"; YAML.safe_load(File.read("render.yaml"), aliases: true)
 
 If the Render CLI is installed and authenticated, use its official Blueprint validation command as an additional check. A local YAML parse is not equivalent to Render platform validation.
 
-Voice protocol tests use deterministic binary fixtures and fake WebSocket provider sessions. They do not require Volcengine credentials and cover configuration defaults, status redaction, ASR/TTS framing, provider error parsing, and connection cleanup.
+Voice protocol tests use deterministic binary fixtures and fake WebSocket provider sessions. They do not require Volcengine credentials and cover configuration defaults, the 500 ms endpoint window and safe invalid-value fallback, status redaction, ASR/TTS framing, provider error parsing, and connection cleanup.
+
+Voice-response tests verify that text mode remains unchanged, voice-only instructions are present only for ASR turns, unsupported `minimal` reasoning is never sent to `gpt-5.4`, `spokenText` is derived from the authoritative grounded answer, Markdown/URLs/IDs are removed, history stores only full `text`, and TTS selection prefers `spokenText` without a second model request.
 
 OpenAI final-answer streaming tests use deterministic async iterables through the runtime's `responseCreate` injection. They verify that final-answer deltas arrive before `response.completed`, commentary remains separate, tool-following rounds stream, unknown phases buffer safely, retry cannot duplicate visible text, final grounding remains authoritative, and SSE preserves delta order before `result`.
 
@@ -40,7 +42,9 @@ Run the focused streaming suite with:
 node --import tsx --test tests/openAiMuseStreaming.test.ts
 ```
 
-With `FASHION_AGENT_TRACE=true`, server logs include safe `[MuseTiming]` milestones such as first stream event, first final-answer delta, model completion, tool duration, memory finalization, and turn completion. Timing logs contain opaque IDs and elapsed milliseconds, not user text, images, reasoning, credentials, or audio.
+With `FASHION_AGENT_TRACE=true`, server logs include safe `[MuseLatency]` milestones such as model-round start, first model stream event, tool start/completion, first final-answer delta, and final-result readiness. Timing logs contain opaque IDs, mode, elapsed milliseconds, round counts, character counts, and token counts when available—not user text, answer text, images, reasoning, credentials, cookies, or audio.
+
+For a browser-side end-to-end summary, open the app with `?latency=1` or set `localStorage.muse_latency_debug = "1"`. Complete one voice turn and inspect the console for `[MuseLatency]`. Verify that `asrFinalizeMs`, `firstFinalDeltaMs`, `resultReadyMs`, `firstAudioMs`, and `playbackCompleteMs` are present where the corresponding stage completed. Measure warm requests separately from Render cold starts.
 
 For a manual local voice smoke test:
 
@@ -51,6 +55,8 @@ npm run web:dev
 ```
 
 Then open `http://localhost:5173`, enable voice mode, allow microphone access, speak one utterance, and verify the visible sequence `listening -> thinking -> speaking -> listening`. Confirm the final transcript appears exactly once in the same conversation history as typed messages.
+
+Compare the same prompt in typed and voice modes. Typed mode may retain the existing detailed response. Voice mode should normally produce at most two spoken sentences (Chinese target 20–60 characters, hard cap 80), while the screen still shows the full grounded answer and artifacts.
 
 For the production-build server path:
 

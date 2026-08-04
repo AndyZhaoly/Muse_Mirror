@@ -49,6 +49,8 @@ services:
         value: gpt-image-2
       - key: OPENAI_REASONING_EFFORT
         value: low
+      - key: OPENAI_VOICE_REASONING_EFFORT
+        value: minimal
       - key: OPENAI_API_KEY
         sync: false
       - key: FASHION_AGENT_ASR_PROVIDER
@@ -61,6 +63,8 @@ services:
         value: wss://openspeech.bytedance.com/api/v3/sauc/bigmodel
       - key: VOLC_ASR_RESOURCE_ID
         value: volc.seedasr.sauc.duration
+      - key: VOLC_ASR_END_WINDOW_MS
+        value: "500"
       - key: VOLC_TTS_ENDPOINT
         value: wss://openspeech.bytedance.com/api/v3/tts/unidirectional/stream
       - key: VOLC_TTS_RESOURCE_ID

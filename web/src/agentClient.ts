@@ -401,6 +401,8 @@ export type AgentTurnResult =
   | {
       status: 'completed';
       text: string;
+      spokenText?: string;
+      telemetry?: TurnLatencyTelemetry;
       artifacts: AgentArtifact[];
       activity: AgentActivity[];
       grounding?: AgentGrounding;
@@ -436,6 +438,7 @@ export interface TurnRequest {
   sessionId: string;
   userId: string;
   inputSource?: 'text' | 'voice';
+  traceId?: string;
   conversationId?: string;
   temporary?: boolean;
   message: string;
@@ -454,6 +457,35 @@ export interface TurnRequest {
     scope: PreferenceMemoryScope;
   };
   permissions: Partial<TurnPermissions>;
+}
+
+export interface TurnLatencyTelemetry {
+  traceId: string;
+  turnId: string;
+  interactionMode: 'text' | 'voice';
+  timings: Partial<Record<
+    | 'speech_end'
+    | 'asr_final'
+    | 'turn_submitted'
+    | 'turn_started'
+    | 'model_round_started'
+    | 'first_model_stream_event'
+    | 'tool_started'
+    | 'tool_completed'
+    | 'first_final_answer_delta'
+    | 'final_result_ready'
+    | 'tts_requested'
+    | 'first_tts_audio_chunk'
+    | 'playback_completed',
+    number
+  >>;
+  modelRounds: number;
+  usedVision: boolean;
+  textChars: number;
+  spokenChars: number;
+  inputTokens?: number;
+  outputTokens?: number;
+  cachedInputTokens?: number;
 }
 
 export interface ResumeRequest {
@@ -483,6 +515,11 @@ export interface AgentStatus {
   closetDataPath?: string;
   closetPresentationMetadataPath?: string;
   agentReady: boolean;
+  reasoning?: {
+    text: 'minimal' | 'low' | 'medium' | 'high';
+    voiceConfigured: 'minimal' | 'low' | 'medium' | 'high';
+    voiceResolved: 'minimal' | 'low' | 'medium' | 'high';
+  };
   capabilities?: {
     runtime: string;
     brain: {

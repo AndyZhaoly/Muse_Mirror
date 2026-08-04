@@ -1152,6 +1152,37 @@ export interface TurnPermissions {
   allowPersistentMemory: boolean;
 }
 
+export type InteractionMode = 'text' | 'voice';
+
+export type MuseLatencyMilestone =
+  | 'speech_end'
+  | 'asr_final'
+  | 'turn_submitted'
+  | 'turn_started'
+  | 'model_round_started'
+  | 'first_model_stream_event'
+  | 'tool_started'
+  | 'tool_completed'
+  | 'first_final_answer_delta'
+  | 'final_result_ready'
+  | 'tts_requested'
+  | 'first_tts_audio_chunk'
+  | 'playback_completed';
+
+export interface TurnLatencyTelemetry {
+  traceId: string;
+  turnId: string;
+  interactionMode: InteractionMode;
+  timings: Partial<Record<MuseLatencyMilestone, number>>;
+  modelRounds: number;
+  usedVision: boolean;
+  textChars: number;
+  spokenChars: number;
+  inputTokens?: number;
+  outputTokens?: number;
+  cachedInputTokens?: number;
+}
+
 export interface FashionAgentContext {
   sessionId: string;
   userId: string;
@@ -1162,12 +1193,15 @@ export interface FashionAgentContext {
   permissions: TurnPermissions;
   state: FashionSessionState;
   personalization?: MusePersonalizationContext;
+  interactionMode?: InteractionMode;
+  traceId?: string;
 }
 
 export interface FashionTurnInput {
   sessionId: string;
   userId: string;
   inputSource?: 'text' | 'voice';
+  traceId?: string;
   conversationId?: string;
   temporary?: boolean;
   message: string;
@@ -1221,6 +1255,8 @@ export interface ApprovalRequest {
 export interface CompletedTurnResult {
   status: 'completed';
   text: string;
+  spokenText?: string;
+  telemetry?: TurnLatencyTelemetry;
   artifacts: UiArtifact[];
   activity: AgentActivity[];
   grounding?: AgentGrounding;
