@@ -9,7 +9,9 @@ import {
   attachMuseServerTelemetry,
   createMuseLatencyTraceId,
   finishMuseLatency,
+  markAsrFinal,
   markMuseLatency,
+  markProviderSpeechEnd,
 } from './latencyTelemetry';
 import { speechTextForResult } from './speechText';
 
@@ -66,8 +68,7 @@ export function useVoiceSession(options: UseVoiceSessionOptions) {
     const finalText = text.trim() || latestPartialRef.current.trim();
     const traceId = latencyTraceRef.current ?? createMuseLatencyTraceId();
     latencyTraceRef.current = traceId;
-    markMuseLatency(traceId, 'speech_end');
-    markMuseLatency(traceId, 'asr_final');
+    markAsrFinal(traceId);
     setPartialTranscript('');
     latestPartialRef.current = '';
     await releaseListening();
@@ -166,7 +167,7 @@ export function useVoiceSession(options: UseVoiceSessionOptions) {
         onFinal: (text) => { void handleFinal(text); },
         onUtteranceEnd: () => {
           const traceId = latencyTraceRef.current;
-          if (traceId) markMuseLatency(traceId, 'speech_end');
+          if (traceId) markProviderSpeechEnd(traceId);
           setState('recognizing');
           void microphone.close();
           asr.stop();

@@ -66,7 +66,10 @@ import type {
   TurnLatencyTelemetry,
 } from '../types.js';
 import { makeId } from '../utils/ids.js';
-import { normalizeSpokenText } from '../utils/spokenText.js';
+import {
+  normalizeSpokenText,
+  type CriticalSpokenNotice,
+} from '../utils/spokenText.js';
 import type { HarnessToolResult } from './gemmaFashionRuntime.js';
 import {
   activityItem,
@@ -74,6 +77,7 @@ import {
   applyCachedPerceptionObservation,
   applyStatefulStylingOverride,
   buildActiveOutfit,
+  buildFitUncertaintyNotice,
   buildItemGrid,
   canUseCachedObservationForCurrentFrame,
   elapsedMs,
@@ -561,12 +565,26 @@ export class OpenAIMuseRuntime {
       this.turnTelemetry.delete(context.turnId);
       throw new Error('Muse 这轮没有成功返回，所以我不展示模拟答案。');
     }
-    finalText = enforceGroundedFinalText(finalText.trim(), context, ledger);
-    finalText = appendFitUncertaintyNote(
-      appendClosetGapNote(finalText, ledger),
+    const groundedFinal = enforceGroundedFinalText(finalText.trim(), context, ledger);
+    finalText = groundedFinal.text;
+    const closetGapNotice = buildClosetGapNotice(ledger, context.locale);
+    const fitUncertaintyNotice = buildFitUncertaintyNotice(
       ledger.committed?.items ?? [],
       ledger.committed?.recommendation,
+      context.locale,
     );
+    finalText = appendFitUncertaintyNote(
+      appendClosetGapNote(finalText, closetGapNotice),
+      ledger.committed?.items ?? [],
+      ledger.committed?.recommendation,
+      fitUncertaintyNotice,
+    );
+    const criticalSpokenNotices = collectCriticalSpokenNotices({
+      locale: context.locale,
+      visualUnavailable: groundedFinal.visualUnavailable,
+      closetGapNotice,
+      fitUncertaintySpokenText: fitUncertaintyNotice?.spokenText,
+    });
     const artifacts = ledger.artifacts;
     const grounding = this.buildGrounding(context, ledger, artifacts);
     const decisionSummary = buildOpenAIDecisionSummary(context, ledger, grounding);
@@ -580,6 +598,7 @@ export class OpenAIMuseRuntime {
       grounding,
       decisionSummary,
       streamedFinalText,
+      criticalSpokenNotices,
     );
   }
 
@@ -3740,9 +3759,13 @@ ${JSON.stringify(context.personalization ?? { persistentMemories: [], contextOve
     grounding?: AgentGrounding,
     decisionSummary?: MuseDecisionSummary,
     streamedText = false,
+    criticalSpokenNotices: CriticalSpokenNotice[] = [],
   ): FashionTurnResult {
     const spokenText = context.interactionMode === 'voice'
-      ? normalizeSpokenText(text, { locale: context.locale })
+      ? normalizeSpokenText(text, {
+          locale: context.locale,
+          criticalNotices: criticalSpokenNotices,
+        })
       : undefined;
     this.stateStore.set(input.sessionId, context.state);
     this.appendHistory(input.sessionId, input.message, text);
@@ -4755,23 +4778,96 @@ function expressionIntensityLabel(value: NonNullable<StylingProfile['expressionI
   return labels[value] ?? value;
 }
 
-function appendClosetGapNote(text: string, ledger: ToolLedger): string {
-  if (!ledger.committed) return text;
-  if (isCompleteOutfit(ledger.committed.items)) return text;
-  if (text.includes('不存在的衣柜单品') || text.includes('不够组成完整一套')) return text;
-  const missing = missingOutfitPieces(ledger.committed.items);
-  return `${text}\n\n我会把衣柜里可用的真实单品放进方案，但它们还不够组成完整一套，主要缺 ${missing.join('、')}。柜外补充会单独标记，不会冒充你的衣柜。`;
+interface ClosetGapNotice {
+  missing: string[];
+  screenText: string;
+  spokenText: string;
 }
 
-function enforceGroundedFinalText(text: string, context: FashionAgentContext, ledger: ToolLedger): string {
-  if (!hasDirectCurrentVisualClaim(text)) return text;
-  if (isHonestNoVisualClaim(text)) return text;
-  if (hasVisualEvidence(buildVisualObservationView(context))) return text;
+function buildClosetGapNotice(
+  ledger: ToolLedger,
+  locale = 'zh-CN',
+): ClosetGapNotice | undefined {
+  if (!ledger.committed || isCompleteOutfit(ledger.committed.items)) return undefined;
+  const missing = missingOutfitPieces(ledger.committed.items);
+  const english = locale.toLowerCase().startsWith('en');
+  return {
+    missing,
+    screenText: english
+      ? `I will use the verified items that are available in your closet, but they do not form a complete outfit yet. The main missing pieces are ${missing.join(', ')}. Any outside additions will be labeled and will not be presented as closet items.`
+      : `我会把衣柜里可用的真实单品放进方案，但它们还不够组成完整一套，主要缺 ${missing.join('、')}。柜外补充会单独标记，不会冒充你的衣柜。`,
+    spokenText: english
+      ? `Your closet does not yet have enough matching items for a complete outfit; the main missing pieces are ${missing.join(', ')}.`
+      : `衣柜现有单品还不够组成完整一套，主要缺${missing.join('、')}。`,
+  };
+}
+
+function appendClosetGapNote(
+  text: string,
+  notice?: ClosetGapNotice,
+): string {
+  if (!notice) return text;
+  if (text.includes('不存在的衣柜单品') || text.includes('不够组成完整一套')) return text;
+  return `${text}\n\n${notice.screenText}`;
+}
+
+function collectCriticalSpokenNotices(args: {
+  locale: string;
+  visualUnavailable: boolean;
+  closetGapNotice?: ClosetGapNotice;
+  fitUncertaintySpokenText?: string;
+}): CriticalSpokenNotice[] {
+  const english = args.locale.toLowerCase().startsWith('en');
+  const notices: CriticalSpokenNotice[] = [];
+  if (args.visualUnavailable) {
+    notices.push({
+      kind: 'visual_unavailable',
+      priority: 300,
+      text: english
+        ? 'I do not have reliable visual evidence, so I cannot pretend that I can see you.'
+        : '我没有可靠的视觉结果，不能假装看见你。',
+    });
+  }
+  if (args.fitUncertaintySpokenText) {
+    notices.push({
+      kind: 'fit_uncertain',
+      priority: 200,
+      text: args.fitUncertaintySpokenText,
+    });
+  }
+  if (args.closetGapNotice) {
+    notices.push({
+      kind: 'closet_incomplete',
+      priority: 100,
+      text: args.closetGapNotice.spokenText,
+    });
+  }
+  return notices;
+}
+
+interface GroundedFinalTextResult {
+  text: string;
+  visualUnavailable: boolean;
+}
+
+function enforceGroundedFinalText(
+  text: string,
+  context: FashionAgentContext,
+  ledger: ToolLedger,
+): GroundedFinalTextResult {
+  if (!hasDirectCurrentVisualClaim(text)) return { text, visualUnavailable: false };
+  if (isHonestNoVisualClaim(text)) return { text, visualUnavailable: false };
+  if (hasVisualEvidence(buildVisualObservationView(context))) {
+    return { text, visualUnavailable: false };
+  }
   const usedVisualTool = ledger.toolResults.some((result) =>
     result.toolName === 'observe_current_frame',
   );
-  if (usedVisualTool) return text;
-  return '我这边还没有拿到当前画面的视觉结果，所以不能假装已经看见你。你可以再发一句，或者让镜子重新带一帧当前画面。';
+  if (usedVisualTool) return { text, visualUnavailable: false };
+  return {
+    text: '我这边还没有拿到当前画面的视觉结果，所以不能假装已经看见你。你可以再发一句，或者让镜子重新带一帧当前画面。',
+    visualUnavailable: true,
+  };
 }
 
 function hasDirectCurrentVisualClaim(text: string): boolean {

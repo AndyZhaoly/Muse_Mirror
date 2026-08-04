@@ -91,7 +91,7 @@ For the Free Render team-demo Blueprint, shared-passcode protection, required se
 
 Voice mode is a transport around the same Muse turn API, session, approvals, memory, and conversation history. It does not add a voice agent, planner, or intent router. The browser sends 16 kHz mono PCM to the backend ASR gateway; only the final transcript is submitted through the existing `/api/fashion/turn/stream` flow with `inputSource: "voice"`.
 
-Voice turns add a short spoken-response contract to the same Muse Agent. The screen still receives the complete grounded `result.text`; TTS receives `result.spokenText ?? result.text`. `spokenText` is deterministically derived from the final grounded answer, never from partial deltas and never through a second LLM call. Conversation history stores only `result.text`.
+Voice turns add a short-response contract to the same Muse Agent. In the current implementation, both the screen's grounded `result.text` and TTS-safe `result.spokenText` stay concise for voice turns; structured detail remains available in artifacts and cards. Text turns keep the detailed screen-oriented behavior. `spokenText` is deterministically derived after all runtime grounding, including mandatory visual, closet-gap, and fit-uncertainty notices. It never comes from partial deltas or a second LLM call, and conversation history stores only authoritative `result.text`. A future structured dual-output contract may let one model response independently author detailed `text` and short `spokenText`.
 
 Enable it in `.env.local`:
 
@@ -112,7 +112,7 @@ Accounts may be provisioned with different ASR resource IDs. Keep `VOLC_ASR_RESO
 
 The first click on the microphone requests browser permission. Muse then uses a semi-duplex loop: listening, recognizing, thinking, speaking, then listening again. ASR is stopped while TTS is playing. Full-duplex interruption and wake-word listening are intentionally not part of this version.
 
-For local latency diagnostics, add `?latency=1` to the page URL or set `localStorage.muse_latency_debug = "1"`. The browser logs one safe `[MuseLatency]` summary per voice turn, covering speech end, ASR final, first final-answer delta, result readiness, first TTS audio, playback completion, model rounds, vision usage, character counts, and provider token counts when available. The logs never include transcript text, answer text, images, audio, cookies, credentials, or reasoning content. Set `FASHION_AGENT_TRACE=true` for matching backend milestones.
+For local latency diagnostics, add `?latency=1` to the page URL or set `localStorage.muse_latency_debug = "1"`. The browser logs one safe `[MuseLatency]` summary per voice turn, covering provider utterance end, ASR final, first final-answer delta, result readiness, first TTS audio, playback completion, model rounds, vision usage, character counts, and provider token counts when available. `speech_end` is recorded only from the provider's `utterance_end` event. If that event is absent or late, `speechEndSource` is `unavailable` and `asrFinalizeMs` is omitted rather than fabricated as zero. The logs never include transcript text, answer text, images, audio, cookies, credentials, or reasoning content. Set `FASHION_AGENT_TRACE=true` for matching backend milestones.
 
 ## Development mode
 

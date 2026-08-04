@@ -3056,15 +3056,38 @@ export function appendFitUncertaintyNote(
   text: string,
   selectedItems: ClosetItem[],
   recommendation?: ClosetRecommendationResult,
+  notice = buildFitUncertaintyNotice(selectedItems, recommendation),
 ): string {
   const safeText = text
     .replace(/肯定合身/g, '需要试穿确认')
     .replace(/一定合身/g, '需要试穿确认');
-  if (!selectedItems.length || !recommendation) return safeText;
-  const candidate = matchRecommendationCandidate(recommendation, selectedItems);
-  if (candidate?.fitStatus !== 'unknown') return safeText;
+  if (!notice) return safeText;
   if (safeText.includes('实际') && safeText.includes('试穿')) return safeText;
-  return `${safeText}\n\n从剪裁和风格上看这几件更适配；实际肩线、腰围和裤长仍建议试穿确认。`;
+  return `${safeText}\n\n${notice.screenText}`;
+}
+
+export interface FitUncertaintyNotice {
+  screenText: string;
+  spokenText: string;
+}
+
+export function buildFitUncertaintyNotice(
+  selectedItems: ClosetItem[],
+  recommendation?: ClosetRecommendationResult,
+  locale = 'zh-CN',
+): FitUncertaintyNotice | undefined {
+  if (!selectedItems.length || !recommendation) return undefined;
+  const candidate = matchRecommendationCandidate(recommendation, selectedItems);
+  if (candidate?.fitStatus !== 'unknown') return undefined;
+  const english = locale.toLowerCase().startsWith('en');
+  return {
+    screenText: english
+      ? 'The cut and styling are compatible, but the exact shoulder, waist, and trouser fit still needs to be confirmed by trying the items on.'
+      : '从剪裁和风格上看这几件更适配；实际肩线、腰围和裤长仍建议试穿确认。',
+    spokenText: english
+      ? 'The exact fit still needs to be confirmed by trying it on.'
+      : '具体肩线、腰围和裤长仍要试穿确认。',
+  };
 }
 
 export function isCompleteOutfit(items: ClosetItem[]): boolean {

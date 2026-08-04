@@ -348,10 +348,16 @@ test('streams provider text but stores and returns the grounded final calibratio
     return completedResponse('resp_followup', [messageItem('msg_followup', 'final_answer', '好的。')], '好的。');
   });
 
-  const first = await runtime.runTurn(turnInput({ onDelta: (delta) => deltas.push(delta) }));
+  const first = await runtime.runTurn(turnInput({
+    inputSource: 'voice',
+    onDelta: (delta) => deltas.push(delta),
+  }));
   assert.equal(deltas.join(''), unsupportedClaim);
   assert.equal(first.status, 'completed');
   assert.match(first.text, /还没有拿到当前画面的视觉结果/);
+  assert.match(first.spokenText ?? '', /没有拿到当前画面的视觉结果/);
+  assert.match(first.spokenText ?? '', /不能假装已经看见你/);
+  assert.doesNotMatch(first.spokenText ?? '', /黑色短袖/);
 
   await runtime.runTurn(turnInput({ message: '明白了' }));
   const historyAssistant = requests[1]?.input?.find(

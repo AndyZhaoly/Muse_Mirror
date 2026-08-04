@@ -32,7 +32,7 @@ If the Render CLI is installed and authenticated, use its official Blueprint val
 
 Voice protocol tests use deterministic binary fixtures and fake WebSocket provider sessions. They do not require Volcengine credentials and cover configuration defaults, the 500 ms endpoint window and safe invalid-value fallback, status redaction, ASR/TTS framing, provider error parsing, and connection cleanup.
 
-Voice-response tests verify that text mode remains unchanged, voice-only instructions are present only for ASR turns, unsupported `minimal` reasoning is never sent to `gpt-5.4`, `spokenText` is derived from the authoritative grounded answer, Markdown/URLs/IDs are removed, history stores only full `text`, and TTS selection prefers `spokenText` without a second model request.
+Voice-response tests verify that text mode remains unchanged, voice-only instructions are present only for ASR turns, unsupported `minimal` reasoning is never sent to `gpt-5.4`, `spokenText` is derived from the authoritative grounded answer, Markdown/URLs/IDs and empty labels are removed, critical visual/closet/fit notices survive voice limits, history stores only authoritative `text`, and TTS selection prefers `spokenText` without a second model request.
 
 OpenAI final-answer streaming tests use deterministic async iterables through the runtime's `responseCreate` injection. They verify that final-answer deltas arrive before `response.completed`, commentary remains separate, tool-following rounds stream, unknown phases buffer safely, retry cannot duplicate visible text, final grounding remains authoritative, and SSE preserves delta order before `result`.
 
@@ -44,7 +44,7 @@ node --import tsx --test tests/openAiMuseStreaming.test.ts
 
 With `FASHION_AGENT_TRACE=true`, server logs include safe `[MuseLatency]` milestones such as model-round start, first model stream event, tool start/completion, first final-answer delta, and final-result readiness. Timing logs contain opaque IDs, mode, elapsed milliseconds, round counts, character counts, and token counts when available—not user text, answer text, images, reasoning, credentials, cookies, or audio.
 
-For a browser-side end-to-end summary, open the app with `?latency=1` or set `localStorage.muse_latency_debug = "1"`. Complete one voice turn and inspect the console for `[MuseLatency]`. Verify that `asrFinalizeMs`, `firstFinalDeltaMs`, `resultReadyMs`, `firstAudioMs`, and `playbackCompleteMs` are present where the corresponding stage completed. Measure warm requests separately from Render cold starts.
+For a browser-side end-to-end summary, open the app with `?latency=1` or set `localStorage.muse_latency_debug = "1"`. Complete one voice turn and inspect the console for `[MuseLatency]`. With a provider `utterance_end`, verify `speechEndSource: "provider_utterance_end"` and a non-negative `asrFinalizeMs`. Without that event, verify `speechEndSource: "unavailable"` and no `asrFinalizeMs`; zero must not be synthesized. Check `firstFinalDeltaMs`, `resultReadyMs`, `firstAudioMs`, and `playbackCompleteMs` where their stages completed. Measure warm requests separately from Render cold starts.
 
 For a manual local voice smoke test:
 
@@ -56,7 +56,7 @@ npm run web:dev
 
 Then open `http://localhost:5173`, enable voice mode, allow microphone access, speak one utterance, and verify the visible sequence `listening -> thinking -> speaking -> listening`. Confirm the final transcript appears exactly once in the same conversation history as typed messages.
 
-Compare the same prompt in typed and voice modes. Typed mode may retain the existing detailed response. Voice mode should normally produce at most two spoken sentences (Chinese target 20–60 characters, hard cap 80), while the screen still shows the full grounded answer and artifacts.
+Compare the same prompt in typed and voice modes. Typed mode should retain the detailed screen-oriented response. Voice mode currently keeps both screen text and spoken text concise (normally about two sentences; Chinese hard cap 80 characters), while artifacts and cards carry structured detail. Confirm that mandatory grounding notices are present in both authoritative text and speech when applicable.
 
 For the production-build server path:
 

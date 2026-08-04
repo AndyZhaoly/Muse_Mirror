@@ -164,6 +164,8 @@ The server returns `ready` with PCM format metadata, binary PCM16LE audio chunks
 
 Activity, commentary, deltas, artifacts, errors, and approval prompts are never sent to TTS. Only the completed turn's `result.spokenText ?? result.text` is spoken. The screen and history continue to use authoritative `result.text`.
 
+Current voice behavior keeps both the screen answer and spoken answer concise; cards and artifacts carry structured detail. Text turns retain detailed screen-oriented answers. `spokenText` is assembled deterministically after grounding so mandatory visual-unavailable, closet-gap, and fit-uncertainty facts cannot be lost to sentence limits. A future one-response structured dual-output design may independently author detailed `text` and short `spokenText`; this version does not make a second model request.
+
 Real-time final-answer deltas improve webpage time to first visible text. They do not reduce tool/model completion time, and TTS still waits for the complete authoritative result.
 
-Voice turn requests may include a safe `traceId`. Completed results can include latency telemetry with relative millisecond milestones, model round count, whether vision ran, response character counts, and provider token counts when available. Telemetry never contains the user transcript, answer body, image/audio data, credentials, cookies, or reasoning content.
+Voice turn requests may include a safe `traceId`. Completed results can include latency telemetry with relative millisecond milestones, model round count, whether vision ran, response character counts, and provider token counts when available. Browser `speech_end` means a provider `utterance_end` event only. Without that event, `speechEndSource` is `unavailable` and `asrFinalizeMs` is omitted. Telemetry never contains the user transcript, answer body, image/audio data, credentials, cookies, or reasoning content.

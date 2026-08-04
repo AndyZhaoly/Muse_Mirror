@@ -166,6 +166,142 @@ function outputForCall(request: any, callId: string): any {
   return parsed.data;
 }
 
+function recommendationFunctionCall(callId = 'call_notice_recommend') {
+  return functionCall(callId, 'recommend_from_closet', {
+    query: '朋友聚餐',
+    categories: null,
+    colors: null,
+    formality: null,
+    limit: 12,
+    mustUseItemIds: null,
+    keepItemIds: null,
+    recommendationScope: null,
+    expressionIntensity: null,
+    styleTone: null,
+    preferenceMemoryScope: null,
+    profileScope: null,
+  });
+}
+
+function forceNoticeRecommendation(
+  runtime: OpenAIMuseRuntime,
+  options: { complete: boolean; fitStatus: 'unknown' | 'likely' },
+): void {
+  const closet = runtime.services.closet;
+  const originalRecommend = closet.recommend.bind(closet);
+  closet.recommend = (recommendInput) => {
+    const base = originalRecommend(recommendInput);
+    const allItems = closet.search({ query: '', limit: 50 });
+    const requiredCategories = options.complete
+      ? ['top', 'bottom', 'shoes']
+      : ['top', 'bottom'];
+    const items = requiredCategories.map((category) => {
+      const item = allItems.find((candidate) => candidate.category === category);
+      assert.ok(item, `missing ${category} fixture`);
+      return item;
+    });
+    const originalCandidate = base.result.candidates[0];
+    assert.ok(originalCandidate);
+    const candidateId = `candidate_notice_${options.complete ? 'complete' : 'partial'}_${options.fitStatus}`;
+    const candidate = {
+      ...originalCandidate,
+      id: candidateId,
+      title: '测试搭配候选',
+      itemIds: items.map((item) => item.id),
+      categories: items.map((item) => item.category),
+      completeness: options.complete ? 'complete' as const : 'partial' as const,
+      fitStatus: options.fitStatus,
+      provenance: {
+        ...originalCandidate.provenance,
+        candidateId,
+      },
+    };
+    const missingCategories = options.complete ? [] : ['shoes'];
+    const result: ClosetRecommendationResult = {
+      ...base.result,
+      status: options.complete ? 'success' : 'insufficient_complete_look',
+      candidates: [candidate],
+      coverage: {
+        ...base.result.coverage,
+        missingCategories,
+      },
+      suggestedComplements: options.complete
+        ? []
+        : [{
+            category: 'shoes',
+            name: '鞋子',
+            reason: '补足完整搭配',
+            source: 'suggested_complement',
+          }],
+    };
+    return {
+      result,
+      items,
+      looks: [{
+        id: candidate.id,
+        title: candidate.title,
+        itemIds: candidate.itemIds,
+        categories: candidate.categories,
+        completeness: candidate.completeness,
+        score: candidate.score,
+      }],
+    };
+  };
+}
+
+async function runVoiceNoticeTurn(options: {
+  complete: boolean;
+  fitStatus: 'unknown' | 'likely';
+  modelText?: string;
+}) {
+  const config = openAIConfig();
+  const requests: any[] = [];
+  let authoritativeResultText = '';
+  const runtime = new OpenAIMuseRuntime({
+    config,
+    services: createServiceContainer(config),
+    stateStore: new InMemorySessionStateStore(),
+    responseCreate: async (request) => {
+      requests.push(request);
+      if (requests.length === 1) {
+        return {
+          id: 'resp_notice_recommend',
+          status: 'completed',
+          output_text: '',
+          output: [recommendationFunctionCall()],
+        };
+      }
+      if (requests.length === 2) {
+        outputForCall(request, 'call_notice_recommend');
+        const text = options.modelText ?? '这套适合约会。白色运动鞋会更轻松。';
+        return {
+          id: 'resp_notice_final',
+          status: 'completed',
+          output_text: text,
+          output: [finalMessage(text)],
+        };
+      }
+      assert.ok(request.input.some(
+        (item: any) => item?.role === 'assistant' && item.content === authoritativeResultText,
+      ));
+      return {
+        id: 'resp_notice_followup',
+        status: 'completed',
+        output_text: '好的。',
+        output: [finalMessage('好的。')],
+      };
+    },
+  });
+  forceNoticeRecommendation(runtime, options);
+  const result = await runtime.runTurn(input({
+    message: '从衣柜给我搭一套',
+    inputSource: 'voice',
+  }));
+  if (result.status !== 'completed') assert.fail('expected completed voice result');
+  authoritativeResultText = result.text;
+  return { runtime, result, requests };
+}
+
 test('OpenAI Muse direct greeting is one Responses call with store false and encrypted reasoning include', async () => {
   const config = openAIConfig();
   const requests: any[] = [];
@@ -260,6 +396,48 @@ test('voice mode adds its response contract, returns grounded spokenText, and ke
   if (textResult.status !== 'completed') assert.fail('expected completed text result');
   assert.equal(textResult.spokenText, undefined);
   assert.doesNotMatch(requests[1].instructions, /Voice Response Contract/);
+});
+
+test('voice turn preserves fit uncertainty in spokenText and authoritative history', async () => {
+  const { runtime, result } = await runVoiceNoticeTurn({
+    complete: true,
+    fitStatus: 'unknown',
+  });
+
+  assert.match(result.text, /实际肩线、腰围和裤长仍建议试穿确认/);
+  assert.match(result.spokenText ?? '', /试穿确认/);
+  assert.doesNotMatch(result.spokenText ?? '', /从剪裁和风格上看这几件更适配/);
+  assert.ok(Array.from(result.spokenText ?? '').length <= 80);
+
+  const followup = await runtime.runTurn(input({ message: '继续', inputSource: 'text' }));
+  assert.equal(followup.status, 'completed');
+});
+
+test('voice turn preserves an incomplete closet gap without inventing closet items', async () => {
+  const { result } = await runVoiceNoticeTurn({
+    complete: false,
+    fitStatus: 'likely',
+  });
+
+  assert.match(result.text, /不够组成完整一套/);
+  assert.match(result.text, /主要缺\s*鞋子/);
+  assert.match(result.text, /柜外补充会单独标记/);
+  assert.match(result.spokenText ?? '', /衣柜现有单品还不够组成完整一套/);
+  assert.match(result.spokenText ?? '', /缺鞋子/);
+  assert.doesNotMatch(result.spokenText ?? '', /柜外补充会单独标记，不会冒充你的衣柜/);
+});
+
+test('voice turn keeps fit and closet notices together without reading the long disclaimer', async () => {
+  const { result } = await runVoiceNoticeTurn({
+    complete: false,
+    fitStatus: 'unknown',
+  });
+
+  assert.match(result.spokenText ?? '', /试穿确认/);
+  assert.match(result.spokenText ?? '', /缺鞋子/);
+  assert.ok(Array.from(result.spokenText ?? '').length <= 80);
+  assert.doesNotMatch(result.spokenText ?? '', /柜外补充会单独标记，不会冒充你的衣柜/);
+  assert.doesNotMatch(result.spokenText ?? '', /第一|第二/);
 });
 
 test('reasoning effort uses voice override only when the configured model supports it', async () => {
