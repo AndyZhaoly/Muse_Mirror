@@ -11,7 +11,7 @@ services:
     numInstances: 1
     dockerfilePath: ./Dockerfile
     healthCheckPath: /healthz
-    autoDeployTrigger: commit
+    autoDeployTrigger: off
     envVars:
       - key: NODE_ENV
         value: production
