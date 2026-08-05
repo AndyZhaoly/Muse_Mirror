@@ -156,11 +156,14 @@ real browser camera
         -> high-quality still capture packet
         -> deterministic situation-policy preflight
         -> real worn-outfit observation provider
-        -> per-session garment tracks
-        -> replaceable garment identity provider
+        -> independent Sharp garment crops (appearance evidence)
+        -> metadata Top-K recall
+        -> real-image garment verifier
         -> deterministic capture proposal validator
-        -> atomic per-user wardrobe repository commit
-        -> OutfitCaptureCompletedEvent
+        -> Stage A atomic per-browser wardrobe commit
+        -> Stage B image-edit product generation + visual verification
+        -> verified primary image update
+        -> OutfitCaptureCompletedEvent / processing state
         -> Mirror Screen completion card
 ```
 
@@ -172,18 +175,27 @@ fresh packet, one person, good three-quarter/full-body coverage, a complete worn
 garment-track observations. Active Agent/image tasks defer the capture, and multi-person observations enter
 privacy pause.
 
-`OutfitObservationProvider` reports visual facts only. `GarmentIdentityProvider` returns
-`matched_existing`, `new_to_closet`, `ambiguous`, or `insufficient_evidence` per item. The initial
-deterministic identity implementation matches durable user appearance fingerprints conservatively; base
-catalog metadata can produce ambiguity but cannot claim the same physical item without user appearance
-evidence. Ambiguous outcomes write nothing.
+The image model has three non-interchangeable roles: `capture_evidence` is the selected full still,
+`garment_appearance` is an independently cropped real garment used for identity and image editing, and
+`canonical_product` is a cleaned catalog image. Only a canonical image whose source-crop comparison passes
+the product verifier can become `ClosetItem.imageUrl`. Full-person evidence and raw crops never become a
+closet card.
 
-`JsonUserWardrobeRepository` owns the per-browser overlay and atomically writes new provisional
-`ClosetItem` records, `GarmentAppearance`, `OutfitCapture`, and `WearEvent` records with an idempotency key.
-The existing closet recommendation service reads the base closet plus that user overlay. A completion card
-is emitted only after the durable transaction succeeds. The selected still-frame evidence is stored under
-the configured output directory; continuous camera video remains in the browser.
+`OutfitObservationProvider` reports visual facts only. Identity first recalls a small Top-K set from slot,
+category, color, and pattern, then compares the current real crop with historical real appearances in one
+strict visual-verifier call. Base catalog images are a fallback for fixture items. Generated product images
+may assist display but are never the sole identity ground truth. `same`, `different`, and `uncertain` map to
+`matched_existing`, `new_to_closet`, or `ambiguous` under configured thresholds; ambiguous outcomes write
+nothing.
+
+`JsonUserWardrobeRepository` owns the signed-browser overlay. Stage A atomically writes provisional
+`ClosetItem`, appearance, capture, wear, evidence, and audit records with an idempotency key. Stage B keeps
+independent product-image jobs so a restart or developer retry cannot duplicate the wardrobe transaction.
+The recommendation runtime reads the same signed-browser overlay as ambient capture. A new-item completion
+card displays product images only after all required jobs are verified; repeat recognition reuses existing
+primary images without another generation call.
 
 This is a constrained investor-demo vertical slice, not general wardrobe ingestion. Face ID, household
-identity, held-garment capture, changing-clothes detection, multi-person tracking, production fashion ReID,
-and cross-device persistence remain out of scope.
+identity, held-garment capture, changing-clothes detection, multi-person tracking, trained FashionCLIP ReID,
+and cross-device persistence remain out of scope. The current visual verifier is an API-backed demo path,
+not a production biometric or garment-identification claim.

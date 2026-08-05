@@ -168,6 +168,36 @@ test('active assistant turn hides an older ambient completion event', () => {
   assert.equal(state.ambientCaptureEvent, undefined);
 });
 
+test('catalog image processing owns only the passive canvas', () => {
+  const passive = deriveMirrorScreenState(input({
+    messages: [{ id: 'a1', role: 'assistant', text: '较早的一轮回答' }],
+    ambientCaptureStatus: 'committed_processing_images',
+  }));
+  assert.equal(passive.phase, 'showing_result');
+  assert.equal(passive.contentKind, 'garment_ingestion');
+  assert.equal(passive.caption.museText, undefined);
+  assert.equal(passive.ambientCaptureStatus, 'committed_processing_images');
+
+  const active = deriveMirrorScreenState(input({
+    messages: [{ id: 'a2', role: 'assistant' }],
+    activeAssistantId: 'a2',
+    responding: true,
+    ambientCaptureStatus: 'committed_processing_images',
+  }));
+  assert.equal(active.phase, 'thinking');
+  assert.equal(active.ambientCaptureStatus, undefined);
+});
+
+test('catalog image failure never revives a stale conversation answer', () => {
+  const state = deriveMirrorScreenState(input({
+    messages: [{ id: 'a1', role: 'assistant', text: '上一轮穿搭建议' }],
+    ambientCaptureStatus: 'image_needs_review',
+  }));
+  assert.equal(state.contentKind, 'garment_ingestion');
+  assert.equal(state.caption.museText, undefined);
+  assert.equal(state.ambientCaptureStatus, 'image_needs_review');
+});
+
 test('situation decision is projected as a hint without changing conversation lifecycle', () => {
   const decision = situationDecision();
   const state = deriveMirrorScreenState(input({ situationDecision: decision }));

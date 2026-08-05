@@ -3,24 +3,43 @@ import type {
   AmbientClosetItem,
   GarmentAppearance,
   GarmentAppearanceDescriptor,
+  GarmentImageAsset,
   GarmentIdentityHypothesis,
   WornGarmentObservation,
 } from '../domain/ambientCapture.js';
 import type { ClosetItem } from '../types.js';
+import type { GarmentVisualVerifier } from './garmentVisualVerifier.js';
 
 export interface GarmentIdentityInput {
   userId: string;
   garment: WornGarmentObservation;
+  currentAppearance: GarmentImageAsset;
   baseClosetItems: ClosetItem[];
   userClosetItems: AmbientClosetItem[];
   appearances: GarmentAppearance[];
+  assets: GarmentImageAsset[];
+  baseCatalogAssets?: Map<string, GarmentImageAsset>;
 }
 
 export interface GarmentIdentityProvider {
+  readonly ready?: boolean;
   resolve(input: GarmentIdentityInput): Promise<GarmentIdentityHypothesis>;
 }
 
-export class DeterministicGarmentIdentityProvider implements GarmentIdentityProvider {
+export class VisualGarmentIdentityProvider implements GarmentIdentityProvider {
+  readonly ready: boolean;
+
+  constructor(
+    private readonly options: {
+      verifier: GarmentVisualVerifier;
+      topK?: number;
+      matchConfidence?: number;
+      newConfidence?: number;
+    },
+  ) {
+    this.ready = options.verifier.ready;
+  }
+
   async resolve(input: GarmentIdentityInput): Promise<GarmentIdentityHypothesis> {
     const descriptor = descriptorFromObservation(input.garment);
     const fingerprint = appearanceFingerprint(descriptor);
@@ -30,45 +49,87 @@ export class DeterministicGarmentIdentityProvider implements GarmentIdentityProv
       ]);
     }
 
-    const userScores = input.userClosetItems.map(({ item, appearanceFingerprint: storedFingerprint }) => ({
+    const userScores = input.userClosetItems.map(({ item }) => ({
       itemId: item.id,
-      score: storedFingerprint === fingerprint
-        ? 1
-        : scoreDescriptor(descriptor, descriptorForItem(item, input.appearances)),
+      score: scoreDescriptor(descriptor, descriptorForItem(item, input.appearances)),
       source: 'user' as const,
     }));
     const baseScores = input.baseClosetItems
       .filter((item) => item.category === descriptor.category)
       .map((item) => ({
         itemId: item.id,
-        // Base catalog metadata has no captured appearance fingerprint. Keep it
-        // useful for ambiguity detection without claiming a physical match.
-        score: Math.min(0.74, scoreDescriptor(descriptor, descriptorForItem(item, []))),
+        score: scoreDescriptor(descriptor, descriptorForItem(item, [])),
         source: 'base' as const,
       }));
     const scores = [...userScores, ...baseScores]
       .sort((a, b) => b.score - a.score || a.itemId.localeCompare(b.itemId));
-    const best = scores[0];
-    const second = scores[1];
-
-    if (best?.source === 'user' && best.score >= 0.82 && (!second || best.score - second.score >= 0.08)) {
-      return {
-        ...hypothesis(input.garment.observationItemId, 'matched_existing', fingerprint, best.score, scores.slice(0, 3).map((item) => item.itemId), [
-          best.score === 1 ? 'EXACT_APPEARANCE_FINGERPRINT' : 'USER_APPEARANCE_MATCH',
-        ]),
-        matchedClosetItemId: best.itemId,
-      };
-    }
-
-    if (best && best.score >= 0.68) {
-      return hypothesis(input.garment.observationItemId, 'ambiguous', fingerprint, best.score, scores.slice(0, 3).map((item) => item.itemId), [
-        best.source === 'base' ? 'BASE_CATALOG_SIMILAR_WITHOUT_USER_APPEARANCE' : 'MULTIPLE_SIMILAR_ITEMS',
+    const recalled = scores.filter((item) => item.score >= 0.45).slice(0, this.options.topK ?? 4);
+    if (!recalled.length) {
+      return hypothesis(input.garment.observationItemId, 'new_to_closet', fingerprint, 1, [], [
+        'NO_METADATA_RECALL_CANDIDATE',
       ]);
     }
-
-    return hypothesis(input.garment.observationItemId, 'new_to_closet', fingerprint, 1 - (best?.score ?? 0), scores.slice(0, 3).map((item) => item.itemId), [
-      'NO_RELIABLE_APPEARANCE_MATCH',
+    if (!this.options.verifier.ready) {
+      return hypothesis(input.garment.observationItemId, 'ambiguous', fingerprint, 0, recalled.map((item) => item.itemId), [
+        'REAL_VISUAL_VERIFIER_UNAVAILABLE',
+      ]);
+    }
+    const allItems = new Map([
+      ...input.baseClosetItems.map((item) => [item.id, item] as const),
+      ...input.userClosetItems.map((entry) => [entry.item.id, entry.item] as const),
     ]);
+    const candidates = recalled.flatMap(({ itemId, source }) => {
+      const closetItem = allItems.get(itemId);
+      if (!closetItem) return [];
+      const appearanceIds = new Set(input.appearances.filter((appearance) => appearance.closetItemId === itemId).map((appearance) => appearance.appearanceAssetId));
+      const appearanceAssets = input.assets
+        .filter((asset) => asset.role === 'garment_appearance' && appearanceIds.has(asset.assetId))
+        .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+      const fallbackCatalogImage = source === 'base' ? input.baseCatalogAssets?.get(itemId) : undefined;
+      if (!appearanceAssets.length && !fallbackCatalogImage) return [];
+      return [{ closetItem, appearanceAssets, fallbackCatalogImage }];
+    });
+    if (!candidates.length) {
+      return hypothesis(input.garment.observationItemId, 'new_to_closet', fingerprint, 1, recalled.map((item) => item.itemId), [
+        'NO_REAL_VISUAL_REFERENCE_FOR_RECALLED_CANDIDATES',
+      ]);
+    }
+    const verification = await this.options.verifier.verify({
+      currentAppearance: input.currentAppearance,
+      candidates,
+    });
+    if (
+      verification.result === 'same' &&
+      verification.matchedClosetItemId &&
+      verification.confidence >= (this.options.matchConfidence ?? 0.82)
+    ) {
+      return {
+        ...hypothesis(input.garment.observationItemId, 'matched_existing', fingerprint, verification.confidence, recalled.map((item) => item.itemId), [
+          'REAL_VISUAL_APPEARANCE_MATCH',
+          ...verification.evidence,
+        ]),
+        matchedClosetItemId: verification.matchedClosetItemId,
+      };
+    }
+    if (verification.result === 'different' && verification.confidence >= (this.options.newConfidence ?? 0.78)) {
+      return hypothesis(input.garment.observationItemId, 'new_to_closet', fingerprint, verification.confidence, recalled.map((item) => item.itemId), [
+        'REAL_VISUAL_CANDIDATES_DIFFERENT',
+        ...verification.mismatches,
+      ]);
+    }
+    return hypothesis(input.garment.observationItemId, 'ambiguous', fingerprint, verification.confidence, recalled.map((item) => item.itemId), [
+      'REAL_VISUAL_IDENTITY_UNCERTAIN',
+      ...verification.mismatches,
+    ]);
+  }
+}
+
+/** Metadata-only provider retained for policy fixtures; production capture never wires it. */
+export class DeterministicGarmentIdentityProvider implements GarmentIdentityProvider {
+  async resolve(input: GarmentIdentityInput): Promise<GarmentIdentityHypothesis> {
+    const descriptor = descriptorFromObservation(input.garment);
+    const fingerprint = appearanceFingerprint(descriptor);
+    return hypothesis(input.garment.observationItemId, 'new_to_closet', fingerprint, 1, [], ['TEST_METADATA_PROVIDER']);
   }
 }
 

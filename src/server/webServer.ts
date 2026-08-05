@@ -1,7 +1,9 @@
 import fs from 'node:fs/promises';
 import { createReadStream } from 'node:fs';
+import { createHash } from 'node:crypto';
 import http from 'node:http';
 import path from 'node:path';
+import sharp from 'sharp';
 import { loadConfig, resolveOpenAIReasoningEffort } from '../config.js';
 import { FashionAgentRuntime } from '../agent/runtime.js';
 import { GemmaFashionRuntime } from './gemmaFashionRuntime.js';
@@ -27,14 +29,27 @@ import {
 } from '../runtime/memoryStore.js';
 import { createServiceContainer } from '../runtime/serviceContainer.js';
 import { RealOutfitObservationProvider } from '../services/outfitObservationProvider.js';
-import { DeterministicGarmentIdentityProvider } from '../services/garmentIdentityProvider.js';
+import { VisualGarmentIdentityProvider } from '../services/garmentIdentityProvider.js';
 import { AmbientCaptureCoordinator } from '../runtime/ambientCaptureCoordinator.js';
+import { GarmentImageAssetService } from '../services/garmentImageAssetService.js';
+import {
+  DisabledGarmentVisualVerifier,
+  DisabledProductImageVerifier,
+  OpenAIGarmentVisualVerifier,
+  OpenAIProductImageVerifier,
+} from '../services/garmentVisualVerifier.js';
+import {
+  DisabledProductImageProvider,
+  OpenAIProductImageProvider,
+} from '../services/productImageProvider.js';
+import type { GarmentImageAsset } from '../domain/ambientCapture.js';
 import type {
   AgentActivity,
   AttachmentInput,
   ContextOverride,
   Conversation,
   ConversationMessage,
+  ClosetItem,
   ExplicitPreferenceEvent,
   FashionTurnInput,
   FashionTurnResult,
@@ -60,6 +75,22 @@ const providerReadiness = new ProviderReadinessCache(config);
 const memoryStore = new JsonMuseMemoryStore(config.memoryDataPath);
 const sharedServices = createServiceContainer(config);
 const wardrobeRepository = sharedServices.wardrobeRepository!;
+const garmentAssetService = new GarmentImageAssetService({ rootDirectory: config.outputDir });
+const garmentVisualVerifier = config.visionProvider === 'openai'
+  ? new OpenAIGarmentVisualVerifier({ model: config.openaiVisionModel, apiKey: process.env.OPENAI_API_KEY })
+  : new DisabledGarmentVisualVerifier();
+const productImageVerifier = config.productImageProvider === 'openai' && config.visionProvider === 'openai'
+  ? new OpenAIProductImageVerifier({ model: config.openaiVisionModel, apiKey: process.env.OPENAI_API_KEY })
+  : new DisabledProductImageVerifier();
+const productImageProvider = config.productImageProvider === 'openai'
+  ? new OpenAIProductImageProvider({
+      model: config.openaiProductImageModel,
+      quality: config.openaiProductImageQuality,
+      size: config.openaiProductImageSize,
+      assetService: garmentAssetService,
+      apiKey: process.env.OPENAI_API_KEY,
+    })
+  : new DisabledProductImageProvider();
 const ambientCaptureCoordinator = new AmbientCaptureCoordinator({
   observationProvider: new RealOutfitObservationProvider({
     provider: config.visionProvider,
@@ -67,11 +98,58 @@ const ambientCaptureCoordinator = new AmbientCaptureCoordinator({
     ollamaEndpoint: config.gemma4OllamaEndpoint,
     ollamaModel: config.ollamaVisionModel,
   }),
-  identityProvider: new DeterministicGarmentIdentityProvider(),
+  identityProvider: new VisualGarmentIdentityProvider({
+    verifier: garmentVisualVerifier,
+    topK: config.identityTopK,
+    matchConfidence: config.identityMatchConfidence,
+    newConfidence: config.identityNewConfidence,
+  }),
   repository: wardrobeRepository,
   baseClosetItems: () => sharedServices.closet.allItems(),
-  evidenceDirectory: config.outputDir,
+  assetService: garmentAssetService,
+  productImageProvider,
+  productImageVerifier,
+  productImageVerifyConfidence: config.productImageVerifyConfidence,
+  baseCatalogAssets: () => buildBaseCatalogAssets(sharedServices.closet.allItems()),
 });
+
+async function buildBaseCatalogAssets(items: ClosetItem[]): Promise<Map<string, GarmentImageAsset>> {
+  const assets = new Map<string, GarmentImageAsset>();
+  await Promise.all(items.map(async (item) => {
+    const storagePath = baseCatalogStoragePath(item.imageUrl);
+    if (!storagePath) return;
+    try {
+      const [bytes, metadata] = await Promise.all([fs.readFile(storagePath), sharp(storagePath).metadata()]);
+      if (!metadata.width || !metadata.height) return;
+      const mimeType: GarmentImageAsset['mimeType'] = /\.webp$/i.test(storagePath)
+        ? 'image/webp'
+        : /\.png$/i.test(storagePath) ? 'image/png' : 'image/jpeg';
+      assets.set(item.id, {
+        assetId: `base_catalog_${createHash('sha256').update(item.id).digest('hex').slice(0, 18)}`,
+        ownerUserId: 'base_catalog',
+        role: 'canonical_product',
+        imageUrl: item.imageUrl,
+        storagePath,
+        closetItemId: item.id,
+        width: metadata.width,
+        height: metadata.height,
+        mimeType,
+        verificationStatus: 'not_required',
+        contentHash: createHash('sha256').update(bytes).digest('hex'),
+        createdAt: new Date(0).toISOString(),
+      });
+    } catch {
+      // Missing fixture images are excluded from visual identity recall.
+    }
+  }));
+  return assets;
+}
+
+function baseCatalogStoragePath(imageUrl: string): string | undefined {
+  if (imageUrl.startsWith('/agent-assets/')) return path.join(publicDir, imageUrl.slice('/agent-assets/'.length));
+  if (imageUrl.startsWith('/demo2-product-images/')) return path.join(config.demo2ProductImageDir, imageUrl.slice('/demo2-product-images/'.length));
+  return undefined;
+}
 void providerReadiness.refresh();
 const runtime =
   config.agentProvider === 'gemma4'
@@ -474,7 +552,11 @@ async function handleTurn(
   const prepared = await prepareTurnInput(input);
   const captured = await saveCapturedImage(input);
   const attachments = [...(input.attachments ?? []), ...(captured ? [captured] : [])];
-  const result = await runtime.runTurn({ ...prepared.input, attachments });
+  const result = await runtime.runTurn({
+    ...prepared.input,
+    userId: runtimeUserId(req, prepared.input.userId),
+    attachments,
+  });
   const finalized = await finalizeTurnMemory({
     input: prepared.input,
     result,
@@ -507,6 +589,7 @@ async function handleTurnStream(
     stage = 'agent_runtime';
     const result = await runtime.runTurn({
       ...prepared.input,
+      userId: runtimeUserId(req, prepared.input.userId),
       attachments,
       onActivity: (activity: AgentActivity) => {
         writeSse(res, 'activity', activity);
@@ -793,7 +876,11 @@ async function handleMirrorFrame(
   const captured = await saveCapturedImage(input);
   const attachments = [...(input.attachments ?? []), ...(captured ? [captured] : [])];
   if ('cacheMirrorFrame' in runtime && typeof runtime.cacheMirrorFrame === 'function') {
-    const result = runtime.cacheMirrorFrame({ ...input, attachments }) as MirrorFrameResult;
+    const result = runtime.cacheMirrorFrame({
+      ...input,
+      userId: runtimeUserId(req, input.userId),
+      attachments,
+    }) as MirrorFrameResult;
     jsonResponse(res, 200, result);
     return;
   }
@@ -805,11 +892,10 @@ async function handleAmbientCapture(
   url: URL,
   res: http.ServerResponse,
 ): Promise<void> {
-  const queryUserId = url.searchParams.get('userId');
+  const userId = requireBrowserIdentity(req, res);
+  if (!userId) return;
 
   if (req.method === 'GET' && url.pathname === '/api/ambient-capture/state') {
-    const userId = requireUserId(res, queryUserId);
-    if (!userId) return;
     const [state, diagnostics] = await Promise.all([
       wardrobeRepository.getState(userId),
       ambientCaptureCoordinator.diagnostics(userId),
@@ -819,6 +905,8 @@ async function handleAmbientCapture(
       closetItems: state.closetItems,
       captures: state.captures,
       wearEvents: state.wearEvents,
+      pendingCompletionEvent: state.pendingCompletionEvent,
+      imageJobs: state.productImageJobs.map(({ jobId, closetItemId, status, failureCode, updatedAt }) => ({ jobId, closetItemId, status, failureCode, updatedAt })),
       diagnostics,
     });
     return;
@@ -826,8 +914,6 @@ async function handleAmbientCapture(
 
   if (req.method === 'POST' && url.pathname === '/api/ambient-capture/grant') {
     const body = await readJson(req) as { userId?: string; enabled?: boolean };
-    const userId = requireUserId(res, body.userId ?? queryUserId);
-    if (!userId) return;
     if (typeof body.enabled !== 'boolean') {
       jsonResponse(res, 400, { error: 'enabled must be a boolean.' });
       return;
@@ -839,8 +925,6 @@ async function handleAmbientCapture(
 
   if (req.method === 'POST' && url.pathname === '/api/ambient-capture/frame') {
     const body = await readJson(req) as WebAmbientCaptureRequest;
-    const userId = requireUserId(res, body.userId ?? queryUserId);
-    if (!userId) return;
     if (!body.sessionId?.trim() || !body.capturedImageDataUrl || !body.stability) {
       jsonResponse(res, 400, { error: 'sessionId, capturedImageDataUrl, and stability are required.' });
       return;
@@ -880,8 +964,6 @@ async function handleAmbientCapture(
 
   if (req.method === 'POST' && url.pathname === '/api/ambient-capture/episode/end') {
     const body = await readJson(req) as { userId?: string; sessionId?: string };
-    const userId = requireUserId(res, body.userId ?? queryUserId);
-    if (!userId) return;
     if (!body.sessionId?.trim()) {
       jsonResponse(res, 400, { error: 'sessionId is required.' });
       return;
@@ -891,15 +973,78 @@ async function handleAmbientCapture(
   }
 
   if (req.method === 'POST' && url.pathname === '/api/ambient-capture/debug/reset') {
-    const body = await readJson(req) as { userId?: string };
-    const userId = requireUserId(res, body.userId ?? queryUserId);
-    if (!userId) return;
+    await readJson(req).catch(() => ({}));
     await ambientCaptureCoordinator.resetUser(userId);
     jsonResponse(res, 200, { ok: true });
     return;
   }
 
+  if (req.method === 'POST' && (url.pathname === '/api/ambient-capture/acknowledge' || url.pathname === '/api/fashion/outfit-capture/acknowledge')) {
+    await readJson(req).catch(() => ({}));
+    jsonResponse(res, 200, { ok: true, acknowledged: await ambientCaptureCoordinator.acknowledge(userId) });
+    return;
+  }
+
+  if (req.method === 'POST' && (url.pathname === '/api/ambient-capture/debug/retry-product-image' || url.pathname === '/api/dev/outfit-capture/retry-product-image')) {
+    const body = await readJson(req) as { closetItemId?: string };
+    if (!body.closetItemId?.trim()) {
+      jsonResponse(res, 400, { error: 'closetItemId is required.' });
+      return;
+    }
+    jsonResponse(res, 200, { ok: true, outcome: await ambientCaptureCoordinator.retryProductImage(userId, body.closetItemId) });
+    return;
+  }
+
   textResponse(res, 404, 'Not found');
+}
+
+function requireBrowserIdentity(req: http.IncomingMessage, res: http.ServerResponse): string | undefined {
+  const userId = demoAccess.browserUserId(req);
+  if (!userId) jsonResponse(res, 401, { error: 'A valid browser identity is required.' });
+  return userId;
+}
+
+function runtimeUserId(req: http.IncomingMessage, fallbackUserId: string): string {
+  return demoAccess.browserUserId(req) ?? fallbackUserId;
+}
+
+async function handleWardrobeAsset(
+  req: http.IncomingMessage,
+  url: URL,
+  res: http.ServerResponse,
+): Promise<void> {
+  const userId = requireBrowserIdentity(req, res);
+  if (!userId) return;
+  const assetId = decodeURIComponent(url.pathname.slice('/api/fashion/wardrobe-assets/'.length));
+  if (!/^[a-z0-9_-]{8,160}$/i.test(assetId) || assetId.includes('..')) {
+    jsonResponse(res, 400, { error: 'Invalid asset ID.' });
+    return;
+  }
+  const asset = await wardrobeRepository.getAsset(userId, assetId);
+  if (!asset || asset.ownerUserId !== userId || !asset.storagePath) {
+    jsonResponse(res, 404, { error: 'Asset not found.' });
+    return;
+  }
+  const root = path.resolve(config.outputDir, 'users');
+  const storagePath = path.resolve(asset.storagePath);
+  const relative = path.relative(root, storagePath);
+  if (!relative || relative.startsWith('..') || path.isAbsolute(relative)) {
+    jsonResponse(res, 404, { error: 'Asset not found.' });
+    return;
+  }
+  try {
+    await fs.access(storagePath);
+  } catch {
+    jsonResponse(res, 404, { error: 'Asset not found.' });
+    return;
+  }
+  res.writeHead(200, {
+    'content-type': asset.mimeType,
+    'cache-control': asset.role === 'capture_evidence' ? 'private, no-store' : 'private, max-age=3600',
+    'x-content-type-options': 'nosniff',
+  });
+  if (req.method === 'HEAD') res.end();
+  else createReadStream(storagePath).pipe(res);
 }
 
 function handlePerceptionStatus(
@@ -939,7 +1084,10 @@ async function handleResume(
   res: http.ServerResponse,
 ): Promise<void> {
   const input = (await readJson(req)) as ResumeFashionTurnInput;
-  const result = await runtime.resumeTurn(input);
+  const result = await runtime.resumeTurn({
+    ...input,
+    userId: runtimeUserId(req, input.userId),
+  });
   jsonResponse(res, 200, normalizeResult(result));
 }
 
@@ -1050,6 +1198,15 @@ async function route(req: http.IncomingMessage, res: http.ServerResponse): Promi
           ),
         },
         capabilities,
+        ambientCapture: {
+          observationProviderReady: config.visionProvider === 'openai' || config.visionProvider === 'ollama',
+          identityVerifierReady: garmentVisualVerifier.ready,
+          identityTopK: config.identityTopK,
+          productImageProvider: config.productImageProvider,
+          productImageModel: config.openaiProductImageModel,
+          productImageProviderReady: productImageProvider.ready,
+          productImageVerifierReady: productImageVerifier.ready,
+        },
         transport: gemma4EndpointStatus.transport,
         message: gemma4EndpointStatus.message,
       });
@@ -1081,6 +1238,14 @@ async function route(req: http.IncomingMessage, res: http.ServerResponse): Promi
     }
     if (url.pathname === '/api/ambient-capture' || url.pathname.startsWith('/api/ambient-capture/')) {
       await handleAmbientCapture(req, url, res);
+      return;
+    }
+    if (url.pathname === '/api/fashion/outfit-capture/acknowledge' || url.pathname === '/api/dev/outfit-capture/retry-product-image') {
+      await handleAmbientCapture(req, url, res);
+      return;
+    }
+    if ((req.method === 'GET' || req.method === 'HEAD') && url.pathname.startsWith('/api/fashion/wardrobe-assets/')) {
+      await handleWardrobeAsset(req, url, res);
       return;
     }
     if (req.method === 'POST' && url.pathname === '/api/fashion/turn') {

@@ -612,9 +612,12 @@ export interface AmbientCaptureCompletedEvent {
     slot: 'top' | 'bottom' | 'dress' | 'outerwear' | 'shoes' | 'bag' | 'accessory';
     label: string;
     status: 'new' | 'recognized';
+    imageUrl?: string;
+    imageStatus?: 'processing' | 'ready' | 'needs_review' | 'failed';
   }>;
   repeatedOutfit: boolean;
   committedAt: string;
+  acknowledgedAt?: string;
 }
 
 export interface AmbientCaptureOutcome {
@@ -626,8 +629,12 @@ export interface AmbientCaptureOutcome {
     | 'insufficient_evidence'
     | 'ambiguous'
     | 'committed'
+    | 'committed_processing_images'
+    | 'ready'
     | 'recognized'
     | 'mixed'
+    | 'mixed_ready'
+    | 'image_needs_review'
     | 'already_committed'
     | 'episode_ended'
     | 'unavailable';
@@ -643,13 +650,20 @@ export interface AmbientCaptureState {
   closetItems: Array<{ item: ClosetItem; status: 'provisional' | 'confirmed' }>;
   captures: Array<{ captureId: string; repeatedOutfit: boolean; capturedAt: string }>;
   wearEvents: Array<{ wearEventId: string; closetItemId: string; wornAt: string }>;
+  pendingCompletionEvent?: AmbientCaptureCompletedEvent;
+  imageJobs?: Array<{ jobId: string; closetItemId: string; status: string; failureCode?: string; updatedAt: string }>;
   diagnostics: {
     enabled: boolean;
     providerReady: boolean;
+    identityVerifierReady: boolean;
+    productImageProviderReady: boolean;
+    productImageVerifierReady: boolean;
     grantActive: boolean;
     closetItemCount: number;
     captureCount: number;
     wearEventCount: number;
+    processingImageCount: number;
+    needsReviewImageCount: number;
     lastOutcome?: AmbientCaptureOutcome;
   };
 }
@@ -773,15 +787,15 @@ export function sendMirrorFrame(input: MirrorFrameRequest): Promise<MirrorFrameR
   return postJson<MirrorFrameResult>('/api/fashion/mirror/frame', input);
 }
 
-export async function getAmbientCaptureState(userId: string): Promise<AmbientCaptureState> {
-  const response = await fetch(`/api/ambient-capture/state?userId=${encodeURIComponent(userId)}`);
+export async function getAmbientCaptureState(_userId?: string): Promise<AmbientCaptureState> {
+  const response = await fetch('/api/ambient-capture/state');
   const body = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(typeof body.error === 'string' ? body.error : `Ambient capture state failed with HTTP ${response.status}`);
   return body as AmbientCaptureState;
 }
 
 export function setAmbientCaptureGrant(input: { userId: string; enabled: boolean }): Promise<{ ok: true; enabled: boolean }> {
-  return postJson('/api/ambient-capture/grant', input);
+  return postJson('/api/ambient-capture/grant', { enabled: input.enabled });
 }
 
 export function sendAmbientCaptureFrame(input: {
@@ -799,15 +813,25 @@ export function sendAmbientCaptureFrame(input: {
     sourceHeight: number;
   };
 }): Promise<{ ok: true; outcome: AmbientCaptureOutcome }> {
-  return postJson('/api/ambient-capture/frame', input);
+  const { userId: _ignored, ...serverBoundInput } = input;
+  return postJson('/api/ambient-capture/frame', serverBoundInput);
 }
 
 export function endAmbientCaptureEpisode(input: { userId: string; sessionId: string }): Promise<{ ok: true; outcome: AmbientCaptureOutcome }> {
-  return postJson('/api/ambient-capture/episode/end', input);
+  return postJson('/api/ambient-capture/episode/end', { sessionId: input.sessionId });
 }
 
 export function resetAmbientCapture(userId: string): Promise<{ ok: true }> {
-  return postJson('/api/ambient-capture/debug/reset', { userId });
+  void userId;
+  return postJson('/api/ambient-capture/debug/reset', {});
+}
+
+export function acknowledgeAmbientCapture(): Promise<{ ok: true; acknowledged: boolean }> {
+  return postJson('/api/fashion/outfit-capture/acknowledge', {});
+}
+
+export function retryAmbientProductImage(closetItemId: string): Promise<{ ok: true; outcome: AmbientCaptureOutcome }> {
+  return postJson('/api/dev/outfit-capture/retry-product-image', { closetItemId });
 }
 
 export async function getPerceptionStatus(sessionId: string): Promise<PerceptionState> {

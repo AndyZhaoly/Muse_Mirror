@@ -66,6 +66,14 @@ export interface AppConfig {
   outputDir: string;
   memoryDataPath: string;
   ambientWardrobeDataPath: string;
+  productImageProvider: 'openai' | 'disabled';
+  openaiProductImageModel: string;
+  openaiProductImageQuality: 'low' | 'medium' | 'high';
+  openaiProductImageSize: string;
+  productImageVerifyConfidence: number;
+  identityTopK: number;
+  identityMatchConfidence: number;
+  identityNewConfidence: number;
   skillsDir: string;
   trace: boolean;
   visualQcEnabled: boolean;
@@ -339,6 +347,16 @@ export function loadConfig(): AppConfig {
     ambientWardrobeDataPath: path.resolve(
       process.env.FASHION_AGENT_AMBIENT_WARDROBE_DATA ?? './out/ambient-wardrobe-v1.json',
     ),
+    productImageProvider: process.env.FASHION_AGENT_PRODUCT_IMAGE_PROVIDER === 'openai' ? 'openai' : 'disabled',
+    openaiProductImageModel: process.env.OPENAI_PRODUCT_IMAGE_MODEL ?? 'gpt-image-2',
+    openaiProductImageQuality: ['low', 'medium', 'high'].includes(process.env.OPENAI_PRODUCT_IMAGE_QUALITY ?? '')
+      ? process.env.OPENAI_PRODUCT_IMAGE_QUALITY as 'low' | 'medium' | 'high'
+      : 'medium',
+    openaiProductImageSize: process.env.OPENAI_PRODUCT_IMAGE_SIZE ?? '1024x1024',
+    productImageVerifyConfidence: numberEnv('FASHION_AGENT_PRODUCT_IMAGE_VERIFY_CONFIDENCE', 0.84),
+    identityTopK: Math.max(1, Math.round(numberEnv('FASHION_AGENT_IDENTITY_TOP_K', 4))),
+    identityMatchConfidence: numberEnv('FASHION_AGENT_IDENTITY_MATCH_CONFIDENCE', 0.82),
+    identityNewConfidence: numberEnv('FASHION_AGENT_IDENTITY_NEW_CONFIDENCE', 0.78),
     skillsDir: path.resolve(process.env.FASHION_AGENT_SKILLS_DIR ?? './skills'),
     trace: boolEnv('FASHION_AGENT_TRACE', false),
     visualQcEnabled: boolEnv('FASHION_AGENT_VISUAL_QC', true),

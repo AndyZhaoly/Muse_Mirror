@@ -47,6 +47,12 @@ export interface ClosetItem {
   formality: string;
   styleTags: string[];
   imageUrl: string;
+  primaryImageAssetId?: string;
+  appearanceAssetIds?: string[];
+  imageStatus?: 'processing' | 'ready' | 'needs_review' | 'failed';
+  source?: 'demo_fixture' | 'mirror_auto_capture' | 'manual';
+  identityStatus?: 'confirmed' | 'provisional' | 'merged';
+  ownershipStatus?: 'confirmed' | 'unverified';
   marketedFor?: 'womens' | 'mens' | 'unisex';
   presentationMetadata?: PresentationMetadata;
   cutProfile?: CutProfile;

@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 1000" role="img" aria-label="Wardrobe image processing">
+  <rect width="800" height="1000" fill="#f3f1eb"/>
+  <path d="M290 286h220l52 94-77 47v330H315V427l-77-47 52-94Z" fill="#dedbd3" stroke="#c6c1b8" stroke-width="8"/>
+  <circle cx="400" cy="520" r="36" fill="none" stroke="#918b80" stroke-width="9" stroke-dasharray="52 24"/>
+</svg>

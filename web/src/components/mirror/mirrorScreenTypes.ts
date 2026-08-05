@@ -1,7 +1,7 @@
 import type { AgentActivity, AgentArtifact } from '../../agentClient.js';
 import type { VoiceSessionState } from '../../voice/voiceTypes.js';
 import type { MirrorSituationDecision } from '../../../../src/domain/mirrorSituation.js';
-import type { AmbientCaptureCompletedEvent } from '../../agentClient.js';
+import type { AmbientCaptureCompletedEvent, AmbientCaptureOutcome } from '../../agentClient.js';
 
 export type MirrorInteractionPhase =
   | 'idle'
@@ -63,6 +63,7 @@ export interface MirrorScreenState {
   isActiveTurn: boolean;
   situationDecision?: MirrorSituationDecision;
   ambientCaptureEvent?: AmbientCaptureCompletedEvent;
+  ambientCaptureStatus?: AmbientCaptureOutcome['status'];
 }
 
 export interface MirrorScreenMessage {
@@ -92,4 +93,5 @@ export interface MirrorScreenControllerInput {
   perceptionLabel: string;
   situationDecision?: MirrorSituationDecision;
   ambientCaptureEvent?: AmbientCaptureCompletedEvent;
+  ambientCaptureStatus?: AmbientCaptureOutcome['status'];
 }

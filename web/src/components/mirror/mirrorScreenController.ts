@@ -210,14 +210,19 @@ export function deriveMirrorScreenState(input: MirrorScreenControllerInput): Mir
       (message) => message.id === input.activeAssistantId && message.role === 'assistant',
     )
     : undefined;
-  const ambientCaptureEvent = !activeAssistant &&
+  const canShowAmbientCapture = !activeAssistant &&
     !input.responding &&
     !input.generating &&
     !input.hasPendingApproval &&
-    (input.voice.state === 'disabled' || input.voice.state === 'idle' || input.voice.state === 'listening')
-    ? input.ambientCaptureEvent
-    : undefined;
-  const completedAssistant = ambientCaptureEvent ? undefined : latestCompletedAssistant(input.messages);
+    (input.voice.state === 'disabled' || input.voice.state === 'idle' || input.voice.state === 'listening');
+  const ambientCaptureEvent = canShowAmbientCapture ? input.ambientCaptureEvent : undefined;
+  const ambientCaptureStatus = canShowAmbientCapture ? input.ambientCaptureStatus : undefined;
+  const ambientCaptureOwnsCanvas = Boolean(
+    ambientCaptureEvent ||
+    ambientCaptureStatus === 'committed_processing_images' ||
+    ambientCaptureStatus === 'image_needs_review',
+  );
+  const completedAssistant = ambientCaptureOwnsCanvas ? undefined : latestCompletedAssistant(input.messages);
   const ownerMessage = activeAssistant ?? completedAssistant;
   const activeText = activeAssistant?.text?.trim() || undefined;
   const activeCommentary = activeAssistant?.commentary?.trim() || undefined;
@@ -254,7 +259,7 @@ export function deriveMirrorScreenState(input: MirrorScreenControllerInput): Mir
   } else if (
     phase === 'idle' &&
     !input.hasPendingApproval &&
-    !ambientCaptureEvent &&
+    !ambientCaptureOwnsCanvas &&
     input.voice.state !== 'error'
   ) {
     museText = IDLE_FALLBACK;
@@ -297,26 +302,26 @@ export function deriveMirrorScreenState(input: MirrorScreenControllerInput): Mir
     : undefined;
 
   return {
-    phase: ambientCaptureEvent && phase === 'idle' ? 'showing_result' : phase,
-    contentKind: ambientCaptureEvent ? 'garment_ingestion' : primaryArtifact?.contentKind ?? (
+    phase: ambientCaptureOwnsCanvas && phase === 'idle' ? 'showing_result' : phase,
+    contentKind: ambientCaptureOwnsCanvas ? 'garment_ingestion' : primaryArtifact?.contentKind ?? (
       input.situationDecision?.presentation.visibility === 'foreground'
         ? input.situationDecision.presentation.contentKind
         : 'conversation'
     ),
-    priority: ambientCaptureEvent && phase === 'idle' ? 30 : priority,
+    priority: ambientCaptureOwnsCanvas && phase === 'idle' ? 30 : priority,
     ownerMessageId: ownerMessage?.id,
     ambient: {
       agentStatusLabel: input.agentStatusLabel,
       perceptionLabel: input.perceptionLabel,
     },
     caption: {
-      latestUserText: ambientCaptureEvent ? undefined : toCanvasPlainText(recognizingText ?? latestUserText(input.messages)),
+      latestUserText: ambientCaptureOwnsCanvas ? undefined : toCanvasPlainText(recognizingText ?? latestUserText(input.messages)),
       museText: toCanvasPlainText(museText),
       museTextSource,
       activityLabel,
       showTyping: Boolean(
         activeAssistant && !activeText && !activeCommentary ||
-        !activeAssistant && phase === 'thinking' && !museText,
+        !activeAssistant && phase === 'thinking' && !museText && !ambientCaptureOwnsCanvas,
       ),
     },
     voice,
@@ -325,5 +330,6 @@ export function deriveMirrorScreenState(input: MirrorScreenControllerInput): Mir
     isActiveTurn: Boolean(activeAssistant),
     situationDecision: input.situationDecision,
     ambientCaptureEvent,
+    ambientCaptureStatus,
   };
 }

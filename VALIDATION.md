@@ -51,11 +51,12 @@ For the development UI smoke, run `npm run server` and `npm run web:dev`, then s
 `DEVELOPER ONLY` situation panel. Verify that the policy result appears without camera capture, Agent
 Activity, TTS, a network request, or closet mutation. The panel must not exist in the production build.
 
-Ambient capture tests use real-provider-shaped structured observations and a durable temporary JSON
-repository. They cover the three required rounds (new outfit, repeated outfit after repository reload, and
-mixed new/existing items), explicit grant gating, stale packets, multi-person privacy pause, garment-track
-stability, ambiguous identity rollback, duplicate/concurrent request idempotency, browser-user isolation,
-overlay recommendation retrieval, and local pixel stability:
+Ambient capture tests use real-provider-shaped structured observations, real Sharp image fixtures, fake
+image-edit/visual-verifier providers, and a durable temporary JSON repository. They cover independent crops,
+the three required rounds (new outfit, repeated outfit after repository reload, and mixed new/existing
+items), Stage A/Stage B state, provider-disabled failure, explicit grant gating, stale packets, garment-track
+stability, ambiguous identity rollback, signed-browser isolation, protected asset routes, overlay recommendation
+retrieval, and local pixel stability:
 
 ```bash
 node --import tsx --test \
@@ -65,10 +66,12 @@ node --import tsx --test \
 ```
 
 For a real local smoke, configure a real vision provider, open the camera, accept the one-time automatic
-recording grant, and use a clearly distinct top and bottom under good lighting. Leave the frame or pause the
-camera to end round one, then return in the same outfit for round two. Replace only one garment for round
-three. Use `?ambientDebug=1` to inspect safe counts/outcome reason codes or reset the current browser user's
-overlay. Do not claim a real-provider smoke unless those live camera rounds were actually executed.
+recording grant, set `FASHION_AGENT_PRODUCT_IMAGE_PROVIDER=openai`, and use a clearly distinct top and bottom
+under good lighting. Verify Round 1 produces two different real crops and two verified product images. Leave
+the frame or pause the camera, return in the same outfit for Round 2, then change only the top for Round 3.
+Confirm counts are `2 new`, `0 new/2 matched`, then `1 new/1 matched`, and that product-image generation
+counts are `2`, `0`, then `1`. Use `?ambientDebug=1` for safe diagnostics. Do not claim this live acceptance
+unless all three physical-camera rounds were actually executed.
 
 Run the focused streaming suite with:
 

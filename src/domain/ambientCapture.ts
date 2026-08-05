@@ -16,6 +16,55 @@ export interface NormalizedBoundingBox {
   height: number;
 }
 
+export type GarmentImageRole =
+  | 'capture_evidence'
+  | 'garment_appearance'
+  | 'canonical_product';
+
+export type GarmentImageVerificationStatus =
+  | 'not_required'
+  | 'pending'
+  | 'passed'
+  | 'failed'
+  | 'uncertain';
+
+export interface ProductImageVerification {
+  result: 'pass' | 'fail' | 'uncertain';
+  confidence: number;
+  checks: {
+    colorMatch: boolean;
+    patternMatch: boolean;
+    necklineMatch?: boolean;
+    sleeveMatch?: boolean;
+    closureMatch?: boolean;
+    pocketMatch?: boolean;
+    silhouetteMatch?: boolean;
+    lengthMatch?: boolean;
+    logoMatch?: boolean;
+  };
+  mismatches: string[];
+  notes: string[];
+}
+
+export interface GarmentImageAsset {
+  assetId: string;
+  ownerUserId: string;
+  role: GarmentImageRole;
+  imageUrl: string;
+  storagePath?: string;
+  sourceAssetId?: string;
+  sourceFrameId?: string;
+  observationItemId?: string;
+  closetItemId?: string;
+  width: number;
+  height: number;
+  mimeType: 'image/jpeg' | 'image/png' | 'image/webp';
+  verificationStatus: GarmentImageVerificationStatus;
+  verification?: ProductImageVerification;
+  contentHash: string;
+  createdAt: string;
+}
+
 export interface AmbientCaptureGrant {
   userId: string;
   consentVersion: 'ambient-worn-garments-v1';
@@ -97,7 +146,7 @@ export interface GarmentAppearance {
   captureId: string;
   descriptor: GarmentAppearanceDescriptor;
   appearanceFingerprint: string;
-  evidenceImageUrl: string;
+  appearanceAssetId: string;
   boundingBox: NormalizedBoundingBox;
   confidence: number;
   capturedAt: string;
@@ -120,6 +169,14 @@ export interface GarmentIdentityHypothesis {
   confidence: number;
   candidateItemIds: string[];
   reasonCodes: string[];
+}
+
+export interface GarmentVisualVerification {
+  result: 'same' | 'different' | 'uncertain';
+  matchedClosetItemId?: string;
+  confidence: number;
+  evidence: string[];
+  mismatches: string[];
 }
 
 export interface OutfitCapture {
@@ -172,6 +229,7 @@ export interface AmbientOutfitEpisode {
 
 export interface OutfitCaptureProposalItem {
   observation: WornGarmentObservation;
+  appearanceAsset: GarmentImageAsset;
   identity: GarmentIdentityHypothesis;
   resolvedClosetItemId: string;
   createItem?: AmbientClosetItem;
@@ -184,6 +242,7 @@ export interface OutfitCaptureProposal {
   episodeId: string;
   observation: WornOutfitObservation;
   packet: AmbientCapturePacket;
+  evidenceAsset: GarmentImageAsset;
   evidenceImageUrl: string;
   items: OutfitCaptureProposalItem[];
   outfitSignature: string;
@@ -204,17 +263,59 @@ export interface OutfitCaptureCommitResult {
   wearEvents: WearEvent[];
 }
 
+export type WardrobeEventType =
+  | 'capture_evidence_stored'
+  | 'garment_appearance_stored'
+  | 'provisional_item_created'
+  | 'existing_item_matched'
+  | 'wear_recorded'
+  | 'outfit_captured'
+  | 'product_image_generation_started'
+  | 'product_image_generated'
+  | 'product_image_verified'
+  | 'closet_primary_image_updated'
+  | 'product_image_failed';
+
+export interface WardrobeEvent {
+  eventId: string;
+  userId: string;
+  type: WardrobeEventType;
+  closetItemId?: string;
+  captureId?: string;
+  assetId?: string;
+  jobId?: string;
+  reasonCode?: string;
+  createdAt: string;
+}
+
+export interface ProductImageJob {
+  jobId: string;
+  userId: string;
+  closetItemId: string;
+  sourceAppearanceAssetId: string;
+  status: 'processing' | 'ready' | 'needs_review' | 'failed';
+  attemptCount: number;
+  productAssetId?: string;
+  failureCode?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface UserWardrobeState {
   schemaVersion: 1;
   userId: string;
   version: number;
   grant?: AmbientCaptureGrant;
+  assets: GarmentImageAsset[];
   closetItems: AmbientClosetItem[];
   appearances: GarmentAppearance[];
   captures: OutfitCapture[];
   wearEvents: WearEvent[];
   episodes: AmbientOutfitEpisode[];
   committedIdempotencyKeys: string[];
+  productImageJobs: ProductImageJob[];
+  events: WardrobeEvent[];
+  pendingCompletionEvent?: OutfitCaptureCompletedEvent;
   updatedAt: string;
 }
 
@@ -226,8 +327,12 @@ export type AmbientCaptureOutcomeStatus =
   | 'insufficient_evidence'
   | 'ambiguous'
   | 'committed'
+  | 'committed_processing_images'
+  | 'ready'
   | 'recognized'
   | 'mixed'
+  | 'mixed_ready'
+  | 'image_needs_review'
   | 'already_committed'
   | 'episode_ended'
   | 'unavailable';
@@ -246,9 +351,12 @@ export interface OutfitCaptureCompletedEvent {
     slot: AmbientGarmentSlot;
     label: string;
     status: 'new' | 'recognized';
+    imageUrl?: string;
+    imageStatus?: ClosetItem['imageStatus'];
   }>;
   repeatedOutfit: boolean;
   committedAt: string;
+  acknowledgedAt?: string;
 }
 
 export interface AmbientCaptureOutcome {
@@ -263,10 +371,16 @@ export interface AmbientCaptureOutcome {
 export interface AmbientCaptureDiagnostics {
   enabled: boolean;
   providerReady: boolean;
+  identityVerifierReady: boolean;
+  productImageProviderReady: boolean;
+  productImageVerifierReady: boolean;
   grantActive: boolean;
   currentEpisode?: AmbientOutfitEpisode;
   closetItemCount: number;
   captureCount: number;
   wearEventCount: number;
+  assetCounts: Record<GarmentImageRole, number>;
+  processingImageCount: number;
+  needsReviewImageCount: number;
   lastOutcome?: AmbientCaptureOutcome;
 }

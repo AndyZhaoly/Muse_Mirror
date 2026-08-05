@@ -7,7 +7,7 @@ function jsonResponse(
   res: http.ServerResponse,
   statusCode: number,
   payload: unknown,
-  headers: Record<string, string> = {},
+  headers: Record<string, string | string[]> = {},
 ): void {
   res.writeHead(statusCode, {
     'content-type': 'application/json; charset=utf-8',
@@ -77,7 +77,7 @@ export async function handleDeploymentRoute(
         res,
         200,
         { ok: true },
-        access.enabled ? { 'set-cookie': access.createSessionCookie() } : {},
+        access.enabled ? { 'set-cookie': access.createLoginCookies() } : {},
       );
     } catch {
       jsonResponse(res, 400, { error: '登录请求格式不正确。' });
@@ -90,7 +90,7 @@ export async function handleDeploymentRoute(
       res,
       200,
       { ok: true },
-      access.enabled ? { 'set-cookie': access.clearSessionCookie() } : {},
+      access.enabled ? { 'set-cookie': access.clearLoginCookies() } : {},
     );
     return true;
   }

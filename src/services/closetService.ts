@@ -61,6 +61,10 @@ export class ClosetService {
       return {
         ...normalized,
         imageUrl: resolveClosetImageUrl(normalized.imageUrl, dataDirectory),
+        imageStatus: normalized.imageStatus ?? 'ready',
+        source: normalized.source ?? 'demo_fixture',
+        identityStatus: normalized.identityStatus ?? 'confirmed',
+        ownershipStatus: normalized.ownershipStatus ?? 'confirmed',
       };
     });
     this.looks = buildLookCandidates(this.items);

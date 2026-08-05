@@ -27,21 +27,28 @@ When the access code is not configured, the gate is disabled for local developme
 
 ## Ambient outfit capture
 
-Ambient capture is an authenticated background capability outside the Muse Agent tool loop. All endpoints
-are scoped by the browser `userId`; production deployments with the team gate also require its signed cookie.
+Ambient capture is an authenticated background capability outside the Muse Agent tool loop. Its user scope
+comes only from a signed, HttpOnly browser-identity cookie bound to the team session. Client `userId` values
+in a query or body are ignored for ambient storage and private assets.
 
-- `GET /api/ambient-capture/state?userId=...` returns grant state, counts, current episode, and the last safe outcome.
-- `POST /api/ambient-capture/grant` with `{ userId, enabled }` creates or revokes the one-time grant.
+- `GET /api/ambient-capture/state` returns grant state, image-job state, safe diagnostics, the current episode, and the pending completion event.
+- `POST /api/ambient-capture/grant` with `{ enabled }` creates or revokes the one-time grant.
 - `POST /api/ambient-capture/frame` accepts a real camera still, frame metadata, local stability evidence, and active-task status.
 - `POST /api/ambient-capture/episode/end` ends the current session episode when the user leaves or pauses the mirror.
 - `POST /api/ambient-capture/debug/reset` deletes only the requesting user's ambient overlay and capture records.
+- `POST /api/fashion/outfit-capture/acknowledge` clears only the current presentation event.
+- `POST /api/dev/outfit-capture/retry-product-image` retries one current-browser item in `needs_review`/`failed` state.
+- `GET /api/fashion/wardrobe-assets/:assetId` serves an owned asset after cookie and path validation.
 
 The frame endpoint may return `disabled`, `observing`, `deferred`, `privacy_paused`,
 `insufficient_evidence`, `ambiguous`, `committed`, `recognized`, `mixed`, `already_committed`,
-`episode_ended`, or `unavailable`. Only committed/recognized outcomes may carry an
+`episode_ended`, or `unavailable`, plus the two-stage image states documented in `src/domain/ambientCapture.ts`.
+Only committed/recognized/ready outcomes may carry an
 `OutfitCaptureCompletedEvent`; the UI must never synthesize that event from a model answer or an optimistic
-client state. Uploaded request frames are temporary. A selected evidence image is copied into generated
-storage only as part of a successful capture proposal.
+client state. Stage A atomically stores the evidence, independent garment appearances, provisional items,
+wear events, and capture. Stage B edits each new appearance into a product image and promotes it only after
+visual verification. Private evidence, appearances, and generated product images are never served by the
+public `/generated` route.
 
 ## Start a turn
 

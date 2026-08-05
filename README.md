@@ -52,11 +52,14 @@ The opt-in ambient path runs beside, not inside, the Muse Agent:
 
 ```text
 stable real camera still -> situation policy -> worn-outfit vision
-  -> garment tracks/identity -> atomic wardrobe overlay -> Mirror Screen event
+  -> independent garment crops -> metadata recall + visual ReID
+  -> atomic wardrobe overlay -> verified catalog image jobs -> Mirror Screen event
 ```
 
-It never adds a hidden intent router or Agent tool. Success appears only after the overlay, appearances,
-capture, and wear events commit atomically.
+It never adds a hidden intent router or Agent tool. New garments first commit as `processing`; their real
+appearance crops are edited into clean catalog images and compared back to the source. Only verified images
+become closet-card primary images. Repeat recognition uses historical real appearances and does not generate
+another product image.
 
 More detail is available in [ARCHITECTURE.md](ARCHITECTURE.md), [API_CONTRACT.md](API_CONTRACT.md), and [SKILL_TOOL_POLICY_MATRIX.md](SKILL_TOOL_POLICY_MATRIX.md).
 
@@ -164,6 +167,14 @@ FASHION_AGENT_DEMO2_PRODUCT_IMAGE_DIR=./data/demo2-product-images
 FASHION_AGENT_OUTPUT_DIR=./out
 FASHION_AGENT_MEMORY_DATA=./out/muse-memory-v1.json
 FASHION_AGENT_AMBIENT_WARDROBE_DATA=./out/ambient-wardrobe-v1.json
+FASHION_AGENT_PRODUCT_IMAGE_PROVIDER=disabled
+OPENAI_PRODUCT_IMAGE_MODEL=gpt-image-2
+OPENAI_PRODUCT_IMAGE_QUALITY=medium
+OPENAI_PRODUCT_IMAGE_SIZE=1024x1024
+FASHION_AGENT_PRODUCT_IMAGE_VERIFY_CONFIDENCE=0.84
+FASHION_AGENT_IDENTITY_TOP_K=4
+FASHION_AGENT_IDENTITY_MATCH_CONFIDENCE=0.82
+FASHION_AGENT_IDENTITY_NEW_CONFIDENCE=0.78
 
 FASHION_AGENT_ASR_PROVIDER=disabled
 FASHION_AGENT_TTS_PROVIDER=disabled
@@ -176,6 +187,11 @@ MUSE_TEAM_DEMO_SESSION_SECRET=
 `FASHION_AGENT_VISUAL_QC=false` reproduces the time-constrained demo behavior in which image QC does not block a generated result. Set it to `true` when you want failed visual checks to block artifacts.
 
 Real product search is disabled by default. The application will not fabricate product prices, brands, purchase links, or availability when no product provider is configured.
+
+Ambient catalog-image generation is a separate capability and is also disabled by default. Setting
+`FASHION_AGENT_PRODUCT_IMAGE_PROVIDER=openai` uses an OpenAI image edit from the stored real garment crop,
+then an OpenAI vision comparison before promotion. It adds image-generation and verification cost. It never
+uses text-only generation for closet primary images.
 
 ## Validation
 
@@ -204,7 +220,7 @@ The production server reads Render's `PORT`, binds `0.0.0.0`, and serves React, 
 
 - Continuous live video stays in the browser. While the mirror is active, the app can upload low-frequency still frames to the configured vision provider to maintain a current observation.
 - Ambient outfit capture is off until the user accepts its one-time grant. It analyzes only stable single-person worn-outfit frames; it does not record continuous video or treat held/background garments as owned.
-- A successful ambient capture stores the selected still as visual evidence plus provisional closet items, appearances, outfit captures, and wear events. Revoking the grant stops future capture; the developer reset deletes the current browser user's ambient overlay.
+- A successful ambient capture stores the selected still as private evidence plus separate real garment crops, provisional closet items, outfit captures, and wear events. Generated catalog images remain `processing`/`needs_review` until source-image verification passes. Revoking the grant stops future capture; the developer reset deletes the current browser user's overlay.
 - The camera does not record audio. Microphone access begins only after voice mode is enabled.
 - Raw ASR audio and streamed TTS audio are kept in memory only and are not written to disk by Muse Mirror.
 - Speech credentials remain on the backend and are never included in `/api/voice/status`.
@@ -212,7 +228,7 @@ The production server reads Render's `PORT`, binds `0.0.0.0`, and serves React, 
 - Try-on requires photo-use permission. Synthetic full-body extension has a separate confirmation path.
 - Generated images, captured frames, memory data, and conversation data are written under ignored local directories and are not committed.
 - Team-demo access uses a signed HttpOnly cookie when `MUSE_TEAM_DEMO_ACCESS_CODE` is configured. The access code is never stored in browser localStorage.
-- Each browser stores a random `team_demo_<uuid>` identifier locally so text and voice share one history without sharing another tester's default identity. This UUID is an isolation key, not authentication.
+- Ambient data and private garment assets use a server-signed, HttpOnly browser identity tied to the team session. The client UUID still groups text/voice history, but it cannot select another ambient owner.
 - AI concept items are labeled and are never presented as real products or closet items.
 - Try-on output is a styling preview, not a sizing, tailoring, or body-measurement guarantee.
 - Never commit `.env.local`. Rotate any API key that has appeared in chat, logs, screenshots, or terminal output.

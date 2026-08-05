@@ -11,8 +11,13 @@ test('ambient capture UI exposes explicit grant, real completion, and developer 
   assert.match(app, /sendAmbientCaptureFrame/);
   assert.match(app, /Reset my ambient wardrobe/);
   assert.match(canvas, /outfit_capture_completed|ambientCaptureEvent/);
-  assert.match(canvas, /新记录/);
+  assert.match(canvas, /新加入/);
   assert.match(canvas, /已识别/);
+  assert.match(canvas, /item\.imageStatus === 'ready' && item\.imageUrl/);
+  assert.match(canvas, /正在整理衣橱图片/);
+  assert.match(canvas, /未通过校验的图片不会展示/);
+  assert.match(app, /acknowledgeAmbientCapture/);
+  assert.match(app, /7_000/);
 });
 
 test('ambient capture runs outside Muse Agent tools and has no keyword router', () => {

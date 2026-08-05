@@ -1,6 +1,4 @@
 import { createHash } from 'node:crypto';
-import fs from 'node:fs/promises';
-import path from 'node:path';
 import type {
   AmbientCaptureDiagnostics,
   AmbientCaptureOutcome,
@@ -11,6 +9,7 @@ import type {
   OutfitCaptureCompletedEvent,
   OutfitCaptureProposal,
   WornOutfitObservation,
+  GarmentImageAsset,
 } from '../domain/ambientCapture.js';
 import type { OutfitEpisode } from '../domain/outfitEpisode.js';
 import type { MirrorSituationObservation } from '../domain/mirrorSituation.js';
@@ -21,6 +20,9 @@ import type { GarmentIdentityProvider } from '../services/garmentIdentityProvide
 import { appearanceFingerprint, descriptorFromObservation } from '../services/garmentIdentityProvider.js';
 import type { OutfitObservationProvider } from '../services/outfitObservationProvider.js';
 import type { JsonUserWardrobeRepository } from '../services/userWardrobeRepository.js';
+import type { GarmentImageAssetService } from '../services/garmentImageAssetService.js';
+import type { ProductImageProvider } from '../services/productImageProvider.js';
+import type { ProductImageVerifier } from '../services/garmentVisualVerifier.js';
 
 export class AmbientCaptureCoordinator {
   private readonly lastOutcomes = new Map<string, AmbientCaptureOutcome>();
@@ -32,7 +34,11 @@ export class AmbientCaptureCoordinator {
       identityProvider: GarmentIdentityProvider;
       repository: JsonUserWardrobeRepository;
       baseClosetItems: () => ClosetItem[];
-      evidenceDirectory: string;
+      assetService: GarmentImageAssetService;
+      productImageProvider: ProductImageProvider;
+      productImageVerifier: ProductImageVerifier;
+      productImageVerifyConfidence?: number;
+      baseCatalogAssets?: () => Promise<Map<string, GarmentImageAsset>>;
     },
   ) {}
 
@@ -150,16 +156,52 @@ export class AmbientCaptureCoordinator {
       });
     }
 
+    let evidenceAsset: GarmentImageAsset | undefined;
+    let appearanceAssets: GarmentImageAsset[] = [];
+    try {
+      evidenceAsset = await this.options.assetService.storeEvidence({
+        userId: packet.userId,
+        sourceFramePath: packet.imagePath,
+        sourceFrameId: packet.frameId,
+        capturedAt: packet.capturedAt,
+      });
+      appearanceAssets = await Promise.all(observation.garments.map(async (garment) => (
+        await this.options.assetService.cropGarment({
+          userId: packet.userId,
+          sourceFramePath: packet.imagePath,
+          sourceFrameId: packet.frameId,
+          observationItemId: garment.observationItemId,
+          boundingBox: garment.boundingBox,
+          slot: garment.slot,
+          capturedAt: packet.capturedAt,
+        })
+      ).asset));
+    } catch (error) {
+      await this.options.assetService.deleteAssets([...(evidenceAsset ? [evidenceAsset] : []), ...appearanceAssets]);
+      return this.remember(packet.userId, {
+        status: 'insufficient_evidence',
+        reasonCodes: ['GARMENT_CROP_FAILED', safeErrorCode(error)],
+        episodeId: episode.episodeId,
+        observationId: observation.observationId,
+        retryAfterMs: 5_000,
+      });
+    }
+
     const freshState = await this.options.repository.getState(packet.userId);
-    const identities = await Promise.all(observation.garments.map((garment) => this.options.identityProvider.resolve({
+    const baseCatalogAssets = await this.options.baseCatalogAssets?.() ?? new Map<string, GarmentImageAsset>();
+    const identities = await Promise.all(observation.garments.map((garment, index) => this.options.identityProvider.resolve({
       userId: packet.userId,
       garment,
+      currentAppearance: appearanceAssets[index]!,
       baseClosetItems: this.options.baseClosetItems(),
       userClosetItems: freshState.closetItems,
       appearances: freshState.appearances,
+      assets: freshState.assets,
+      baseCatalogAssets,
     })));
     const unresolved = identities.filter((identity) => identity.status === 'ambiguous' || identity.status === 'insufficient_evidence');
     if (unresolved.length) {
+      await this.options.assetService.deleteAssets([evidenceAsset, ...appearanceAssets]);
       return this.remember(packet.userId, {
         status: unresolved.some((item) => item.status === 'ambiguous') ? 'ambiguous' : 'insufficient_evidence',
         reasonCodes: unresolved.flatMap((item) => item.reasonCodes),
@@ -178,6 +220,7 @@ export class AmbientCaptureCoordinator {
       ? postflight.eligibility.garmentCandidate === 'eligible' && postflight.eligibility.closetPersistence === 'eligible'
       : postflight.eligibility.wearRecord === 'eligible';
     if (!eligible) {
+      await this.options.assetService.deleteAssets([evidenceAsset, ...appearanceAssets]);
       return this.remember(packet.userId, {
         status: postflight.privacyPaused ? 'privacy_paused' : postflight.action === 'defer' ? 'deferred' : 'insufficient_evidence',
         reasonCodes: postflight.reasonCodes,
@@ -186,28 +229,42 @@ export class AmbientCaptureCoordinator {
       });
     }
 
-    const evidenceImageUrl = await this.persistEvidence(packet);
-    const proposal = buildProposal({ packet, episode, observation, identities, state: freshState, evidenceImageUrl });
+    const proposal = buildProposal({ packet, episode, observation, identities, state: freshState, evidenceAsset, appearanceAssets });
     let committed: Awaited<ReturnType<JsonUserWardrobeRepository['commitCapture']>>;
     try {
       committed = await this.options.repository.commitCapture({ proposal });
     } catch (error) {
-      await this.removeEvidenceUrl(evidenceImageUrl);
+      await this.options.assetService.deleteAssets([evidenceAsset, ...appearanceAssets]);
       throw error;
     }
     if (committed.status === 'already_committed') {
-      await this.removeEvidenceUrl(evidenceImageUrl);
+      await this.options.assetService.deleteAssets([evidenceAsset, ...appearanceAssets]);
     }
-    const completedEvent = committed.status === 'already_committed'
-      ? undefined
-      : completedEventFromCommit(proposal, committed, observation);
-    const status: AmbientCaptureOutcome['status'] = committed.status === 'already_committed'
-      ? 'already_committed'
-      : committed.createdClosetItemIds.length && committed.recognizedClosetItemIds.length
-        ? 'mixed'
-        : committed.createdClosetItemIds.length
-          ? 'committed'
-          : 'recognized';
+    if (committed.status === 'committed' && committed.createdClosetItemIds.length) {
+      const processing: AmbientCaptureOutcome = {
+        status: 'committed_processing_images',
+        reasonCodes: ['CAPTURE_COMMITTED', 'CATALOG_IMAGES_PROCESSING'],
+        episodeId: episode.episodeId,
+        observationId: observation.observationId,
+        retryAfterMs: 4_000,
+      };
+      this.remember(packet.userId, processing);
+      void this.processCatalogImages(proposal, committed, observation).catch((error) => {
+        this.remember(packet.userId, {
+          status: 'image_needs_review',
+          reasonCodes: ['CATALOG_IMAGE_STAGE_FAILED', safeErrorCode(error)],
+          episodeId: episode.episodeId,
+          observationId: observation.observationId,
+          retryAfterMs: 15_000,
+        });
+      });
+      return processing;
+    }
+    const completedEvent = committed.status === 'committed'
+      ? completedEventFromCommit(proposal, committed, observation, await this.options.repository.getState(packet.userId), this.options.baseClosetItems())
+      : undefined;
+    if (completedEvent) await this.options.repository.setPendingCompletionEvent(packet.userId, completedEvent);
+    const status: AmbientCaptureOutcome['status'] = committed.status === 'already_committed' ? 'already_committed' : 'recognized';
     return this.remember(packet.userId, {
       status,
       reasonCodes: [
@@ -232,16 +289,61 @@ export class AmbientCaptureCoordinator {
     });
   }
 
+  async acknowledge(userId: string): Promise<boolean> {
+    return this.options.repository.acknowledgeCompletion(userId);
+  }
+
+  async retryProductImage(userId: string, closetItemId: string): Promise<AmbientCaptureOutcome> {
+    return this.exclusive(userId, async () => {
+      const state = await this.options.repository.getState(userId);
+      const entry = state.closetItems.find((item) => item.item.id === closetItemId);
+      const appearance = [...state.appearances].reverse().find((item) => item.closetItemId === closetItemId);
+      const sourceAsset = appearance ? state.assets.find((asset) => asset.assetId === appearance.appearanceAssetId) : undefined;
+      if (!entry || !sourceAsset) return this.remember(userId, { status: 'unavailable', reasonCodes: ['RETRY_ITEM_OR_APPEARANCE_NOT_FOUND'] });
+      if (!this.options.productImageProvider.ready || !this.options.productImageVerifier.ready) {
+        return this.remember(userId, { status: 'unavailable', reasonCodes: ['PRODUCT_IMAGE_PIPELINE_UNAVAILABLE'] });
+      }
+      const job = await this.options.repository.beginProductImageJob(userId, closetItemId, sourceAsset.assetId);
+      let generatedAsset: GarmentImageAsset | undefined;
+      try {
+        const generated = await this.options.productImageProvider.createCanonicalProductImage({
+          userId,
+          closetItemId,
+          sourceAppearance: sourceAsset,
+          item: {
+            category: entry.item.category,
+            color: entry.item.color,
+            slot: entry.item.category === 'jumpsuit' ? 'dress' : entry.item.category,
+            description: entry.item.name,
+          },
+        });
+        generatedAsset = generated.asset;
+        const verification = await this.options.productImageVerifier.verify({
+          sourceAppearance: sourceAsset,
+          generatedProductImage: generated.asset,
+          category: entry.item.category,
+        });
+        const completed = await this.options.repository.completeProductImageJob({
+          userId, jobId: job.jobId, productAsset: generated.asset, verification,
+          threshold: this.options.productImageVerifyConfidence ?? 0.84,
+        });
+        return this.remember(userId, {
+          status: completed.ready ? 'ready' : 'image_needs_review',
+          reasonCodes: [completed.ready ? 'CATALOG_IMAGE_VERIFIED' : 'CATALOG_IMAGE_NEEDS_REVIEW'],
+        });
+      } catch (error) {
+        if (generatedAsset) await this.options.assetService.deleteAssets([generatedAsset]);
+        await this.options.repository.failProductImageJob(userId, job.jobId, safeErrorCode(error));
+        return this.remember(userId, { status: 'image_needs_review', reasonCodes: ['PRODUCT_IMAGE_RETRY_FAILED', safeErrorCode(error)] });
+      }
+    });
+  }
+
   async resetUser(userId: string): Promise<void> {
     await this.exclusive(userId, async () => {
       const state = await this.options.repository.getState(userId);
-      const evidenceUrls = new Set([
-        ...state.captures.map((capture) => capture.evidenceImageUrl),
-        ...state.appearances.map((appearance) => appearance.evidenceImageUrl),
-        ...state.closetItems.map((entry) => entry.item.imageUrl),
-      ]);
       await this.options.repository.resetUser(userId);
-      await Promise.all([...evidenceUrls].map((url) => this.removeEvidenceUrl(url)));
+      await this.options.assetService.deleteAssets(state.assets);
       this.lastOutcomes.delete(userId);
     });
   }
@@ -251,30 +353,95 @@ export class AmbientCaptureCoordinator {
     return {
       enabled: true,
       providerReady: this.options.observationProvider.ready,
+      identityVerifierReady: this.options.identityProvider.ready ?? true,
+      productImageProviderReady: this.options.productImageProvider.ready,
+      productImageVerifierReady: this.options.productImageVerifier.ready,
       grantActive: activeGrant(state.grant),
       currentEpisode: [...state.episodes].reverse().find((episode) => episode.status !== 'ended'),
       closetItemCount: state.closetItems.length,
       captureCount: state.captures.length,
       wearEventCount: state.wearEvents.length,
+      assetCounts: {
+        capture_evidence: state.assets.filter((asset) => asset.role === 'capture_evidence').length,
+        garment_appearance: state.assets.filter((asset) => asset.role === 'garment_appearance').length,
+        canonical_product: state.assets.filter((asset) => asset.role === 'canonical_product').length,
+      },
+      processingImageCount: state.closetItems.filter((entry) => entry.item.imageStatus === 'processing').length,
+      needsReviewImageCount: state.closetItems.filter((entry) => entry.item.imageStatus === 'needs_review' || entry.item.imageStatus === 'failed').length,
       lastOutcome: this.lastOutcomes.get(userId),
     };
   }
 
-  private async persistEvidence(packet: AmbientCapturePacket): Promise<string> {
-    await fs.mkdir(this.options.evidenceDirectory, { recursive: true });
-    const extension = packet.imageMimeType === 'image/png' ? 'png' : packet.imageMimeType === 'image/webp' ? 'webp' : 'jpg';
-    const userHash = createHash('sha256').update(packet.userId).digest('hex').slice(0, 10);
-    const filename = `ambient_${userHash}_${packet.frameId.replace(/[^a-z0-9_-]/gi, '_')}.${extension}`;
-    const outputPath = path.join(this.options.evidenceDirectory, filename);
-    await fs.copyFile(packet.imagePath, outputPath);
-    return `/generated/${filename}`;
-  }
-
-  private async removeEvidenceUrl(evidenceImageUrl: string | undefined): Promise<void> {
-    if (!evidenceImageUrl) return;
-    const filename = path.basename(evidenceImageUrl);
-    if (!/^ambient_[a-f0-9]{10}_[a-z0-9_-]+\.(?:jpg|png|webp)$/i.test(filename)) return;
-    await fs.unlink(path.join(this.options.evidenceDirectory, filename)).catch(() => undefined);
+  private async processCatalogImages(
+    proposal: OutfitCaptureProposal,
+    committed: Awaited<ReturnType<JsonUserWardrobeRepository['commitCapture']>>,
+    observation: WornOutfitObservation,
+  ): Promise<void> {
+    let failed = false;
+    for (const closetItemId of committed.createdClosetItemIds) {
+      const proposalItem = proposal.items.find((item) => item.resolvedClosetItemId === closetItemId);
+      if (!proposalItem) continue;
+      const job = await this.options.repository.beginProductImageJob(proposal.userId, closetItemId, proposalItem.appearanceAsset.assetId);
+      if (job.status === 'ready') continue;
+      if (!this.options.productImageProvider.ready || !this.options.productImageVerifier.ready) {
+        failed = true;
+        await this.options.repository.failProductImageJob(proposal.userId, job.jobId, 'PRODUCT_IMAGE_PIPELINE_UNAVAILABLE');
+        continue;
+      }
+      let generatedAsset: GarmentImageAsset | undefined;
+      try {
+        const generated = await this.options.productImageProvider.createCanonicalProductImage({
+          userId: proposal.userId,
+          closetItemId,
+          sourceAppearance: proposalItem.appearanceAsset,
+          item: {
+            category: proposalItem.observation.category,
+            color: proposalItem.observation.dominantColor,
+            slot: proposalItem.observation.slot,
+            description: proposalItem.observation.description,
+          },
+        });
+        generatedAsset = generated.asset;
+        const verification = await this.options.productImageVerifier.verify({
+          sourceAppearance: proposalItem.appearanceAsset,
+          generatedProductImage: generated.asset,
+          category: proposalItem.observation.category,
+        });
+        const completed = await this.options.repository.completeProductImageJob({
+          userId: proposal.userId,
+          jobId: job.jobId,
+          productAsset: generated.asset,
+          verification,
+          threshold: this.options.productImageVerifyConfidence ?? 0.84,
+        });
+        failed ||= !completed.ready;
+      } catch (error) {
+        if (generatedAsset) await this.options.assetService.deleteAssets([generatedAsset]);
+        failed = true;
+        await this.options.repository.failProductImageJob(proposal.userId, job.jobId, safeErrorCode(error));
+      }
+    }
+    const state = await this.options.repository.getState(proposal.userId);
+    if (failed) {
+      this.remember(proposal.userId, {
+        status: 'image_needs_review',
+        reasonCodes: ['CAPTURE_RECORDED', 'CATALOG_IMAGE_NEEDS_REVIEW'],
+        episodeId: proposal.episodeId,
+        observationId: proposal.observation.observationId,
+        retryAfterMs: 15_000,
+      });
+      return;
+    }
+    const completedEvent = completedEventFromCommit(proposal, committed, observation, state, this.options.baseClosetItems());
+    await this.options.repository.setPendingCompletionEvent(proposal.userId, completedEvent);
+    this.remember(proposal.userId, {
+      status: committed.recognizedClosetItemIds.length ? 'mixed_ready' : 'ready',
+      reasonCodes: ['CATALOG_IMAGES_VERIFIED', committed.recognizedClosetItemIds.length ? 'MIXED_OUTFIT_READY' : 'ALL_NEW_OUTFIT_READY'],
+      episodeId: proposal.episodeId,
+      observationId: proposal.observation.observationId,
+      completedEvent,
+      retryAfterMs: 12_000,
+    });
   }
 
   private remember(userId: string, outcome: AmbientCaptureOutcome): AmbientCaptureOutcome {
@@ -447,7 +614,8 @@ function buildProposal(args: {
   observation: WornOutfitObservation;
   identities: Awaited<ReturnType<GarmentIdentityProvider['resolve']>>[];
   state: Awaited<ReturnType<JsonUserWardrobeRepository['getState']>>;
-  evidenceImageUrl: string;
+  evidenceAsset: GarmentImageAsset;
+  appearanceAssets: GarmentImageAsset[];
 }): OutfitCaptureProposal {
   const items = args.observation.garments.map((observation, index) => {
     const identity = args.identities[index]!;
@@ -463,7 +631,12 @@ function buildProposal(args: {
             fit: observation.fit,
             formality: 'unknown',
             styleTags: unique([observation.pattern, observation.silhouette, ...observation.distinctiveFeatures]),
-            imageUrl: args.evidenceImageUrl,
+            imageUrl: '/agent-assets/wardrobe-processing.svg',
+            appearanceAssetIds: [args.appearanceAssets[index]!.assetId],
+            imageStatus: 'processing',
+            source: 'mirror_auto_capture',
+            identityStatus: 'provisional',
+            ownershipStatus: 'confirmed',
             marketedFor: 'unisex',
           },
           status: 'provisional',
@@ -473,7 +646,7 @@ function buildProposal(args: {
           updatedAt: now,
         }
       : undefined;
-    return { observation, identity, resolvedClosetItemId: itemId, createItem };
+    return { observation, appearanceAsset: args.appearanceAssets[index]!, identity, resolvedClosetItemId: itemId, createItem };
   });
   const outfitSignature = createHash('sha256')
     .update(items.map((item) => item.resolvedClosetItemId).sort().join('|'))
@@ -486,7 +659,8 @@ function buildProposal(args: {
     episodeId: args.episode.episodeId,
     observation: args.observation,
     packet: args.packet,
-    evidenceImageUrl: args.evidenceImageUrl,
+    evidenceAsset: args.evidenceAsset,
+    evidenceImageUrl: args.evidenceAsset.imageUrl,
     items,
     outfitSignature,
     repeatedOutfit: args.state.captures.some((capture) => capture.outfitSignature === outfitSignature),
@@ -498,6 +672,8 @@ function completedEventFromCommit(
   proposal: OutfitCaptureProposal,
   commit: Awaited<ReturnType<JsonUserWardrobeRepository['commitCapture']>>,
   observation: WornOutfitObservation,
+  state: Awaited<ReturnType<JsonUserWardrobeRepository['getState']>>,
+  baseClosetItems: ClosetItem[],
 ): OutfitCaptureCompletedEvent {
   const newIds = new Set(commit.createdClosetItemIds);
   return {
@@ -509,12 +685,18 @@ function completedEventFromCommit(
     episodeId: proposal.episodeId,
     newItemIds: commit.createdClosetItemIds,
     recognizedItemIds: commit.recognizedClosetItemIds,
-    itemSummaries: proposal.items.map((item, index) => ({
-      closetItemId: item.resolvedClosetItemId,
-      slot: item.observation.slot,
-      label: observation.garments[index]?.description ?? item.observation.description,
-      status: newIds.has(item.resolvedClosetItemId) ? 'new' : 'recognized',
-    })),
+    itemSummaries: proposal.items.map((item, index) => {
+      const ambient = state.closetItems.find((entry) => entry.item.id === item.resolvedClosetItemId)?.item;
+      const base = baseClosetItems.find((entry) => entry.id === item.resolvedClosetItemId);
+      return {
+        closetItemId: item.resolvedClosetItemId,
+        slot: item.observation.slot,
+        label: observation.garments[index]?.description ?? item.observation.description,
+        status: newIds.has(item.resolvedClosetItemId) ? 'new' : 'recognized',
+        imageUrl: ambient?.imageStatus === 'ready' ? ambient.imageUrl : base?.imageUrl,
+        imageStatus: ambient?.imageStatus ?? (newIds.has(item.resolvedClosetItemId) ? 'processing' : 'ready'),
+      };
+    }),
     repeatedOutfit: proposal.repeatedOutfit,
     committedAt: commit.capture.committedAt,
   };

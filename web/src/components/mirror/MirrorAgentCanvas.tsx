@@ -127,17 +127,34 @@ export function MirrorAgentCanvas({
                     ].filter(Boolean).join(' · ')}
               </p>
               <div className="ambient-capture-items">
-                {state.ambientCaptureEvent.itemSummaries.map((item) => (
-                  <span key={`${state.ambientCaptureEvent?.captureId}_${item.closetItemId}`}>
+                {state.ambientCaptureEvent.itemSummaries.filter((item) => item.imageStatus === 'ready' && item.imageUrl).map((item) => (
+                  <span className="ambient-capture-item" key={`${state.ambientCaptureEvent?.captureId}_${item.closetItemId}`}>
+                    <img src={item.imageUrl} alt="" />
                     <i className={item.status === 'new' ? 'is-new' : 'is-known'} />
-                    {item.label}
-                    <small>{item.status === 'new' ? '新记录' : '已识别'}</small>
+                    <b>{item.label}</b>
+                    <small>{item.status === 'new' ? '新加入' : '已识别'}</small>
                   </span>
                 ))}
               </div>
               {state.ambientCaptureEvent.newItemIds.length > 0 && (
                 <p className="ambient-capture-footnote">之后推荐时会一起考虑</p>
               )}
+            </section>
+          )}
+
+          {!state.ambientCaptureEvent && state.ambientCaptureStatus === 'committed_processing_images' && (
+            <section className="ambient-capture-complete is-processing" aria-label="正在整理衣橱图片" aria-live="polite">
+              <span className="eyebrow">WARDROBE</span>
+              <strong>正在整理衣橱图片</strong>
+              <p className="ambient-capture-summary">穿着记录已经保存，验证后的单品图准备好后会在这里出现。</p>
+            </section>
+          )}
+
+          {!state.ambientCaptureEvent && state.ambientCaptureStatus === 'image_needs_review' && (
+            <section className="ambient-capture-complete is-limited" aria-label="衣橱图片尚未完成">
+              <span className="eyebrow">WARDROBE</span>
+              <strong>今日穿搭已记录</strong>
+              <p className="ambient-capture-summary">衣橱图片还需要整理；未通过校验的图片不会展示。</p>
             </section>
           )}
 

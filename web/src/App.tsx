@@ -7,6 +7,7 @@ import {
   dismissMemoryCandidate,
   getPerceptionStatus,
   getAmbientCaptureState,
+  acknowledgeAmbientCapture,
   getAgentStatus,
   getConversationMessages,
   listConversations,
@@ -1314,6 +1315,7 @@ function App() {
         if (cancelled) return;
         setAmbientCaptureEnabled(state.diagnostics.grantActive);
         setAmbientCaptureOutcome(state.diagnostics.lastOutcome);
+        setAmbientCaptureEvent(state.pendingCompletionEvent);
         setAmbientCaptureCounts({
           closet: state.diagnostics.closetItemCount,
           captures: state.diagnostics.captureCount,
@@ -1322,6 +1324,32 @@ function App() {
       .catch(() => undefined);
     return () => { cancelled = true; };
   }, [userId]);
+
+  useEffect(() => {
+    if (ambientCaptureOutcome?.status !== 'committed_processing_images') return undefined;
+    let cancelled = false;
+    const poll = window.setInterval(() => {
+      void getAmbientCaptureState().then((state) => {
+        if (cancelled) return;
+        setAmbientCaptureOutcome(state.diagnostics.lastOutcome);
+        if (state.pendingCompletionEvent) setAmbientCaptureEvent(state.pendingCompletionEvent);
+      }).catch(() => undefined);
+    }, 1800);
+    return () => { cancelled = true; window.clearInterval(poll); };
+  }, [ambientCaptureOutcome?.status]);
+
+  useEffect(() => {
+    if (!ambientCaptureEvent) return undefined;
+    const eventId = ambientCaptureEvent.eventId;
+    const timer = window.setTimeout(() => {
+      void acknowledgeAmbientCapture()
+        .then(() => {
+          setAmbientCaptureEvent((current) => current?.eventId === eventId ? undefined : current);
+        })
+        .catch(() => undefined);
+    }, 7_000);
+    return () => window.clearTimeout(timer);
+  }, [ambientCaptureEvent?.eventId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -2203,6 +2231,7 @@ function App() {
       perceptionLabel: perceptionLabel(cameraState, perception),
       situationDecision: developmentSituationResult?.decision,
       ambientCaptureEvent,
+      ambientCaptureStatus: ambientCaptureOutcome?.status,
     }),
     [
       agentStatusLabel,
@@ -2220,6 +2249,7 @@ function App() {
       voice.state,
       developmentSituationResult,
       ambientCaptureEvent,
+      ambientCaptureOutcome?.status,
     ],
   );
 

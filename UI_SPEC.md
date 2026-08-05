@@ -154,6 +154,14 @@ does not belong to the current turn.
 `garment_ingestion` is a reserved content boundary only. This controller does not implement
 garment detection, capture, ingestion UI, closet writes, or mode-specific renderers.
 
+PR8's ambient presentation may project an already-computed ingestion state into that boundary. While Stage B
+is running, the Canvas says `正在整理衣橱图片` and does not render a raw crop as a closet card. A ready event
+shows only `imageStatus=ready` items with verified canonical product URLs. Repeat recognition reuses the
+existing primary image; mixed results combine verified new images with those existing images. `needs_review`
+or failed jobs may show a neutral processing notice but never the rejected image. The full completion card
+is acknowledged after roughly seven seconds, can recover after refresh while unacknowledged, and yields to
+an active Agent turn.
+
 PR7 allows the controller to project an optional, already-computed `MirrorSituationDecision` as a small
 presentation hint. A foreground ownership question uses the reserved `garment_ingestion` content kind;
 privacy and observation feedback use `device_feedback`. This remains a read-only projection and does not
