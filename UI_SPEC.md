@@ -154,6 +154,21 @@ does not belong to the current turn.
 `garment_ingestion` is a reserved content boundary only. This controller does not implement
 garment detection, capture, ingestion UI, closet writes, or mode-specific renderers.
 
+PR7 allows the controller to project an optional, already-computed `MirrorSituationDecision` as a small
+presentation hint. A foreground ownership question uses the reserved `garment_ingestion` content kind;
+privacy and observation feedback use `device_feedback`. This remains a read-only projection and does not
+change the phase priority, active-turn ownership, Agent prompt, tools, camera state, or closet state.
+
+In Vite development mode only, a compact `Mirror Situation Policy Simulator` appears above the workspace.
+It is disabled by default. Selecting one of the fixed scenarios shows the deterministic action, reason
+codes, and three eligibility gates, and optionally previews the decision hint in the Canvas. The simulator:
+
+- uses static fixtures rather than the live camera;
+- does not infer identity or garments;
+- does not start a conversation or TTS;
+- does not create a garment candidate or write the closet;
+- does not appear in the production build.
+
 ## Complete conversation drawer
 
 The lower drawer preserves the existing conversation experience without making it the primary

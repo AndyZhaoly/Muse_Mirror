@@ -101,3 +101,46 @@ screen uses text; Volcengine TTS uses spokenText ?? text
 The browser never sends ASR partials into the Agent and never speaks streamed model deltas. Voice turns currently produce concise screen text and concise spoken text, while artifacts carry structured detail; text turns retain detailed screen-oriented responses. `spokenText` is built only after visual/closet/fit grounding, preserves priority-ordered critical notices, and is not stored as a second history message. It uses deterministic cleanup rather than a second model request. A future one-response structured dual-output contract may independently author detailed `text` and short `spokenText`. `OPENAI_VOICE_REASONING_EFFORT` is resolved against model capability before each voice request; text turns retain the global effort. Volcengine endpoint detection uses the backend-configured `end_window_size` (500 ms by default).
 
 One safe trace ID links browser speech/ASR/TTS milestones to backend model/tool milestones. Browser `speech_end` is recorded only from the provider's `utterance_end`; if unavailable, ASR finalization latency is omitted rather than inferred. Detailed summaries are opt-in (`?latency=1` or localStorage), while backend emission reuses `FASHION_AGENT_TRACE`. Neither side records transcript or answer content, media, credentials, cookies, or reasoning.
+
+## Mirror Situation policy simulator
+
+PR7 introduces a provider-independent policy seam for future camera-first behavior. It is deliberately
+separate from the Muse Agent, vision providers, closet services, and persistence:
+
+```text
+MirrorSituationObservation (fixture/upstream facts only)
+                    ↓
+          OutfitEpisode reducer
+                    ↓
+      decideMirrorSituation() pure policy
+                    ↓
+        MirrorSituationDecision
+                    ↓
+developer simulator + optional Mirror Screen presentation hint
+```
+
+`MirrorSituationObservation` may state upstream facts or inferences such as person count, whether the
+person is believed to be the known user, motion, worn versus held garments, frame quality, closet-match
+status, current Agent task, and privacy risk. It never states that an item should be saved, that the user
+owns it, or that Muse should interrupt. In particular, `closetMatch: "unmatched"` is not ownership evidence.
+
+`OutfitEpisode` is an in-memory domain value in this PR. Its reducer accepts explicit events and reaches
+`stable` only after consecutive reliable observations with the same garment-presentation signal. It does
+not call a clock, provider, storage, or session service and is not persisted.
+
+The situation policy is deterministic and read-only. It returns an action, reason codes, interruption
+posture, observation/privacy state, and eligibility for a wear record, temporary garment candidate, or
+future closet persistence. `eligible` remains a decision only: PR7 does not write a wear event, candidate,
+episode, or closet item. Closet persistence additionally requires confirmed ownership and explicit
+permission.
+
+Fixed scenarios live in `src/policy/mirrorSituationScenarios.ts` and can be run with:
+
+```bash
+npm run simulate:mirror-situations
+```
+
+Vite development mode exposes the same fixtures in a developer-only selector. The selector is off by
+default and only projects the selected decision through `deriveMirrorScreenState()`. It performs no camera
+capture, model call, Agent turn, tool call, browser persistence, or business-state mutation. No situation
+observation is connected to the real camera in this PR.

@@ -9,6 +9,7 @@ import type {
   MirrorScreenControllerInput,
   MirrorScreenMessage,
 } from '../web/src/components/mirror/mirrorScreenTypes.js';
+import type { MirrorSituationDecision } from '../src/domain/mirrorSituation.js';
 
 const idleVoice = {
   enabled: false,
@@ -76,6 +77,30 @@ function itemGrid(): Extract<AgentArtifact, { type: 'item_grid' }> {
   };
 }
 
+function situationDecision(
+  action: MirrorSituationDecision['action'] = 'ask_ownership',
+): MirrorSituationDecision {
+  return {
+    action,
+    reasonCodes: ['CLOSET_UNMATCHED', 'OWNERSHIP_UNKNOWN'],
+    interruption: action === 'ask_ownership' ? 'ask_once' : 'none',
+    needsMoreObservation: false,
+    privacyPaused: false,
+    eligibility: {
+      wearRecord: 'prohibited',
+      garmentCandidate: 'prohibited',
+      closetPersistence: 'prohibited',
+    },
+    presentation: {
+      visibility: 'foreground',
+      contentKind: 'garment_ingestion',
+      title: '这件衣物需要确认归属',
+      detail: '只有确认后才能继续。',
+      tone: 'attention',
+    },
+  };
+}
+
 test('empty state is idle conversation without approval or artifact', () => {
   const state = deriveMirrorScreenState(input());
   assert.equal(state.phase, 'idle');
@@ -85,6 +110,29 @@ test('empty state is idle conversation without approval or artifact', () => {
   assert.equal(state.caption.museTextSource, 'idle_fallback');
   assert.equal(state.showApproval, false);
   assert.equal(state.primaryArtifact, undefined);
+});
+
+test('situation decision is projected as a hint without changing conversation lifecycle', () => {
+  const decision = situationDecision();
+  const state = deriveMirrorScreenState(input({ situationDecision: decision }));
+
+  assert.equal(state.phase, 'idle');
+  assert.equal(state.priority, 0);
+  assert.equal(state.contentKind, 'garment_ingestion');
+  assert.equal(state.situationDecision, decision);
+  assert.equal(state.caption.museTextSource, 'idle_fallback');
+});
+
+test('hidden situation decision does not claim a situation content kind', () => {
+  const decision = situationDecision('remain_silent');
+  decision.presentation = {
+    ...decision.presentation,
+    visibility: 'hidden',
+  };
+  const state = deriveMirrorScreenState(input({ situationDecision: decision }));
+
+  assert.equal(state.contentKind, 'conversation');
+  assert.equal(state.situationDecision?.action, 'remain_silent');
 });
 
 test('listening outranks a completed result and does not reuse old activity', () => {

@@ -42,6 +42,7 @@ import {
 import { getOrCreateBrowserUserId } from './browserIdentity';
 import { ConversationDrawer } from './components/mirror/ConversationDrawer';
 import { MirrorAgentCanvas } from './components/mirror/MirrorAgentCanvas';
+import { MirrorSituationSimulator } from './components/mirror/MirrorSituationSimulator';
 import {
   deriveMirrorScreenState,
   isMirrorVisualGenerationTool,
@@ -51,6 +52,11 @@ import {
   summarizeMirrorActivity,
 } from './components/mirror/mirrorScreenController';
 import { MirrorWorkspace } from './components/mirror/MirrorWorkspace';
+import {
+  MIRROR_SITUATION_SCENARIOS,
+  getMirrorSituationScenario,
+  runMirrorSituationScenario,
+} from '../../src/policy/mirrorSituationScenarios.js';
 
 type CameraState = 'idle' | 'requesting' | 'active' | 'paused' | 'error';
 type VisualMode =
@@ -1222,6 +1228,7 @@ function App() {
   const [responding, setResponding] = useState(false);
   const [streamingAssistantId, setStreamingAssistantId] = useState<string | null>(null);
   const [liveActivity, setLiveActivity] = useState<AgentActivity[]>([]);
+  const [developmentSituationScenarioId, setDevelopmentSituationScenarioId] = useState('');
   const [transport, setTransport] = useState<'api' | 'mock' | 'unknown'>('unknown');
   const [agentStatusLabel, setAgentStatusLabel] = useState('在线 · 可自然对话');
   const [statusNote, setStatusNote] = useState('Muse Mirror 在线；需要时会按权限使用镜子、衣柜和图片能力。');
@@ -2033,6 +2040,12 @@ function App() {
     pendingApproval?.approvals[0]?.reason ??
     '默认不长期保存原图。预览不代表真实尺码、面料垂坠或剪裁。';
 
+  const developmentSituationResult = useMemo(() => {
+    if (!import.meta.env.DEV || !developmentSituationScenarioId) return undefined;
+    const scenario = getMirrorSituationScenario(developmentSituationScenarioId);
+    return scenario ? runMirrorSituationScenario(scenario) : undefined;
+  }, [developmentSituationScenarioId]);
+
   const mirrorScreenState = useMemo(
     () => deriveMirrorScreenState({
       messages,
@@ -2049,6 +2062,7 @@ function App() {
       },
       agentStatusLabel,
       perceptionLabel: perceptionLabel(cameraState, perception),
+      situationDecision: developmentSituationResult?.decision,
     }),
     [
       agentStatusLabel,
@@ -2064,6 +2078,7 @@ function App() {
       voice.lastError,
       voice.partialTranscript,
       voice.state,
+      developmentSituationResult,
     ],
   );
 
@@ -2082,6 +2097,15 @@ function App() {
           <span className={`camera-status ${cameraState === 'active' ? 'is-active' : ''}`}><i />{perceptionLabel(cameraState, perception)}</span>
         </div>
       </header>
+
+      {import.meta.env.DEV && (
+        <MirrorSituationSimulator
+          scenarios={MIRROR_SITUATION_SCENARIOS}
+          selectedScenarioId={developmentSituationScenarioId}
+          result={developmentSituationResult}
+          onSelect={setDevelopmentSituationScenarioId}
+        />
+      )}
 
       {showHistoryPanel && (
         <HistoryPanel

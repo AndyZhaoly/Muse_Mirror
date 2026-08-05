@@ -1,5 +1,6 @@
 import type { AgentActivity, AgentArtifact } from '../../agentClient.js';
 import type { VoiceSessionState } from '../../voice/voiceTypes.js';
+import type { MirrorSituationDecision } from '../../../../src/domain/mirrorSituation.js';
 
 export type MirrorInteractionPhase =
   | 'idle'
@@ -59,6 +60,7 @@ export interface MirrorScreenState {
   primaryArtifact?: MirrorPrimaryArtifact;
   showApproval: boolean;
   isActiveTurn: boolean;
+  situationDecision?: MirrorSituationDecision;
 }
 
 export interface MirrorScreenMessage {
@@ -86,4 +88,5 @@ export interface MirrorScreenControllerInput {
   };
   agentStatusLabel: string;
   perceptionLabel: string;
+  situationDecision?: MirrorSituationDecision;
 }

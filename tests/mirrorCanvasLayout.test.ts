@@ -29,6 +29,18 @@ test('Mirror Screen Controller remains a pure presentation projection', () => {
   );
 });
 
+test('situation simulator is development-only and does not call camera, tools, storage, or APIs', () => {
+  const app = readFileSync('web/src/App.tsx', 'utf8');
+  const simulator = readFileSync('web/src/components/mirror/MirrorSituationSimulator.tsx', 'utf8');
+
+  assert.match(app, /import\.meta\.env\.DEV/);
+  assert.match(app, /<MirrorSituationSimulator/);
+  assert.doesNotMatch(
+    simulator,
+    /\bfetch\b|localStorage|sessionStorage|sendMirrorFrame|runAgentTurn|useEffect|setTimeout|setInterval/,
+  );
+});
+
 test('Canvas plain-text projection removes Markdown chrome without changing source data', () => {
   const source = '## 建议\n- **浅蓝衬衫**，参考[完整说明](https://example.com)。';
   const original = source.slice();
