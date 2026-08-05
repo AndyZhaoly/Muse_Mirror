@@ -40,6 +40,10 @@ import {
   markMuseLatency,
 } from './voice/latencyTelemetry';
 import { getOrCreateBrowserUserId } from './browserIdentity';
+import { ConversationDrawer } from './components/mirror/ConversationDrawer';
+import { MirrorAgentCanvas } from './components/mirror/MirrorAgentCanvas';
+import { deriveCurrentCanvasContent } from './components/mirror/mirrorCanvasContent';
+import { MirrorWorkspace } from './components/mirror/MirrorWorkspace';
 
 type CameraState = 'idle' | 'requesting' | 'active' | 'paused' | 'error';
 type VisualMode =
@@ -190,6 +194,15 @@ function imagePreviewLabel(artifact: Extract<AgentArtifact, { type: 'image' }>):
   if (artifact.previewScope === 'full_body_synthetic') return 'AI 全身概念预览 · 下半身为推测';
   if (artifact.previewScope === 'full_body') return '本人全身预览 · 仅供视觉参考';
   return 'AI 上身预览 · 仅供视觉参考';
+}
+
+function artifactSummaryLabel(artifact: Exclude<AgentArtifact, { type: 'notice' }>): string {
+  if (artifact.type === 'item_grid') return `${artifact.title} · ${artifact.items.length} 件衣柜单品`;
+  if (artifact.type === 'product_cards') return `${artifact.title} · ${artifact.products.length} 个真实商品`;
+  if (artifact.type === 'item_collection') return `${artifact.title} · ${artifact.items.length} 张概念单品图`;
+  if (artifact.type === 'look_board') return `${artifact.title} · Look Board 已生成`;
+  if (artifact.type === 'item_visual') return `${artifact.label} · 单品图已生成`;
+  return `${artifact.label} · ${imagePreviewLabel(artifact).split(' · ')[0]}`;
 }
 
 function voiceStatusLabel(state: ReturnType<typeof useVoiceSession>['state']): string {
@@ -1286,6 +1299,7 @@ function App() {
   const [memoryCandidates, setMemoryCandidates] = useState<ExplicitPreferenceEvent[]>([]);
   const [showHistoryPanel, setShowHistoryPanel] = useState(false);
   const [showMemoryPanel, setShowMemoryPanel] = useState(false);
+  const [conversationExpanded, setConversationExpanded] = useState(false);
   const [temporaryChat, setTemporaryChat] = useState(false);
   const [memoryPolicy, setMemoryPolicy] = useState<MemoryPolicy>({
     usePersistentMemories: true,
@@ -1345,8 +1359,9 @@ function App() {
   };
 
   useEffect(() => {
-    messageEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, pendingApproval, responding, liveActivity]);
+    if (!conversationExpanded) return;
+    messageEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }, [conversationExpanded, messages, pendingApproval, responding, liveActivity]);
 
   useEffect(() => () => {
     if (typingTimerRef.current) window.clearTimeout(typingTimerRef.current);
@@ -2108,6 +2123,33 @@ function App() {
     pendingApproval?.approvals[0]?.reason ??
     '默认不长期保存原图。预览不代表真实尺码、面料垂坠或剪裁。';
 
+  const canvasContent = useMemo(
+    () => deriveCurrentCanvasContent(messages, streamingAssistantId),
+    [messages, streamingAssistantId],
+  );
+  const currentCanvasActivity = useMemo(() => {
+    if (!responding && !generating) return undefined;
+    const activeMessage = canvasContent.assistantMessageId
+      ? messages.find((message) => message.id === canvasContent.assistantMessageId)
+      : undefined;
+    const activity = activeMessage?.activity?.length ? activeMessage.activity : liveActivity;
+    const toolActivity = timelineToolActivity(activity);
+    if (!toolActivity.length) return responding ? 'Muse 正在回复' : '正在准备视觉结果';
+    return activityTimelineSummary(
+      toolActivity,
+      toolActivity.some((item) => item.status === 'started'),
+    );
+  }, [canvasContent.assistantMessageId, generating, liveActivity, messages, responding]);
+  const latestArtifactSummary = useMemo(() => {
+    for (const message of [...messages].reverse()) {
+      const artifact = [...(message.artifacts ?? [])]
+        .reverse()
+        .find((item): item is Exclude<AgentArtifact, { type: 'notice' }> => item.type !== 'notice');
+      if (artifact) return artifactSummaryLabel(artifact);
+    }
+    return undefined;
+  }, [messages]);
+
   return (
     <div className="app-shell">
       <header className="topbar">
@@ -2149,64 +2191,114 @@ function App() {
         />
       )}
 
-      <main className="workspace">
-        <section className="mirror-panel" aria-label="实时镜子与视觉结果">
-          <div className="panel-heading">
-            <div>
-              <span className="eyebrow">LIVE MIRROR</span>
-              <h1>先看看现在的画面。</h1>
+      <MirrorWorkspace
+        mirror={(
+          <section className="mirror-panel" aria-label="实时镜子与视觉结果">
+            <div className="panel-heading">
+              <div>
+                <span className="eyebrow">LIVE MIRROR</span>
+                <h1>先看看现在的画面。</h1>
+              </div>
+              <div className="visual-tabs" role="tablist" aria-label="视觉模式">
+                {visualTabs.map((tab) => (
+                  <button
+                    key={tab.id}
+                    role="tab"
+                    aria-selected={visualMode === tab.id}
+                    className={visualMode === tab.id ? 'active' : ''}
+                    onClick={() => setVisualMode(tab.id)}
+                  >{tab.label}</button>
+                ))}
+              </div>
             </div>
-            <div className="visual-tabs" role="tablist" aria-label="视觉模式">
-              {visualTabs.map((tab) => (
-                <button
-                  key={tab.id}
-                  role="tab"
-                  aria-selected={visualMode === tab.id}
-                  className={visualMode === tab.id ? 'active' : ''}
-                  onClick={() => setVisualMode(tab.id)}
-                >{tab.label}</button>
-              ))}
-            </div>
-          </div>
 
-          <div className={`visual-stage ${generating ? 'is-generating' : ''}`}>
-            {renderVisual()}
-            {generating && (
-              <div className="generation-overlay">
-                <div className="generation-orbit"><Icon name="sparkle" size={22} /></div>
-                <strong>正在生成新的视觉预览</strong>
-                <span>保留姿态与比例，只调整服装</span>
+            <div className={`visual-stage ${generating ? 'is-generating' : ''}`}>
+              {renderVisual()}
+              {generating && (
+                <div className="generation-overlay">
+                  <div className="generation-orbit"><Icon name="sparkle" size={22} /></div>
+                  <strong>正在生成新的视觉预览</strong>
+                  <span>保留姿态与比例，只调整服装</span>
+                </div>
+              )}
+            </div>
+
+            <div className="mirror-footer">
+              <div className="camera-controls">
+                <button className="round-control" onClick={togglePause} disabled={!streamRef.current} aria-label={cameraState === 'paused' ? '继续摄像头' : '暂停摄像头'}>
+                  <Icon name={cameraState === 'paused' ? 'play' : 'pause'} />
+                </button>
+                <div className="capture-status" aria-live="polite" aria-label="拍照分析状态">
+                  <span><Icon name="camera" size={18} /></span>
+                  {captureStatusText(cameraState, perception)}
+                </div>
+                <button className="round-control" onClick={() => setMirror((value) => !value)} aria-label="切换镜像">
+                  <Icon name="flip" />
+                </button>
+              </div>
+              <p><Icon name="check" size={14} />本地镜子和小助手视觉状态分开显示</p>
+            </div>
+          </section>
+        )}
+        canvas={(
+          <MirrorAgentCanvas
+            agentStatusLabel={agentStatusLabel}
+            perceptionLabel={perceptionLabel(cameraState, perception)}
+            latestUserText={canvasContent.latestUserText}
+            latestAssistantText={canvasContent.latestAssistantText}
+            latestAssistantCommentary={canvasContent.latestAssistantCommentary}
+            assistantIsTyping={canvasContent.assistantIsTyping}
+            assistantIsActive={responding || generating}
+            currentActivityLabel={currentCanvasActivity}
+            latestArtifactSummary={latestArtifactSummary}
+            approval={pendingApproval ? (
+              <ConsentCard
+                busy={generating}
+                reason={consentReason}
+                onApprove={(faceMode) => { void approveTryOn(faceMode); }}
+                onCancel={() => { void cancelTryOn(); }}
+              />
+            ) : undefined}
+            voiceDock={(voice.enabled || voice.partialTranscript || voice.lastError) ? (
+              <div className={`voice-session voice-${voice.state}`} aria-live="polite">
+                <span className="voice-session-dot" />
+                <div>
+                  <strong>{voiceStatusLabel(voice.state)}</strong>
+                  {voice.partialTranscript && <span>{voice.partialTranscript}</span>}
+                  {!voice.partialTranscript && voice.lastError && <span>{voice.lastError}</span>}
+                </div>
+              </div>
+            ) : undefined}
+            composer={(
+              <div className="agent-composer-area">
+                <form className="composer" onSubmit={submitMessage}>
+                  <button type="button" className="composer-icon" aria-label="上传图片"><Icon name="image" size={19} /></button>
+                  <input value={draft} onChange={(event) => setDraft(event.target.value)} placeholder="跟 Muse 说点什么..." aria-label="输入消息" />
+                  <button
+                    type="button"
+                    className={`voice-button ${voice.enabled ? 'is-active' : ''} voice-${voice.state}`}
+                    aria-label={voice.enabled ? '停止或关闭语音模式' : '开启语音模式'}
+                    aria-pressed={voice.enabled}
+                    title={voice.available ? voiceStatusLabel(voice.state) : '语音服务尚未配置'}
+                    onClick={voice.toggle}
+                  >
+                    <Icon name="mic" size={18} />
+                  </button>
+                  <button className="send-button" type="submit" aria-label="发送消息"><Icon name="send" size={18} /></button>
+                </form>
+                <span className="voice-privacy">摄像头帧会按需发送给视觉模型；麦克风只在语音模式开启时使用，音频会发送给语音识别服务，Muse 服务不持久化原始音频。</span>
+                <span className={`mock-note transport-${transport}`}>{statusNote}</span>
               </div>
             )}
-          </div>
-
-          <div className="mirror-footer">
-            <div className="camera-controls">
-              <button className="round-control" onClick={togglePause} disabled={!streamRef.current} aria-label={cameraState === 'paused' ? '继续摄像头' : '暂停摄像头'}>
-                <Icon name={cameraState === 'paused' ? 'play' : 'pause'} />
-              </button>
-              <div className="capture-status" aria-live="polite" aria-label="拍照分析状态">
-                <span><Icon name="camera" size={18} /></span>
-                {captureStatusText(cameraState, perception)}
-              </div>
-              <button className="round-control" onClick={() => setMirror((value) => !value)} aria-label="切换镜像">
-                <Icon name="flip" />
-              </button>
-            </div>
-            <p><Icon name="check" size={14} />本地镜子和小助手视觉状态分开显示</p>
-          </div>
-        </section>
-
-        <aside className="agent-panel" aria-label="造型 Agent 对话">
-          <div className="agent-header">
-            <div className="agent-identity">
-              <div className="agent-avatar large">M</div>
-              <div><strong>Muse Mirror Agent</strong><span><i />{agentStatusLabel}</span></div>
-            </div>
-            <button className="header-action" aria-label="更多选项">...</button>
-          </div>
-
-          <div className="message-list">
+          />
+        )}
+        conversation={(
+          <ConversationDrawer
+            id="complete-conversation"
+            expanded={conversationExpanded}
+            messageCount={messages.length}
+            onToggle={() => setConversationExpanded((value) => !value)}
+          >
             <div className="conversation-date">今天</div>
             {messages.map((message) => (
               <MessageBubble
@@ -2221,48 +2313,10 @@ function App() {
                 }}
               />
             ))}
-            {pendingApproval && (
-              <ConsentCard
-                busy={generating}
-                reason={consentReason}
-                onApprove={(faceMode) => { void approveTryOn(faceMode); }}
-                onCancel={() => { void cancelTryOn(); }}
-              />
-            )}
             <div ref={messageEndRef} />
-          </div>
-
-          <div className="agent-composer-area">
-            {(voice.enabled || voice.partialTranscript || voice.lastError) && (
-              <div className={`voice-session voice-${voice.state}`} aria-live="polite">
-                <span className="voice-session-dot" />
-                <div>
-                  <strong>{voiceStatusLabel(voice.state)}</strong>
-                  {voice.partialTranscript && <span>{voice.partialTranscript}</span>}
-                  {!voice.partialTranscript && voice.lastError && <span>{voice.lastError}</span>}
-                </div>
-              </div>
-            )}
-            <form className="composer" onSubmit={submitMessage}>
-              <button type="button" className="composer-icon" aria-label="上传图片"><Icon name="image" size={19} /></button>
-              <input value={draft} onChange={(event) => setDraft(event.target.value)} placeholder="跟 Muse 说点什么..." aria-label="输入消息" />
-              <button
-                type="button"
-                className={`voice-button ${voice.enabled ? 'is-active' : ''} voice-${voice.state}`}
-                aria-label={voice.enabled ? '停止或关闭语音模式' : '开启语音模式'}
-                aria-pressed={voice.enabled}
-                title={voice.available ? voiceStatusLabel(voice.state) : '语音服务尚未配置'}
-                onClick={voice.toggle}
-              >
-                <Icon name="mic" size={18} />
-              </button>
-              <button className="send-button" type="submit" aria-label="发送消息"><Icon name="send" size={18} /></button>
-            </form>
-            <span className="voice-privacy">摄像头帧会按需发送给视觉模型；麦克风只在语音模式开启时使用，音频会发送给语音识别服务，Muse 服务不持久化原始音频。</span>
-            <span className={`mock-note transport-${transport}`}>{statusNote}</span>
-          </div>
-        </aside>
-      </main>
+          </ConversationDrawer>
+        )}
+      />
     </div>
   );
 }
