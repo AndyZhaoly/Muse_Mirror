@@ -38,10 +38,7 @@ export function deriveCurrentCanvasContent(
   const latestCompletedAssistant = [...messages]
     .reverse()
     .find((message) => message.role === 'assistant' && (message.text?.trim() || message.commentary?.trim()));
-  const activeHasContent = Boolean(
-    activeAssistant?.text?.trim() || activeAssistant?.commentary?.trim() || activeAssistant?.isTyping,
-  );
-  const latestAssistant = activeHasContent ? activeAssistant : latestCompletedAssistant;
+  const latestAssistant = activeAssistant ?? latestCompletedAssistant;
 
   const commentary = latestAssistant?.commentary?.trim() || undefined;
   const text = latestAssistant?.text?.trim() || undefined;
@@ -52,6 +49,6 @@ export function deriveCurrentCanvasContent(
     latestAssistantText: commentaryTakesPriority ? undefined : text,
     latestAssistantCommentary: commentaryTakesPriority ? commentary : undefined,
     assistantMessageId: activeAssistant?.id ?? latestAssistant?.id,
-    assistantIsTyping: Boolean(activeAssistant?.isTyping && !text && !commentary),
+    assistantIsTyping: Boolean(activeAssistant && !text && !commentary),
   };
 }

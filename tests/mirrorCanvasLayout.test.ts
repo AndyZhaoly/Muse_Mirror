@@ -53,14 +53,20 @@ test('streamed answer replaces commentary once final-answer text arrives', () =>
   assert.equal(result.assistantIsTyping, false);
 });
 
-test('first-packet typing state does not erase the last useful Muse answer', () => {
+test('empty active assistant stays scoped to the current turn while waiting for the first packet', () => {
   const messages = [
     { id: 'a1', role: 'assistant' as const, text: '上一轮答案' },
     { id: 'u1', role: 'user' as const, text: '新问题' },
     { id: 'a2', role: 'assistant' as const, isTyping: false },
   ];
 
-  assert.equal(deriveCurrentCanvasContent(messages, 'a2').latestAssistantText, '上一轮答案');
+  assert.deepEqual(deriveCurrentCanvasContent(messages, 'a2'), {
+    latestUserText: '新问题',
+    latestAssistantText: undefined,
+    latestAssistantCommentary: undefined,
+    assistantMessageId: 'a2',
+    assistantIsTyping: true,
+  });
 
   const typing = deriveCurrentCanvasContent([
     ...messages.slice(0, -1),
@@ -68,6 +74,34 @@ test('first-packet typing state does not erase the last useful Muse answer', () 
   ], 'a2');
   assert.equal(typing.latestAssistantText, undefined);
   assert.equal(typing.assistantIsTyping, true);
+});
+
+test('whitespace-only active content never leaks a completed answer from the previous turn', () => {
+  const result = deriveCurrentCanvasContent([
+    { id: 'a1', role: 'assistant', text: '黑裤可以，换白鞋会更轻松。' },
+    { id: 'u1', role: 'user', text: '再看看我刚换的外套。' },
+    { id: 'a2', role: 'assistant', text: '  ', commentary: '\n', isTyping: false },
+  ], 'a2');
+
+  assert.equal(result.latestAssistantText, undefined);
+  assert.equal(result.latestAssistantCommentary, undefined);
+  assert.equal(result.assistantMessageId, 'a2');
+  assert.equal(result.assistantIsTyping, true);
+});
+
+test('completed answer is used only when there is no active assistant turn', () => {
+  const messages = [
+    { id: 'u1', role: 'user' as const, text: '上一问' },
+    { id: 'a1', role: 'assistant' as const, text: '上一轮完整答案' },
+  ];
+
+  assert.deepEqual(deriveCurrentCanvasContent(messages), {
+    latestUserText: '上一问',
+    latestAssistantText: '上一轮完整答案',
+    latestAssistantCommentary: undefined,
+    assistantMessageId: 'a1',
+    assistantIsTyping: false,
+  });
 });
 
 test('Mirror Canvas stays presentation-only and approval is not duplicated', () => {
