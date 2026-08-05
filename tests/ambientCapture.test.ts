@@ -59,6 +59,9 @@ test('three rounds create verified products, recognize real appearances, then ad
   assert.equal(round1State.wearEvents.length, 2);
   assert.equal(productCalls.length, 2);
   assert.ok(round1State.closetItems.every((entry) => entry.item.imageStatus === 'ready'));
+  assert.ok(round1State.closetItems.every((entry) => entry.status === 'active'));
+  assert.ok(round1State.closetItems.every((entry) => entry.item.identityStatus === 'provisional'));
+  assert.ok(round1State.closetItems.every((entry) => entry.item.ownershipStatus === 'unverified'));
   assert.ok(round1State.closetItems.every((entry) => entry.item.primaryImageAssetId));
   assert.ok(round1State.closetItems.every((entry) => entry.item.imageUrl.startsWith('/api/fashion/wardrobe-assets/')));
   const round1Products = round1State.assets.filter((asset) => asset.role === 'canonical_product');
@@ -92,6 +95,8 @@ test('three rounds create verified products, recognize real appearances, then ad
   for (const entry of round2State.closetItems) {
     assert.equal(entry.item.primaryImageAssetId, originalPrimaryIds.get(entry.item.color));
     assert.equal(entry.item.appearanceAssetIds?.length, 2);
+    assert.equal(entry.item.identityStatus, 'provisional');
+    assert.equal(entry.item.ownershipStatus, 'unverified');
   }
   await round2.acknowledge(userId);
   await round2.endEpisode(userId, 'round-2');
@@ -303,6 +308,8 @@ test('capture without product providers commits evidence but never promotes a cr
   assert.equal((await runtime.process(packet(fixture.framePath, 'disabled-provider', 'p2'))).status, 'committed_processing_images');
   const state = await waitForJobsToSettle(fixture.repository, userId, 2);
   assert.ok(state.closetItems.every((entry) => entry.item.imageStatus === 'needs_review'));
+  assert.ok(state.closetItems.every((entry) => entry.item.identityStatus === 'provisional'));
+  assert.ok(state.closetItems.every((entry) => entry.item.ownershipStatus === 'unverified'));
   assert.ok(state.closetItems.every((entry) => !entry.item.primaryImageAssetId));
   assert.ok(state.closetItems.every((entry) => entry.item.imageUrl === '/agent-assets/wardrobe-processing.svg'));
   assert.equal(state.assets.filter((asset) => asset.role === 'canonical_product').length, 0);
@@ -337,9 +344,15 @@ test('critical product mismatch blocks primary image promotion despite high conf
   await runtime.process(packet(fixture.framePath, 'critical-mismatch', 'm2'));
   const state = await waitForJobsToSettle(fixture.repository, userId, 2);
   assert.ok(state.closetItems.every((entry) => entry.item.imageStatus === 'needs_review'));
+  assert.ok(state.closetItems.every((entry) => entry.item.identityStatus === 'provisional'));
+  assert.ok(state.closetItems.every((entry) => entry.item.ownershipStatus === 'unverified'));
   assert.ok(state.closetItems.every((entry) => !entry.item.primaryImageAssetId));
   assert.ok(state.assets.filter((asset) => asset.role === 'canonical_product')
     .every((asset) => asset.verificationStatus === 'failed'));
+  const reloaded = await new JsonUserWardrobeRepository(path.join(fixture.directory, 'wardrobe.json')).getState(userId);
+  assert.ok(reloaded.closetItems.every((entry) => entry.item.identityStatus === 'provisional'));
+  assert.ok(reloaded.closetItems.every((entry) => entry.item.ownershipStatus === 'unverified'));
+  assert.ok(reloaded.closetItems.every((entry) => entry.item.imageStatus === 'needs_review'));
 });
 
 test('capture remains silent without grant and stale packets do not call vision', async () => {

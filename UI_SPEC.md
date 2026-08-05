@@ -162,6 +162,11 @@ or failed jobs may show a neutral processing notice but never the rejected image
 is acknowledged after roughly seven seconds, can recover after refresh while unacknowledged, and yields to
 an active Agent turn.
 
+The ordinary Mirror UI does not expose internal `provisional` or `unverified` labels. Those fields remain
+backend evidence semantics, not user-facing warnings and not filters that hide otherwise usable closet items.
+The UI may show image processing/review state because it affects whether a trustworthy catalog card exists,
+but must never imply that a verified product image proves garment identity or user ownership.
+
 PR7 allows the controller to project an optional, already-computed `MirrorSituationDecision` as a small
 presentation hint. A foreground ownership question uses the reserved `garment_ingestion` content kind;
 privacy and observation feedback use `device_feedback`. This remains a read-only projection and does not

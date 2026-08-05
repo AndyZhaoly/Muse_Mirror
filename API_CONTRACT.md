@@ -50,6 +50,13 @@ wear events, and capture. Stage B edits each new appearance into a product image
 visual verification. Private evidence, appearances, and generated product images are never served by the
 public `/generated` route.
 
+Ambient closet state exposes three independent semantics. `identityStatus` is `provisional` until a future
+explicit identity-confirmation workflow; `ownershipStatus` is `unverified` until explicit user confirmation;
+and `imageStatus` reports only catalog-image processing. A product-image pass updates `imageStatus`,
+`primaryImageAssetId`, and `imageUrl` but never identity or ownership. The outer ambient record status is
+`active | archived` and must not be interpreted as identity confidence. Provisional active items remain valid
+merged-closet records and may be queried or used as explicit must-use recommendation inputs.
+
 ## Start a turn
 
 ```ts

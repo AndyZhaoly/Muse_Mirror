@@ -182,14 +182,20 @@ the product verifier can become `ClosetItem.imageUrl`. Full-person evidence and 
 closet card.
 
 `OutfitObservationProvider` reports visual facts only. Identity first recalls a small Top-K set from slot,
-category, color, and pattern, then compares the current real crop with historical real appearances in one
-strict visual-verifier call. Base catalog images are a fallback for fixture items. Generated product images
-may assist display but are never the sole identity ground truth. `same`, `different`, and `uncertain` map to
-`matched_existing`, `new_to_closet`, or `ambiguous` under configured thresholds; ambiguous outcomes write
-nothing.
+category, color, and pattern. A metadata miss is recall failure, not new-item proof: compatible same-slot or
+category-family records with historical real appearances enter a visual fallback Top-K. The verifier then
+compares the current real crop with those appearances in one strict allowlisted call. Base catalog images are
+a fallback for fixture items. A potentially compatible item with neither a real appearance nor a readable
+base catalog image yields `ambiguous`; only a truly empty compatible closet, or a confident visual `different`
+against every viable candidate, may yield `new_to_closet`. New-item confidence is capped and never hardcoded
+to `1`. Generated product images may assist display but are never the sole identity ground truth.
 
-`JsonUserWardrobeRepository` owns the signed-browser overlay. Stage A atomically writes provisional
-`ClosetItem`, appearance, capture, wear, evidence, and audit records with an idempotency key. Stage B keeps
+`JsonUserWardrobeRepository` owns the signed-browser overlay. Stage A atomically writes an active, searchable
+`ClosetItem` whose identity is `provisional`, ownership is `unverified`, and image state is `processing`, plus
+appearance, capture, wear, evidence, and audit records with an idempotency key. These three state dimensions
+are independent. A Stage B verification pass may set only `imageStatus=ready`, `primaryImageAssetId`, and
+`imageUrl`; failure sets `imageStatus=needs_review`. Neither outcome confirms identity or ownership, and a
+later automatic `matched_existing` observation preserves the record's prior identity/ownership state. Stage B keeps
 independent product-image jobs so a restart or developer retry cannot duplicate the wardrobe transaction.
 The recommendation runtime reads the same signed-browser overlay as ambient capture. A new-item completion
 card displays product images only after all required jobs are verified; repeat recognition reuses existing

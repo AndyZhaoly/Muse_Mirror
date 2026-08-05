@@ -103,6 +103,7 @@ const ambientCaptureCoordinator = new AmbientCaptureCoordinator({
     topK: config.identityTopK,
     matchConfidence: config.identityMatchConfidence,
     newConfidence: config.identityNewConfidence,
+    newConfidenceCeiling: config.identityNewConfidenceCeiling,
   }),
   repository: wardrobeRepository,
   baseClosetItems: () => sharedServices.closet.allItems(),

@@ -74,6 +74,7 @@ export interface AppConfig {
   identityTopK: number;
   identityMatchConfidence: number;
   identityNewConfidence: number;
+  identityNewConfidenceCeiling: number;
   skillsDir: string;
   trace: boolean;
   visualQcEnabled: boolean;
@@ -357,6 +358,10 @@ export function loadConfig(): AppConfig {
     identityTopK: Math.max(1, Math.round(numberEnv('FASHION_AGENT_IDENTITY_TOP_K', 4))),
     identityMatchConfidence: numberEnv('FASHION_AGENT_IDENTITY_MATCH_CONFIDENCE', 0.82),
     identityNewConfidence: numberEnv('FASHION_AGENT_IDENTITY_NEW_CONFIDENCE', 0.78),
+    identityNewConfidenceCeiling: Math.min(
+      0.99,
+      Math.max(0, numberEnv('FASHION_AGENT_IDENTITY_NEW_CONFIDENCE_CEILING', 0.9)),
+    ),
     skillsDir: path.resolve(process.env.FASHION_AGENT_SKILLS_DIR ?? './skills'),
     trace: boolEnv('FASHION_AGENT_TRACE', false),
     visualQcEnabled: boolEnv('FASHION_AGENT_VISUAL_QC', true),

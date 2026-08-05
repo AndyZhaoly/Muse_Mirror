@@ -126,7 +126,8 @@ export class JsonUserWardrobeRepository implements WardrobeRepository {
           created.item.imageStatus = 'processing';
           created.item.source = 'mirror_auto_capture';
           created.item.identityStatus = 'provisional';
-          created.item.ownershipStatus = 'confirmed';
+          created.item.ownershipStatus = 'unverified';
+          created.status = 'active';
           state.closetItems.push(created);
           createdClosetItemIds.push(item.resolvedClosetItemId);
           state.events.push(event(proposal.userId, 'provisional_item_created', now, {
@@ -138,7 +139,6 @@ export class JsonUserWardrobeRepository implements WardrobeRepository {
           const existingItem = state.closetItems.find((entry) => entry.item.id === item.resolvedClosetItemId);
           if (existingItem) {
             existingItem.item.appearanceAssetIds = appendLimited(existingItem.item.appearanceAssetIds ?? [], appearanceAsset.assetId, 8);
-            existingItem.item.identityStatus = 'confirmed';
             existingItem.updatedAt = now;
           }
           state.events.push(event(proposal.userId, 'existing_item_matched', now, {
@@ -286,8 +286,6 @@ export class JsonUserWardrobeRepository implements WardrobeRepository {
         if (passed) {
           entry.item.primaryImageAssetId = productAsset.assetId;
           entry.item.imageUrl = productAsset.imageUrl;
-          entry.status = 'confirmed';
-          entry.item.identityStatus = 'confirmed';
         }
         entry.updatedAt = occurredAt;
       }
@@ -425,6 +423,14 @@ function normalizeUserState(state: UserWardrobeState): void {
   state.wearEvents ??= [];
   state.episodes ??= [];
   state.committedIdempotencyKeys ??= [];
+  for (const entry of state.closetItems) {
+    const legacyStatus = entry.status as string;
+    if (legacyStatus === 'provisional' || legacyStatus === 'confirmed') entry.status = 'active';
+    if (entry.item.source === 'mirror_auto_capture') {
+      entry.item.identityStatus ??= 'provisional';
+      entry.item.ownershipStatus ??= 'unverified';
+    }
+  }
 }
 
 function ensureUser(file: WardrobeRepositoryFile, userId: string): UserWardrobeState {

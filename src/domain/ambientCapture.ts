@@ -154,7 +154,7 @@ export interface GarmentAppearance {
 
 export interface AmbientClosetItem {
   item: ClosetItem;
-  status: 'provisional' | 'confirmed';
+  status: 'active' | 'archived';
   source: 'ambient_capture';
   appearanceFingerprint: string;
   createdAt: string;

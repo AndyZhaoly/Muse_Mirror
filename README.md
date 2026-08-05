@@ -56,10 +56,12 @@ stable real camera still -> situation policy -> worn-outfit vision
   -> atomic wardrobe overlay -> verified catalog image jobs -> Mirror Screen event
 ```
 
-It never adds a hidden intent router or Agent tool. New garments first commit as `processing`; their real
+It never adds a hidden intent router or Agent tool. New garments immediately enter the merged closet as
+usable `provisional` records with `unverified` ownership while their image status is `processing`; their real
 appearance crops are edited into clean catalog images and compared back to the source. Only verified images
-become closet-card primary images. Repeat recognition uses historical real appearances and does not generate
-another product image.
+become closet-card primary images. Product-image verification changes image state only: it never confirms
+garment identity or ownership. Repeat recognition uses historical real appearances, tolerates metadata label
+drift, preserves provisional/unverified status, and does not generate another product image.
 
 More detail is available in [ARCHITECTURE.md](ARCHITECTURE.md), [API_CONTRACT.md](API_CONTRACT.md), and [SKILL_TOOL_POLICY_MATRIX.md](SKILL_TOOL_POLICY_MATRIX.md).
 
@@ -175,6 +177,7 @@ FASHION_AGENT_PRODUCT_IMAGE_VERIFY_CONFIDENCE=0.84
 FASHION_AGENT_IDENTITY_TOP_K=4
 FASHION_AGENT_IDENTITY_MATCH_CONFIDENCE=0.82
 FASHION_AGENT_IDENTITY_NEW_CONFIDENCE=0.78
+FASHION_AGENT_IDENTITY_NEW_CONFIDENCE_CEILING=0.9
 
 FASHION_AGENT_ASR_PROVIDER=disabled
 FASHION_AGENT_TTS_PROVIDER=disabled

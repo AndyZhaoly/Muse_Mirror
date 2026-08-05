@@ -46,7 +46,7 @@ export class OpenAIGarmentVisualVerifier implements GarmentVisualVerifier {
   async verify(input: GarmentVisualVerifierInput): Promise<GarmentVisualVerification> {
     if (!this.ready) return uncertainGarmentVerification('VISUAL_VERIFIER_UNAVAILABLE');
     if (!input.candidates.length) {
-      return { result: 'different', confidence: 1, evidence: ['No recalled candidate exists.'], mismatches: [] };
+      return { result: 'different', confidence: 0.9, evidence: ['No recalled candidate exists.'], mismatches: [] };
     }
     const allowedIds = input.candidates.map((candidate) => candidate.closetItem.id);
     const content: Array<Record<string, unknown>> = [

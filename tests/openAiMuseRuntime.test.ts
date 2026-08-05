@@ -1597,7 +1597,7 @@ test('get_item_images refreshes persisted ambient wardrobe items before direct l
         version: 1,
         closetItems: [{
           item: ambientItem,
-          status: 'provisional' as const,
+          status: 'active' as const,
           source: 'ambient_capture' as const,
           appearanceFingerprint: 'ambient-fingerprint',
           createdAt: '2026-08-05T00:00:00.000Z',

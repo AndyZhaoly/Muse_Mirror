@@ -26,6 +26,24 @@ export interface GarmentIdentityProvider {
   resolve(input: GarmentIdentityInput): Promise<GarmentIdentityHypothesis>;
 }
 
+export interface GarmentRecallCandidate {
+  closetItemId: string;
+  source: 'base' | 'user';
+  metadataScore: number;
+  appearanceCount: number;
+  hasCatalogFallbackImage: boolean;
+}
+
+export interface GarmentRecallResult {
+  candidates: GarmentRecallCandidate[];
+  strategy:
+    | 'metadata'
+    | 'slot_category_fallback'
+    | 'empty_compatible_closet'
+    | 'potential_match_without_visual_reference';
+  evidence: string[];
+}
+
 export class VisualGarmentIdentityProvider implements GarmentIdentityProvider {
   readonly ready: boolean;
 
@@ -35,6 +53,7 @@ export class VisualGarmentIdentityProvider implements GarmentIdentityProvider {
       topK?: number;
       matchConfidence?: number;
       newConfidence?: number;
+      newConfidenceCeiling?: number;
     },
   ) {
     this.ready = options.verifier.ready;
@@ -49,49 +68,57 @@ export class VisualGarmentIdentityProvider implements GarmentIdentityProvider {
       ]);
     }
 
-    const userScores = input.userClosetItems.map(({ item }) => ({
-      itemId: item.id,
-      score: scoreDescriptor(descriptor, descriptorForItem(item, input.appearances)),
-      source: 'user' as const,
-    }));
-    const baseScores = input.baseClosetItems
-      .filter((item) => item.category === descriptor.category)
-      .map((item) => ({
-        itemId: item.id,
-        score: scoreDescriptor(descriptor, descriptorForItem(item, [])),
-        source: 'base' as const,
-      }));
-    const scores = [...userScores, ...baseScores]
-      .sort((a, b) => b.score - a.score || a.itemId.localeCompare(b.itemId));
-    const recalled = scores.filter((item) => item.score >= 0.45).slice(0, this.options.topK ?? 4);
-    if (!recalled.length) {
-      return hypothesis(input.garment.observationItemId, 'new_to_closet', fingerprint, 1, [], [
-        'NO_METADATA_RECALL_CANDIDATE',
+    const recall = recallGarmentIdentityCandidates(input, this.options.topK ?? 4);
+    const recalledIds = recall.candidates.map((candidate) => candidate.closetItemId);
+    if (recall.strategy === 'empty_compatible_closet') {
+      return hypothesis(input.garment.observationItemId, 'new_to_closet', fingerprint, newIdentityConfidence(
+        input,
+        input.garment.confidence,
+        this.options.newConfidenceCeiling,
+      ), [], [
+        'COMPATIBLE_CLOSET_TRULY_EMPTY',
+        ...recall.evidence,
+      ]);
+    }
+    if (recall.strategy === 'potential_match_without_visual_reference') {
+      return hypothesis(input.garment.observationItemId, 'ambiguous', fingerprint, 0, recalledIds, [
+        'NO_VISUAL_REFERENCE_FOR_POTENTIAL_MATCH',
+        ...recall.evidence,
       ]);
     }
     if (!this.options.verifier.ready) {
-      return hypothesis(input.garment.observationItemId, 'ambiguous', fingerprint, 0, recalled.map((item) => item.itemId), [
+      return hypothesis(input.garment.observationItemId, 'ambiguous', fingerprint, 0, recalledIds, [
         'REAL_VISUAL_VERIFIER_UNAVAILABLE',
+        ...recall.evidence,
       ]);
     }
     const allItems = new Map([
       ...input.baseClosetItems.map((item) => [item.id, item] as const),
       ...input.userClosetItems.map((entry) => [entry.item.id, entry.item] as const),
     ]);
-    const candidates = recalled.flatMap(({ itemId, source }) => {
-      const closetItem = allItems.get(itemId);
+    const missingVisualReferences: string[] = [];
+    const candidates = recall.candidates.flatMap((recalled) => {
+      const closetItem = allItems.get(recalled.closetItemId);
       if (!closetItem) return [];
-      const appearanceIds = new Set(input.appearances.filter((appearance) => appearance.closetItemId === itemId).map((appearance) => appearance.appearanceAssetId));
+      const appearanceIds = new Set(input.appearances
+        .filter((appearance) => appearance.closetItemId === recalled.closetItemId)
+        .map((appearance) => appearance.appearanceAssetId));
       const appearanceAssets = input.assets
         .filter((asset) => asset.role === 'garment_appearance' && appearanceIds.has(asset.assetId))
         .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
-      const fallbackCatalogImage = source === 'base' ? input.baseCatalogAssets?.get(itemId) : undefined;
-      if (!appearanceAssets.length && !fallbackCatalogImage) return [];
+      const fallbackCatalogImage = recalled.source === 'base'
+        ? input.baseCatalogAssets?.get(recalled.closetItemId)
+        : undefined;
+      if (!appearanceAssets.length && !fallbackCatalogImage) {
+        missingVisualReferences.push(recalled.closetItemId);
+        return [];
+      }
       return [{ closetItem, appearanceAssets, fallbackCatalogImage }];
     });
     if (!candidates.length) {
-      return hypothesis(input.garment.observationItemId, 'new_to_closet', fingerprint, 1, recalled.map((item) => item.itemId), [
-        'NO_REAL_VISUAL_REFERENCE_FOR_RECALLED_CANDIDATES',
+      return hypothesis(input.garment.observationItemId, 'ambiguous', fingerprint, 0, recalledIds, [
+        'NO_VISUAL_REFERENCE_FOR_POTENTIAL_MATCH',
+        ...recall.evidence,
       ]);
     }
     const verification = await this.options.verifier.verify({
@@ -101,27 +128,87 @@ export class VisualGarmentIdentityProvider implements GarmentIdentityProvider {
     if (
       verification.result === 'same' &&
       verification.matchedClosetItemId &&
+      recalledIds.includes(verification.matchedClosetItemId) &&
       verification.confidence >= (this.options.matchConfidence ?? 0.82)
     ) {
       return {
-        ...hypothesis(input.garment.observationItemId, 'matched_existing', fingerprint, verification.confidence, recalled.map((item) => item.itemId), [
+        ...hypothesis(input.garment.observationItemId, 'matched_existing', fingerprint, verification.confidence, recalledIds, [
           'REAL_VISUAL_APPEARANCE_MATCH',
+          `RECALL_STRATEGY_${recall.strategy.toUpperCase()}`,
           ...verification.evidence,
         ]),
         matchedClosetItemId: verification.matchedClosetItemId,
       };
     }
     if (verification.result === 'different' && verification.confidence >= (this.options.newConfidence ?? 0.78)) {
-      return hypothesis(input.garment.observationItemId, 'new_to_closet', fingerprint, verification.confidence, recalled.map((item) => item.itemId), [
+      if (missingVisualReferences.length) {
+        return hypothesis(input.garment.observationItemId, 'ambiguous', fingerprint, verification.confidence, recalledIds, [
+          'NO_VISUAL_REFERENCE_FOR_POTENTIAL_MATCH',
+          ...missingVisualReferences.map((itemId) => `MISSING_VISUAL_REFERENCE:${itemId}`),
+        ]);
+      }
+      return hypothesis(input.garment.observationItemId, 'new_to_closet', fingerprint, newIdentityConfidence(
+        input,
+        verification.confidence,
+        this.options.newConfidenceCeiling,
+      ), recalledIds, [
         'REAL_VISUAL_CANDIDATES_DIFFERENT',
+        `RECALL_STRATEGY_${recall.strategy.toUpperCase()}`,
         ...verification.mismatches,
       ]);
     }
-    return hypothesis(input.garment.observationItemId, 'ambiguous', fingerprint, verification.confidence, recalled.map((item) => item.itemId), [
+    return hypothesis(input.garment.observationItemId, 'ambiguous', fingerprint, verification.confidence, recalledIds, [
       'REAL_VISUAL_IDENTITY_UNCERTAIN',
+      `RECALL_STRATEGY_${recall.strategy.toUpperCase()}`,
       ...verification.mismatches,
     ]);
   }
+}
+
+export function recallGarmentIdentityCandidates(
+  input: GarmentIdentityInput,
+  topK = 4,
+): GarmentRecallResult {
+  const descriptor = descriptorFromObservation(input.garment);
+  const records = [
+    ...input.userClosetItems.map(({ item }) => candidateRecord(input, item, 'user', descriptor)),
+    ...input.baseClosetItems.map((item) => candidateRecord(input, item, 'base', descriptor)),
+  ].filter((record) => compatibleCategoryFamily(descriptor, record.descriptor));
+  const ordered = records.sort((left, right) =>
+    right.metadataScore - left.metadataScore ||
+    right.appearanceCount - left.appearanceCount ||
+    left.item.id.localeCompare(right.item.id),
+  );
+  const metadata = ordered.filter((record) => record.metadataScore >= 0.45).slice(0, topK);
+  if (metadata.length) {
+    return {
+      candidates: metadata.map(recallCandidate),
+      strategy: 'metadata',
+      evidence: ['METADATA_RECALL_THRESHOLD_MET'],
+    };
+  }
+  const visualFallback = ordered
+    .filter((record) => record.appearanceCount > 0 || record.hasCatalogFallbackImage)
+    .slice(0, topK);
+  if (visualFallback.length) {
+    return {
+      candidates: visualFallback.map(recallCandidate),
+      strategy: 'slot_category_fallback',
+      evidence: ['METADATA_RECALL_MISS', 'COMPATIBLE_VISUAL_FALLBACK_AVAILABLE'],
+    };
+  }
+  if (ordered.length) {
+    return {
+      candidates: ordered.slice(0, topK).map(recallCandidate),
+      strategy: 'potential_match_without_visual_reference',
+      evidence: ['METADATA_RECALL_MISS', 'COMPATIBLE_ITEMS_LACK_VISUAL_REFERENCE'],
+    };
+  }
+  return {
+    candidates: [],
+    strategy: 'empty_compatible_closet',
+    evidence: ['NO_COMPATIBLE_SLOT_OR_CATEGORY_FAMILY'],
+  };
 }
 
 /** Metadata-only provider retained for policy fixtures; production capture never wires it. */
@@ -129,7 +216,14 @@ export class DeterministicGarmentIdentityProvider implements GarmentIdentityProv
   async resolve(input: GarmentIdentityInput): Promise<GarmentIdentityHypothesis> {
     const descriptor = descriptorFromObservation(input.garment);
     const fingerprint = appearanceFingerprint(descriptor);
-    return hypothesis(input.garment.observationItemId, 'new_to_closet', fingerprint, 1, [], ['TEST_METADATA_PROVIDER']);
+    return hypothesis(
+      input.garment.observationItemId,
+      'new_to_closet',
+      fingerprint,
+      Math.min(input.garment.confidence, 0.9),
+      [],
+      ['TEST_METADATA_PROVIDER'],
+    );
   }
 }
 
@@ -148,6 +242,71 @@ export function descriptorFromObservation(garment: WornGarmentObservation): Garm
 
 export function appearanceFingerprint(descriptor: GarmentAppearanceDescriptor): string {
   return createHash('sha256').update(JSON.stringify(descriptor)).digest('hex').slice(0, 24);
+}
+
+interface CandidateRecord {
+  item: ClosetItem;
+  source: 'base' | 'user';
+  descriptor: GarmentAppearanceDescriptor;
+  metadataScore: number;
+  appearanceCount: number;
+  hasCatalogFallbackImage: boolean;
+}
+
+function candidateRecord(
+  input: GarmentIdentityInput,
+  item: ClosetItem,
+  source: CandidateRecord['source'],
+  observed: GarmentAppearanceDescriptor,
+): CandidateRecord {
+  const descriptor = descriptorForItem(item, source === 'user' ? input.appearances : []);
+  const appearanceIds = new Set(input.appearances
+    .filter((appearance) => appearance.closetItemId === item.id)
+    .map((appearance) => appearance.appearanceAssetId));
+  const appearanceCount = input.assets.filter((asset) =>
+    asset.role === 'garment_appearance' && appearanceIds.has(asset.assetId)
+  ).length;
+  return {
+    item,
+    source,
+    descriptor,
+    metadataScore: scoreDescriptor(observed, descriptor),
+    appearanceCount,
+    hasCatalogFallbackImage: source === 'base' && Boolean(input.baseCatalogAssets?.has(item.id)),
+  };
+}
+
+function recallCandidate(record: CandidateRecord): GarmentRecallCandidate {
+  return {
+    closetItemId: record.item.id,
+    source: record.source,
+    metadataScore: record.metadataScore,
+    appearanceCount: record.appearanceCount,
+    hasCatalogFallbackImage: record.hasCatalogFallbackImage,
+  };
+}
+
+function compatibleCategoryFamily(
+  observed: GarmentAppearanceDescriptor,
+  candidate: GarmentAppearanceDescriptor,
+): boolean {
+  if (observed.slot === candidate.slot) return true;
+  return categoryFamily(observed.category) === categoryFamily(candidate.category);
+}
+
+function categoryFamily(category: ClosetItem['category']): string {
+  if (category === 'top' || category === 'outerwear') return 'upper_body';
+  if (category === 'bottom') return 'lower_body';
+  if (category === 'dress' || category === 'jumpsuit') return 'one_piece';
+  return category;
+}
+
+function newIdentityConfidence(
+  input: GarmentIdentityInput,
+  evidenceConfidence: number,
+  configuredCeiling = 0.9,
+): number {
+  return Math.max(0, Math.min(input.garment.confidence, evidenceConfidence, configuredCeiling, 0.99));
 }
 
 function descriptorForItem(item: ClosetItem, appearances: GarmentAppearance[]): GarmentAppearanceDescriptor {

@@ -647,7 +647,7 @@ export interface AmbientCaptureOutcome {
 
 export interface AmbientCaptureState {
   grant?: { grantedAt: string; revokedAt?: string };
-  closetItems: Array<{ item: ClosetItem; status: 'provisional' | 'confirmed' }>;
+  closetItems: Array<{ item: ClosetItem; status: 'active' | 'archived' }>;
   captures: Array<{ captureId: string; repeatedOutfit: boolean; capturedAt: string }>;
   wearEvents: Array<{ wearEventId: string; closetItemId: string; wornAt: string }>;
   pendingCompletionEvent?: AmbientCaptureCompletedEvent;

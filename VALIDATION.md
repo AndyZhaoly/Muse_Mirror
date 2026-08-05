@@ -56,11 +56,16 @@ image-edit/visual-verifier providers, and a durable temporary JSON repository. T
 the three required rounds (new outfit, repeated outfit after repository reload, and mixed new/existing
 items), Stage A/Stage B state, provider-disabled failure, explicit grant gating, stale packets, garment-track
 stability, ambiguous identity rollback, signed-browser isolation, protected asset routes, overlay recommendation
-retrieval, and local pixel stability:
+retrieval, and local pixel stability. The dedicated image-pipeline test deliberately changes Round 2 color,
+pattern, fit, silhouette, placement, and brightness labels while requiring the verifier to receive Round 1's
+real appearance crops. It also asserts that product-image pass/fail and repeat matching never promote
+provisional identity or unverified ownership:
 
 ```bash
 node --import tsx --test \
   tests/ambientCapture.test.ts \
+  tests/ambientCaptureImagePipeline.test.ts \
+  tests/garmentIdentityProvider.test.ts \
   tests/ambientFrameStability.test.ts \
   tests/ambientCaptureUi.test.ts
 ```
