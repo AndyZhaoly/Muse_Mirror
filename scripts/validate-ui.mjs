@@ -11,6 +11,10 @@ const requiredFiles = [
   'web/src/App.tsx',
   'web/src/styles.css',
   'web/src/main.tsx',
+  'web/src/components/mirror/MirrorWorkspace.tsx',
+  'web/src/components/mirror/MirrorAgentCanvas.tsx',
+  'web/src/components/mirror/ConversationDrawer.tsx',
+  'web/src/components/mirror/mirrorCanvasContent.ts',
 ];
 
 const missing = requiredFiles.filter((file) => !existsSync(file));
@@ -21,13 +25,18 @@ if (missing.length) {
 
 const app = readFileSync('web/src/App.tsx', 'utf8');
 const css = readFileSync('web/src/styles.css', 'utf8');
+const canvas = readFileSync('web/src/components/mirror/MirrorAgentCanvas.tsx', 'utf8');
+const drawer = readFileSync('web/src/components/mirror/ConversationDrawer.tsx', 'utf8');
+const workspace = readFileSync('web/src/components/mirror/MirrorWorkspace.tsx', 'utf8');
 const spec = readFileSync('UI_SPEC.md', 'utf8');
 const task = readFileSync('CODEX_UI_TASK.md', 'utf8');
 
 const appSignals = [
   'navigator.mediaDevices.getUserMedia',
   'mirror-panel',
-  'agent-panel',
+  '<MirrorWorkspace',
+  '<MirrorAgentCanvas',
+  '<ConversationDrawer',
   'AI 上身预览',
   '带脸生成',
   '不露脸，只看穿搭',
@@ -43,7 +52,8 @@ for (const signal of appSignals) {
 const cssSignals = [
   'grid-template-columns',
   '.mirror-panel',
-  '.agent-panel',
+  '.mirror-agent-canvas',
+  '.conversation-drawer',
   '@media (max-width:',
   '@media (prefers-reduced-motion: reduce)',
 ];
@@ -52,6 +62,26 @@ for (const signal of cssSignals) {
     console.error(`Web stylesheet is missing expected rule: ${signal}`);
     process.exit(1);
   }
+}
+
+const layoutSignals = [
+  [workspace, 'mirror-workspace-grid'],
+  [canvas, 'mirror-canvas-current'],
+  [canvas, 'mirror-canvas-dock'],
+  [drawer, 'aria-expanded'],
+  [drawer, 'aria-controls'],
+  [drawer, 'conversation-drawer-region'],
+];
+for (const [source, signal] of layoutSignals) {
+  if (!source.includes(signal)) {
+    console.error(`Mirror Canvas layout is missing expected signal: ${signal}`);
+    process.exit(1);
+  }
+}
+
+if ((app.match(/<ConsentCard/g) ?? []).length !== 1) {
+  console.error('Photo approval must render exactly once in the current-moment Canvas.');
+  process.exit(1);
 }
 
 const architectureSignals = [

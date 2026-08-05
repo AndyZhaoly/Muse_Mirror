@@ -10,25 +10,29 @@ The user talks naturally. The main model decides whether to answer directly, loa
 
 ### Desktop
 
-- **Left, 58–64%:** dominant `LiveMirrorPanel`
+- **Upper left, 58–64%:** dominant `LiveMirrorPanel`
   - local real-time camera;
   - analyzed snapshot;
   - outfit visual;
   - AI try-on preview;
   - visual provenance and controls.
-- **Right, 36–42%:** `AgentPanel`
-  - natural conversation;
-  - recommendation cards;
-  - item/product cards;
-  - approval cards;
-  - quick actions;
-  - sticky composer.
+- **Upper right, 36–42%:** current-moment `MirrorAgentCanvas`
+  - the latest user request;
+  - Muse's current commentary, streamed answer, or local typing state;
+  - one current approval interruption when action is required;
+  - a compact reference to the latest visual result;
+  - voice state and composer fixed to the Canvas bottom.
+- **Below both columns:** expandable `ConversationDrawer`
+  - the complete message history;
+  - tool Activity, recommendation explanations, memory disclosures, and compact artifacts;
+  - collapsed by default so history does not compete with the mirror task.
 
 ### Mobile
 
 1. mirror / visual result at top;
-2. Agent conversation below;
-3. composer at bottom.
+2. current-moment Agent Canvas below it;
+3. expandable complete-conversation drawer after the Canvas;
+4. composer at the bottom of the current-moment Canvas.
 
 No horizontal overflow.
 
@@ -104,20 +108,35 @@ Try-on disclaimer:
 
 Never present an AI image as a real garment or product image.
 
-## Right Agent-panel states
+## Mirror Agent Canvas states
 
 Support:
 
-- assistant and user text messages;
-- pending response;
-- outfit recommendation card;
-- closet-item thumbnails;
-- product cards with real source/price/link;
-- approval/consent interruption;
-- friendly error and retry;
-- ordinary follow-up messages;
-- compact quick actions;
-- sticky composer.
+- the latest user text, without replaying the full user history;
+- current assistant commentary or final-answer streaming;
+- a local typing indicator before the first server event;
+- one approval/consent interruption;
+- current voice capture/transcript state;
+- compact latest-artifact acknowledgement;
+- persistent composer.
+
+The Canvas is not a second transcript. It must not render `MessageBubble`, full Activity history,
+decision summaries, memory disclosures, or every past artifact. Those belong in the
+`ConversationDrawer`. Commentary may temporarily replace the current Muse caption while a tool
+turn is active, but it does not become a persisted assistant answer.
+
+## Complete conversation drawer
+
+The lower drawer preserves the existing conversation experience without making it the primary
+mirror surface:
+
+- every assistant and user message remains available;
+- MessageBubble rendering, ActivityTimeline, recommendation details, memory usage, notices, and
+  artifact strips retain their existing behavior;
+- the drawer is collapsed by default and remains mounted as part of the current page;
+- its toggle exposes `aria-expanded` and `aria-controls`, and the controlled region has a stable ID;
+- pending photo approval appears only in the current-moment Canvas, never as a duplicate in the
+  drawer.
 
 Suggested quick actions:
 
@@ -160,14 +179,15 @@ Large visual artifacts belong on the left:
 - AI outfit concept;
 - AI try-on preview.
 
-Compact content belongs in chat:
+Compact historical content belongs in the complete conversation drawer:
 
 - recommendation summary;
 - item thumbnails;
 - product metadata;
 - explanation;
-- approval card;
 - next-action buttons.
+
+The currently actionable approval card belongs in the Mirror Agent Canvas and is rendered once.
 
 Existing backend `UiArtifact` mapping:
 
@@ -187,7 +207,7 @@ Existing backend `UiArtifact` mapping:
 - outfit recommendation card;
 - try-on consent card;
 - mock try-on and color edit;
-- responsive camera-left / Agent-right layout;
+- responsive mirror-left / current-moment Canvas-right / full-conversation-below layout;
 - accessible focus states and reduced-motion support.
 
 The scenario functions are UI fixtures only. Replace them with one adapter to the existing autonomous turn and approval-resume APIs. Do not promote mock handlers into an intent router.
@@ -230,6 +250,9 @@ npm --prefix web run build
 Manual acceptance:
 
 - desktop camera is dominant on the left and Agent is on the right;
+- the right Canvas shows the current interaction instead of duplicating the full transcript;
+- complete history expands below both primary surfaces and is collapsed by default;
+- approval is rendered once in the current-moment Canvas;
 - permission, denial, live, pause, snapshot, retry, and upload fallback are handled;
 - mock analysis, recommendation, consent, try-on, and edit work;
 - real and AI image sources are visibly distinct;
