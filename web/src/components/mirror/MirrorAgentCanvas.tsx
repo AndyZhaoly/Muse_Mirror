@@ -1,17 +1,12 @@
 import type { ReactNode } from 'react';
-import {
-  toCanvasPlainText,
-  type CurrentCanvasContent,
-} from './mirrorCanvasContent';
+import type {
+  MirrorScreenState,
+  MirrorVoicePresentation,
+} from './mirrorScreenTypes';
 
-interface MirrorAgentCanvasProps extends CurrentCanvasContent {
-  agentStatusLabel: string;
-  perceptionLabel: string;
-  assistantIsActive: boolean;
-  currentActivityLabel?: string;
-  latestArtifactSummary?: string;
+interface MirrorAgentCanvasProps {
+  state: MirrorScreenState;
   approval?: ReactNode;
-  voiceDock?: ReactNode;
   composer: ReactNode;
 }
 
@@ -20,81 +15,91 @@ function needsFullConversationHint(text?: string): boolean {
   return text.length > 180 || text.split('\n').length > 6;
 }
 
+function MirrorVoiceDock({ voice }: { voice: MirrorVoicePresentation }) {
+  if (!voice.enabled && !voice.partialTranscript && !voice.error) return null;
+  return (
+    <div className={`voice-session voice-${voice.state}`} aria-live="polite">
+      <span className="voice-session-dot" />
+      <div>
+        <strong>{voice.statusLabel}</strong>
+        {voice.partialTranscript && <span>{voice.partialTranscript}</span>}
+        {!voice.partialTranscript && voice.error && <span>{voice.error}</span>}
+      </div>
+    </div>
+  );
+}
+
 export function MirrorAgentCanvas({
-  agentStatusLabel,
-  perceptionLabel,
-  latestUserText,
-  latestAssistantText,
-  latestAssistantCommentary,
-  assistantIsTyping,
-  assistantIsActive,
-  currentActivityLabel,
-  latestArtifactSummary,
+  state,
   approval,
-  voiceDock,
   composer,
 }: MirrorAgentCanvasProps) {
-  const museCaption = toCanvasPlainText(latestAssistantCommentary ?? latestAssistantText);
-  const userCaption = toCanvasPlainText(latestUserText);
-  const showFullConversationHint = needsFullConversationHint(museCaption);
+  const { caption } = state;
+  const showFullConversationHint = needsFullConversationHint(caption.museText);
+  const ariaLive = state.phase === 'speaking' || state.isActiveTurn ? 'off' : 'polite';
 
   return (
-    <aside className="mirror-agent-canvas" aria-label="镜面 Agent 主屏">
+    <aside
+      className={`mirror-agent-canvas phase-${state.phase} content-${state.contentKind}`}
+      data-phase={state.phase}
+      data-content-kind={state.contentKind}
+      aria-label="镜面 Agent 主屏"
+    >
       <header className="mirror-canvas-header">
         <div className="mirror-canvas-identity">
           <div className="agent-avatar large">M</div>
           <div>
             <strong>Muse Mirror</strong>
-            <span><i />{agentStatusLabel}</span>
+            <span><i />{state.ambient.agentStatusLabel}</span>
           </div>
         </div>
-        <span className="mirror-canvas-perception">{perceptionLabel}</span>
+        <span className="mirror-canvas-perception">{state.ambient.perceptionLabel}</span>
       </header>
 
       <div className="mirror-canvas-body">
         <div className="mirror-canvas-current">
-          {userCaption && (
+          {caption.latestUserText && (
             <section className="mirror-canvas-user" aria-label="你刚刚说">
               <span className="eyebrow">YOU</span>
-              <p>{userCaption}</p>
+              <p>{caption.latestUserText}</p>
             </section>
           )}
 
           <section
             className="mirror-canvas-muse"
             aria-label="Muse 当前回答"
-            aria-live={assistantIsActive ? 'off' : 'polite'}
+            aria-live={ariaLive}
             aria-atomic="true"
           >
             <span className="eyebrow">MUSE</span>
-            {currentActivityLabel && assistantIsActive && (
-              <span className="mirror-canvas-progress"><i />{currentActivityLabel}</span>
+            {caption.activityLabel && state.phase === 'thinking' && (
+              <span className="mirror-canvas-progress"><i />{caption.activityLabel}</span>
             )}
-            {assistantIsTyping && !museCaption ? (
+            {caption.showTyping && !caption.museText ? (
               <div className="mirror-canvas-typing" aria-label="Muse 正在回复">
                 <span /><span /><span />
               </div>
-            ) : (
-              <p>{museCaption ?? '你好。需要时，我可以看镜子、查衣柜或生成视觉参考。'}</p>
-            )}
-            {showFullConversationHint && (
-              <small>完整内容见下方对话</small>
-            )}
+            ) : caption.museText ? (
+              <p>{caption.museText}</p>
+            ) : null}
+            {showFullConversationHint && <small>完整内容见下方对话</small>}
           </section>
 
-          {latestArtifactSummary && (
-            <div className="mirror-canvas-artifact" aria-label="最近视觉结果">
+          {state.primaryArtifact && (
+            <div className="mirror-canvas-artifact" aria-label="当前视觉结果">
               <span>已更新左侧视觉区</span>
-              <strong>{latestArtifactSummary}</strong>
+              <strong>{state.primaryArtifact.summary}</strong>
             </div>
           )}
 
-          {approval && <div className="mirror-canvas-approval">{approval}</div>}
+          {state.showApproval && approval && (
+            <div className="mirror-canvas-approval">{approval}</div>
+          )}
         </div>
       </div>
 
       <footer className="mirror-canvas-dock">
-        {voiceDock}
+        <MirrorVoiceDock voice={state.voice} />
         {composer}
       </footer>
     </aside>
