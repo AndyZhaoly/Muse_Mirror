@@ -33,6 +33,7 @@ import { runFashionTurn } from './src/index.js';
 const result = await runFashionTurn({
   sessionId: 'session_123',
   userId: 'user_123',
+  inputSource: 'text',
   message: '那我穿上是什么样？',
   attachments: [
     {
@@ -58,6 +59,7 @@ const result = await runFashionTurn({
 {
   "status": "completed",
   "text": "我给你做了这套的上身预览……",
+  "spokenText": "上身预览已经放在屏幕上了。",
   "artifacts": [
     {
       "type": "image",
@@ -73,6 +75,10 @@ const result = await runFashionTurn({
   }
 }
 ```
+
+`inputSource` is the canonical interaction-mode field. It accepts `text` or `voice` and defaults to `text` for older clients. Both modes use the same session, conversation, memory, approval, tool, and grounding path.
+
+`text` is the authoritative grounded answer shown on screen and saved in conversation history. Voice turns additionally return `spokenText`, a deterministic TTS-safe form of the final `text`. Text turns may omit it. Clients must not synthesize commentary, activity, artifacts, streamed deltas, or an ungrounded intermediate answer.
 
 ## Streaming turn events
 
@@ -121,7 +127,8 @@ On HTTPS deployments, clients connect with `wss://` to the same host and port. W
     "configured": true,
     "ready": true,
     "sampleRate": 16000,
-    "resourceId": "volc.seedasr.sauc.duration"
+    "resourceId": "volc.seedasr.sauc.duration",
+    "endWindowMs": 500
   },
   "tts": {
     "provider": "volcengine",
@@ -155,6 +162,10 @@ Connect to `WS /api/voice/tts` and send:
 
 The server returns `ready` with PCM format metadata, binary PCM16LE audio chunks, then `done`; failures use `error`. The browser must wait until all queued PCM buffers finish playing before resuming ASR.
 
-Activity, commentary, deltas, artifacts, errors, and approval prompts are never sent to TTS. Only the completed turn's `result.text` is spoken.
+Activity, commentary, deltas, artifacts, errors, and approval prompts are never sent to TTS. Only the completed turn's `result.spokenText ?? result.text` is spoken. The screen and history continue to use authoritative `result.text`.
+
+Current voice behavior keeps both the screen answer and spoken answer concise; cards and artifacts carry structured detail. Text turns retain detailed screen-oriented answers. `spokenText` is assembled deterministically after grounding so mandatory visual-unavailable, closet-gap, and fit-uncertainty facts cannot be lost to sentence limits. A future one-response structured dual-output design may independently author detailed `text` and short `spokenText`; this version does not make a second model request.
 
 Real-time final-answer deltas improve webpage time to first visible text. They do not reduce tool/model completion time, and TTS still waits for the complete authoritative result.
+
+Voice turn requests may include a safe `traceId`. Completed results can include latency telemetry with relative millisecond milestones, model round count, whether vision ran, response character counts, and provider token counts when available. Browser `speech_end` means a provider `utterance_end` event only. Without that event, `speechEndSource` is `unavailable` and `asrFinalizeMs` is omitted. Telemetry never contains the user transcript, answer body, image/audio data, credentials, cookies, or reasoning content.

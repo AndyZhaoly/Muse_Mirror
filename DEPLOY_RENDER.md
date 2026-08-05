@@ -12,7 +12,7 @@ This deployment is an internal smoke-test setup, not a production environment. T
 6. Apply the Blueprint and wait for the Docker build and `/healthz` check to pass.
 7. Open `https://<service>.onrender.com/healthz`, then open the root URL and sign in with the team access code.
 
-The Blueprint tracks `main`, so the team demo deploys the latest validated release after deployment changes are merged.
+The Blueprint tracks `main`, but automatic deploys are disabled. Merging or pushing a commit does not update the live team demo until an operator explicitly deploys it.
 
 ## Required secrets
 
@@ -76,7 +76,8 @@ The browser derives WebSocket URLs from the page protocol: HTTPS pages use `wss:
 ## Logs, redeploy, and rollback
 
 - **Logs:** open the service in Render Dashboard and select **Logs**. Startup logs show only the port, provider names, capability booleans, access-gate state, output directory, and version.
-- **Manual redeploy:** choose **Manual Deploy > Deploy latest commit**.
+- **Manual deploy:** after merging a validated release to `main`, choose **Manual Deploy > Deploy latest commit**. Use **Deploy a specific commit** when you need to pin the demo to a known SHA.
+- **Auto-Deploy:** keep the service setting on **Off**. If this service existed before the Blueprint change, update **Settings > Build & Deploy > Auto-Deploy** in the Render Dashboard once; changing `render.yaml` on an unmerged branch does not immediately change the live service.
 - **Rollback:** open **Deploys**, select a previously successful deploy, and choose **Rollback**. Do not reuse a deploy if its secrets have since been revoked.
 
 Never post OpenAI, Volcengine, access-code, session-cookie, image base64, or user-photo data in logs or issue comments.

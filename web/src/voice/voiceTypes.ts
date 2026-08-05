@@ -17,6 +17,7 @@ export interface VoiceCapabilityStatus {
     ready: boolean;
     sampleRate: number;
     resourceId: string;
+    endWindowMs: number;
   };
   tts: {
     provider: 'volcengine' | 'disabled';

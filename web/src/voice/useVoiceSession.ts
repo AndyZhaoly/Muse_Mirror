@@ -5,9 +5,18 @@ import { MicrophoneCapture } from './microphoneCapture';
 import { PcmAudioPlayer } from './pcmAudioPlayer';
 import { TtsClient } from './ttsClient';
 import type { VoiceCapabilityStatus, VoiceSessionState, VoiceSessionView } from './voiceTypes';
+import {
+  attachMuseServerTelemetry,
+  createMuseLatencyTraceId,
+  finishMuseLatency,
+  markAsrFinal,
+  markMuseLatency,
+  markProviderSpeechEnd,
+} from './latencyTelemetry';
+import { speechTextForResult } from './speechText';
 
 interface UseVoiceSessionOptions {
-  submitMessage(message: string): Promise<AgentTurnResult | undefined>;
+  submitMessage(message: string, traceId: string): Promise<AgentTurnResult | undefined>;
 }
 
 function permissionError(error: unknown): string {
@@ -27,6 +36,7 @@ export function useVoiceSession(options: UseVoiceSessionOptions) {
   const ttsRef = useRef<TtsClient | undefined>(undefined);
   const playerRef = useRef<PcmAudioPlayer | undefined>(undefined);
   const latestPartialRef = useRef('');
+  const latencyTraceRef = useRef<string | undefined>(undefined);
   const [capabilities, setCapabilities] = useState<VoiceCapabilityStatus>();
   const [enabled, setEnabled] = useState(false);
   const [state, setState] = useState<VoiceSessionState>('disabled');
@@ -56,39 +66,62 @@ export function useVoiceSession(options: UseVoiceSessionOptions) {
     if (busyRef.current) return;
     busyRef.current = true;
     const finalText = text.trim() || latestPartialRef.current.trim();
+    const traceId = latencyTraceRef.current ?? createMuseLatencyTraceId();
+    latencyTraceRef.current = traceId;
+    markAsrFinal(traceId);
     setPartialTranscript('');
     latestPartialRef.current = '';
     await releaseListening();
     if (!finalText) {
+      finishMuseLatency(traceId);
+      latencyTraceRef.current = undefined;
       busyRef.current = false;
       if (enabledRef.current) setState('idle');
       return;
     }
     setFinalTranscript(finalText);
     setState('thinking');
-    const result = await submitRef.current(finalText);
+    markMuseLatency(traceId, 'turn_submitted');
+    const result = await submitRef.current(finalText, traceId);
+    if (result?.status === 'completed') {
+      attachMuseServerTelemetry(traceId, result.telemetry);
+    }
     if (!mountedRef.current || !enabledRef.current) {
       busyRef.current = false;
       setState('disabled');
+      finishMuseLatency(traceId);
+      latencyTraceRef.current = undefined;
       return;
     }
-    if (result?.status === 'completed' && result.text.trim() && capabilities?.tts.ready) {
+    if (result?.status === 'completed' && speechTextForResult(result) && capabilities?.tts.ready) {
       setState('speaking');
       const player = new PcmAudioPlayer();
       const tts = new TtsClient();
       playerRef.current = player;
       ttsRef.current = tts;
       let sampleRate = capabilities.tts.sampleRate;
+      let receivedAudio = false;
       try {
-        await tts.speak(result.text, {
+        const speechText = speechTextForResult(result);
+        markMuseLatency(traceId, 'tts_requested');
+        await tts.speak(speechText, {
           onReady: (nextSampleRate) => { sampleRate = nextSampleRate; },
-          onAudio: (pcm) => { void player.enqueue(pcm, sampleRate); },
+          onAudio: (pcm) => {
+            if (!receivedAudio) {
+              receivedAudio = true;
+              markMuseLatency(traceId, 'first_tts_audio_chunk');
+            }
+            void player.enqueue(pcm, sampleRate);
+          },
         });
         await player.waitForIdle();
+        markMuseLatency(traceId, 'playback_completed');
       } catch (error) {
         setLastError(error instanceof Error ? error.message : '语音合成暂时不可用。');
         setState('error');
         busyRef.current = false;
+        finishMuseLatency(traceId);
+        latencyTraceRef.current = undefined;
         return;
       } finally {
         tts.close();
@@ -97,6 +130,8 @@ export function useVoiceSession(options: UseVoiceSessionOptions) {
         playerRef.current = undefined;
       }
     }
+    finishMuseLatency(traceId);
+    latencyTraceRef.current = undefined;
     busyRef.current = false;
     setState(enabledRef.current ? 'idle' : 'disabled');
   }, [capabilities, releaseListening]);
@@ -113,6 +148,7 @@ export function useVoiceSession(options: UseVoiceSessionOptions) {
     setPartialTranscript('');
     latestPartialRef.current = '';
     setState('requesting_permission');
+    latencyTraceRef.current = createMuseLatencyTraceId();
     const microphone = new MicrophoneCapture();
     micRef.current = microphone;
     try {
@@ -130,11 +166,16 @@ export function useVoiceSession(options: UseVoiceSessionOptions) {
         },
         onFinal: (text) => { void handleFinal(text); },
         onUtteranceEnd: () => {
+          const traceId = latencyTraceRef.current;
+          if (traceId) markProviderSpeechEnd(traceId);
           setState('recognizing');
           void microphone.close();
           asr.stop();
         },
         onError: (error) => {
+          const traceId = latencyTraceRef.current;
+          if (traceId) finishMuseLatency(traceId);
+          latencyTraceRef.current = undefined;
           setLastError(error.message);
           setState('error');
           busyRef.current = false;
@@ -147,6 +188,9 @@ export function useVoiceSession(options: UseVoiceSessionOptions) {
       busyRef.current = false;
       setState('listening');
     } catch (error) {
+      const traceId = latencyTraceRef.current;
+      if (traceId) finishMuseLatency(traceId);
+      latencyTraceRef.current = undefined;
       await releaseListening();
       busyRef.current = false;
       setLastError(permissionError(error));
@@ -166,6 +210,9 @@ export function useVoiceSession(options: UseVoiceSessionOptions) {
     setEnabled(false);
     setState('disabled');
     setPartialTranscript('');
+    const traceId = latencyTraceRef.current;
+    if (traceId) finishMuseLatency(traceId);
+    latencyTraceRef.current = undefined;
     await stopAll();
   }, [stopAll]);
 

@@ -35,6 +35,10 @@ import {
   type UserMemory,
 	} from './agentClient';
 import { useVoiceSession } from './voice/useVoiceSession';
+import {
+  attachMuseServerTelemetry,
+  markMuseLatency,
+} from './voice/latencyTelemetry';
 import { getOrCreateBrowserUserId } from './browserIdentity';
 
 type CameraState = 'idle' | 'requesting' | 'active' | 'paused' | 'error';
@@ -1764,6 +1768,7 @@ function App() {
   const sendAgentMessage = async (
     text: string,
     source: MessageSource,
+    traceId?: string,
   ): Promise<AgentTurnResult | undefined> => {
     const capturedImageDataUrl =
       cameraState === 'active' && streamRef.current ? takeSnapshot(1280, 0.85) : null;
@@ -1800,6 +1805,7 @@ function App() {
           sessionId,
           userId,
           inputSource: source,
+          traceId,
           conversationId,
           temporary: temporaryChat,
           message: text,
@@ -1826,6 +1832,9 @@ function App() {
         },
         (delta) => {
           clearWaitingState();
+          if (traceId && !streamedText) {
+            markMuseLatency(traceId, 'first_final_answer_delta');
+          }
           streamedText += delta;
           updateMessage(assistantId, (message) => ({ ...message, text: streamedText, commentary: undefined }));
         },
@@ -1845,6 +1854,12 @@ function App() {
           ));
         },
       );
+      if (traceId) {
+        markMuseLatency(traceId, 'final_result_ready');
+        if (result.status === 'completed') {
+          attachMuseServerTelemetry(traceId, result.telemetry);
+        }
+      }
       setTransport('api');
       setAgentStatusLabel('Muse Mirror 小助手已响应');
       setStatusNote('小助手已响应；工具和图片权限由后端策略控制。');
@@ -2002,6 +2017,7 @@ function App() {
   const submitUserMessage = async (
     message: string,
     source: MessageSource,
+    traceId?: string,
   ): Promise<AgentTurnResult | undefined> => {
     const value = message.trim();
     if (!value) return;
@@ -2023,7 +2039,7 @@ function App() {
         return undefined;
       }
     }
-    return sendAgentMessage(value, source);
+    return sendAgentMessage(value, source, traceId);
   };
 
   const submitMessage = (event: FormEvent) => {
@@ -2035,7 +2051,7 @@ function App() {
   };
 
   const voice = useVoiceSession({
-    submitMessage: (message) => submitUserMessage(message, 'voice'),
+    submitMessage: (message, traceId) => submitUserMessage(message, 'voice', traceId),
   });
 
   const visualTabs = useMemo(() => [

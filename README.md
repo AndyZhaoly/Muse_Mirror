@@ -89,7 +89,9 @@ For the Free Render team-demo Blueprint, shared-passcode protection, required se
 
 ### Optional voice mode
 
-Voice mode is a transport around the same Muse turn API and conversation history. It does not add a voice agent, planner, or intent router. The browser sends 16 kHz mono PCM to the backend ASR gateway; only the final transcript is submitted through the existing `/api/fashion/turn/stream` flow. After the turn completes, only `result.text` is sent to TTS and played as 24 kHz mono PCM.
+Voice mode is a transport around the same Muse turn API, session, approvals, memory, and conversation history. It does not add a voice agent, planner, or intent router. The browser sends 16 kHz mono PCM to the backend ASR gateway; only the final transcript is submitted through the existing `/api/fashion/turn/stream` flow with `inputSource: "voice"`.
+
+Voice turns add a short-response contract to the same Muse Agent. In the current implementation, both the screen's grounded `result.text` and TTS-safe `result.spokenText` stay concise for voice turns; structured detail remains available in artifacts and cards. Text turns keep the detailed screen-oriented behavior. `spokenText` is deterministically derived after all runtime grounding, including mandatory visual, closet-gap, and fit-uncertainty notices. It never comes from partial deltas or a second LLM call, and conversation history stores only authoritative `result.text`. A future structured dual-output contract may let one model response independently author detailed `text` and short `spokenText`.
 
 Enable it in `.env.local`:
 
@@ -100,11 +102,17 @@ VOLC_SPEECH_APP_ID=your_app_id
 VOLC_SPEECH_APP_KEY=your_app_key
 VOLC_SPEECH_ACCESS_KEY=your_access_key
 VOLC_TTS_SPEAKER_ID=your_enabled_speaker_id
+VOLC_ASR_END_WINDOW_MS=500
+OPENAI_VOICE_REASONING_EFFORT=minimal
 ```
 
-Accounts may be provisioned with different ASR resource IDs. Keep `VOLC_ASR_RESOURCE_ID` aligned with the resource enabled in the Volcengine console. The implementation follows the official [streaming ASR protocol](https://www.volcengine.com/docs/6561/1354869) and [streaming TTS protocol](https://www.volcengine.com/docs/6561/1719100).
+Accounts may be provisioned with different ASR resource IDs. Keep `VOLC_ASR_RESOURCE_ID` aligned with the resource enabled in the Volcengine console. `VOLC_ASR_END_WINDOW_MS` maps to Volcengine `end_window_size`, accepts 200–2000 ms, and defaults to 500 ms. Invalid values safely fall back to 500 ms. The implementation follows the official [streaming ASR protocol](https://www.volcengine.com/docs/6561/1354869) and [streaming TTS protocol](https://www.volcengine.com/docs/6561/1719100).
+
+`OPENAI_VOICE_REASONING_EFFORT` applies only to voice turns. If the selected Agent model does not support the configured effort, Muse uses the global `OPENAI_REASONING_EFFORT` instead of sending an invalid provider request. Text turns always keep the global effort.
 
 The first click on the microphone requests browser permission. Muse then uses a semi-duplex loop: listening, recognizing, thinking, speaking, then listening again. ASR is stopped while TTS is playing. Full-duplex interruption and wake-word listening are intentionally not part of this version.
+
+For local latency diagnostics, add `?latency=1` to the page URL or set `localStorage.muse_latency_debug = "1"`. The browser logs one safe `[MuseLatency]` summary per voice turn, covering provider utterance end, ASR final, first final-answer delta, result readiness, first TTS audio, playback completion, model rounds, vision usage, character counts, and provider token counts when available. `speech_end` is recorded only from the provider's `utterance_end` event. If that event is absent or late, `speechEndSource` is `unavailable` and `asrFinalizeMs` is omitted rather than fabricated as zero. The logs never include transcript text, answer text, images, audio, cookies, credentials, or reasoning content. Set `FASHION_AGENT_TRACE=true` for matching backend milestones.
 
 ## Development mode
 
@@ -199,7 +207,7 @@ The production server reads Render's `PORT`, binds `0.0.0.0`, and serves React, 
 - Product search is disabled by default.
 - The current closet service generates and ranks a small set of grounded candidates before Muse makes the final natural-language selection.
 - This is an investor-demo codebase, not a production virtual try-on or production memory platform.
-- Voice mode is semi-duplex. It does not implement barge-in, wake words, acoustic echo cancellation beyond browser constraints, or token-by-token speech.
+- Voice mode is semi-duplex and starts TTS only after the final grounded result. It does not implement barge-in, wake words, acoustic echo cancellation beyond browser constraints, sentence-level early TTS, or token-by-token speech.
 
 ## Repository layout
 

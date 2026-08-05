@@ -22,6 +22,7 @@ export interface VoiceConfig {
   volcAsrEndpoint: string;
   volcAsrResourceId: string;
   volcAsrSampleRate: number;
+  volcAsrEndWindowMs: number;
   volcTtsEndpoint: string;
   volcTtsResourceId: string;
   volcTtsModel: string;
@@ -38,6 +39,7 @@ export interface AppConfig {
   openaiImageToolHostModel: string;
   openaiImageModel: string;
   openaiReasoningEffort: OpenAIReasoningEffort;
+  openaiVoiceReasoningEffort: OpenAIReasoningEffort;
   openaiMaxOutputTokens?: number;
   gemma4OllamaEndpoint: string;
   gemma4OllamaModel: string;
@@ -165,6 +167,20 @@ function reasoningEffortEnv(value: string | undefined): OpenAIReasoningEffort {
   return 'low';
 }
 
+export function modelSupportsMinimalReasoning(model: string): boolean {
+  return /^gpt-5(?:-(?:mini|nano))?(?:-\d{4}-\d{2}-\d{2})?$/.test(model.trim());
+}
+
+export function resolveOpenAIReasoningEffort(
+  model: string,
+  requested: OpenAIReasoningEffort,
+  fallback: OpenAIReasoningEffort,
+): OpenAIReasoningEffort {
+  if (requested !== 'minimal' || modelSupportsMinimalReasoning(model)) return requested;
+  if (fallback !== 'minimal') return fallback;
+  return 'low';
+}
+
 function speechProviderEnv(value: string | undefined): SpeechProvider {
   return value?.trim().toLowerCase() === 'volcengine' ? 'volcengine' : 'disabled';
 }
@@ -180,6 +196,21 @@ function numberFromEnv(
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
+function boundedNumberFromEnv(
+  env: NodeJS.ProcessEnv,
+  name: string,
+  fallback: number,
+  minimum: number,
+  maximum: number,
+): number {
+  const value = env[name];
+  if (value === undefined || value.trim() === '') return fallback;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed >= minimum && parsed <= maximum
+    ? parsed
+    : fallback;
+}
+
 export function loadVoiceConfig(env: NodeJS.ProcessEnv = process.env): VoiceConfig {
   return {
     asrProvider: speechProviderEnv(env.FASHION_AGENT_ASR_PROVIDER),
@@ -193,6 +224,13 @@ export function loadVoiceConfig(env: NodeJS.ProcessEnv = process.env): VoiceConf
     volcAsrResourceId:
       env.VOLC_ASR_RESOURCE_ID?.trim() ?? 'volc.seedasr.sauc.duration',
     volcAsrSampleRate: numberFromEnv(env, 'VOLC_ASR_SAMPLE_RATE', 16000),
+    volcAsrEndWindowMs: boundedNumberFromEnv(
+      env,
+      'VOLC_ASR_END_WINDOW_MS',
+      500,
+      200,
+      2000,
+    ),
     volcTtsEndpoint:
       env.VOLC_TTS_ENDPOINT?.trim() ??
       'wss://openspeech.bytedance.com/api/v3/tts/unidirectional/stream',
@@ -246,6 +284,9 @@ export function loadConfig(): AppConfig {
       process.env.OPENAI_IMAGE_TOOL_HOST_MODEL ?? 'gpt-5.4-mini',
     openaiImageModel: process.env.OPENAI_IMAGE_MODEL ?? 'gpt-image-2',
     openaiReasoningEffort: reasoningEffortEnv(process.env.OPENAI_REASONING_EFFORT),
+    openaiVoiceReasoningEffort: reasoningEffortEnv(
+      process.env.OPENAI_VOICE_REASONING_EFFORT ?? 'minimal',
+    ),
     openaiMaxOutputTokens: optionalNumberEnv('OPENAI_MAX_OUTPUT_TOKENS'),
     gemma4OllamaEndpoint,
     gemma4OllamaModel,

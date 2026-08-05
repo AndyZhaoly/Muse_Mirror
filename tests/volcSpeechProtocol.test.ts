@@ -33,7 +33,7 @@ test('ASR full request round-trips JSON and sequence through the binary protocol
 });
 
 test('ASR initialization declares PCM16LE audio with the provider PCM format', () => {
-  const request = buildVolcAsrRequest(16000);
+  const request = buildVolcAsrRequest(16000, 650);
   assert.deepEqual(request.audio, {
     format: 'pcm',
     codec: 'raw',
@@ -41,6 +41,7 @@ test('ASR initialization declares PCM16LE audio with the provider PCM format', (
     bits: 16,
     channel: 1,
   });
+  assert.equal(request.request.end_window_size, 650);
 });
 
 test('ASR final audio request preserves PCM and uses a negative sequence', () => {
