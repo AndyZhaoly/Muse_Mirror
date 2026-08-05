@@ -10,6 +10,7 @@ This repository is a standalone snapshot of the investor demo. It includes the d
 - OpenAI Responses API streaming and native function-calling loop.
 - Optional Volcengine streaming ASR and TTS in a semi-duplex voice loop.
 - Live local camera preview with low-frequency still-frame observation.
+- Opt-in ambient outfit capture with real worn-garment vision, repeat recognition, and a durable per-browser closet overlay.
 - A grounded 37-item demo wardrobe with canonical item images.
 - Wardrobe recommendation, real item cards, weather, and optional product tools.
 - AI concept items, item collections, outfit heroes, Look Boards, and try-on previews.
@@ -46,6 +47,16 @@ Muse main agent (OpenAI Responses API)
         v
 Runtime policy + tool ledger + grounding + UI artifacts
 ```
+
+The opt-in ambient path runs beside, not inside, the Muse Agent:
+
+```text
+stable real camera still -> situation policy -> worn-outfit vision
+  -> garment tracks/identity -> atomic wardrobe overlay -> Mirror Screen event
+```
+
+It never adds a hidden intent router or Agent tool. Success appears only after the overlay, appearances,
+capture, and wear events commit atomically.
 
 More detail is available in [ARCHITECTURE.md](ARCHITECTURE.md), [API_CONTRACT.md](API_CONTRACT.md), and [SKILL_TOOL_POLICY_MATRIX.md](SKILL_TOOL_POLICY_MATRIX.md).
 
@@ -152,6 +163,7 @@ FASHION_AGENT_CLOSET_DATA=./data/demo2-wardrobe/wardrobe.json
 FASHION_AGENT_DEMO2_PRODUCT_IMAGE_DIR=./data/demo2-product-images
 FASHION_AGENT_OUTPUT_DIR=./out
 FASHION_AGENT_MEMORY_DATA=./out/muse-memory-v1.json
+FASHION_AGENT_AMBIENT_WARDROBE_DATA=./out/ambient-wardrobe-v1.json
 
 FASHION_AGENT_ASR_PROVIDER=disabled
 FASHION_AGENT_TTS_PROVIDER=disabled
@@ -191,6 +203,8 @@ The production server reads Render's `PORT`, binds `0.0.0.0`, and serves React, 
 ## Data and privacy boundaries
 
 - Continuous live video stays in the browser. While the mirror is active, the app can upload low-frequency still frames to the configured vision provider to maintain a current observation.
+- Ambient outfit capture is off until the user accepts its one-time grant. It analyzes only stable single-person worn-outfit frames; it does not record continuous video or treat held/background garments as owned.
+- A successful ambient capture stores the selected still as visual evidence plus provisional closet items, appearances, outfit captures, and wear events. Revoking the grant stops future capture; the developer reset deletes the current browser user's ambient overlay.
 - The camera does not record audio. Microphone access begins only after voice mode is enabled.
 - Raw ASR audio and streamed TTS audio are kept in memory only and are not written to disk by Muse Mirror.
 - Speech credentials remain on the backend and are never included in `/api/voice/status`.
@@ -206,6 +220,7 @@ The production server reads Render's `PORT`, binds `0.0.0.0`, and serves React, 
 ## Persistence and demo limitations
 
 - Conversation history and explicit memories use a local JSON store under `out/`.
+- Ambient closet overlays and capture history use `FASHION_AGENT_AMBIENT_WARDROBE_DATA` under `out/` by default.
 - Render Free storage is ephemeral; restarts, redeploys, and spin-down lifecycle events can remove `out/` data.
 - Live session, pending visual requests, approvals, and visual-version pointers are in memory and reset when the server restarts.
 - Weather is mocked by default.

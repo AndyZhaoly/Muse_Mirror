@@ -65,6 +65,7 @@ export interface AppConfig {
   inputDir: string;
   outputDir: string;
   memoryDataPath: string;
+  ambientWardrobeDataPath: string;
   skillsDir: string;
   trace: boolean;
   visualQcEnabled: boolean;
@@ -335,6 +336,9 @@ export function loadConfig(): AppConfig {
     inputDir: path.resolve(process.env.FASHION_AGENT_INPUT_DIR ?? './examples'),
     outputDir: path.resolve(process.env.FASHION_AGENT_OUTPUT_DIR ?? './out'),
     memoryDataPath: path.resolve(process.env.FASHION_AGENT_MEMORY_DATA ?? './out/muse-memory-v1.json'),
+    ambientWardrobeDataPath: path.resolve(
+      process.env.FASHION_AGENT_AMBIENT_WARDROBE_DATA ?? './out/ambient-wardrobe-v1.json',
+    ),
     skillsDir: path.resolve(process.env.FASHION_AGENT_SKILLS_DIR ?? './skills'),
     trace: boolEnv('FASHION_AGENT_TRACE', false),
     visualQcEnabled: boolEnv('FASHION_AGENT_VISUAL_QC', true),

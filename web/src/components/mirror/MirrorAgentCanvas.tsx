@@ -104,6 +104,43 @@ export function MirrorAgentCanvas({
               </section>
             )}
 
+          {state.ambientCaptureEvent && (
+            <section className="ambient-capture-complete" aria-label="自动穿搭记录完成">
+              <span className="eyebrow">WARDROBE</span>
+              <strong>
+                {state.ambientCaptureEvent.repeatedOutfit
+                  ? '✓ 这套我已经认识了'
+                  : state.ambientCaptureEvent.newItemIds.length
+                    ? '✓ 今天这套我记下了'
+                    : '✓ 已记录今天的穿着'}
+              </strong>
+              <p className="ambient-capture-summary">
+                {state.ambientCaptureEvent.repeatedOutfit
+                  ? '已记录今天的穿着'
+                  : [
+                      state.ambientCaptureEvent.newItemIds.length
+                        ? `新加入 ${state.ambientCaptureEvent.newItemIds.length} 件`
+                        : undefined,
+                      state.ambientCaptureEvent.recognizedItemIds.length
+                        ? `已识别 ${state.ambientCaptureEvent.recognizedItemIds.length} 件`
+                        : undefined,
+                    ].filter(Boolean).join(' · ')}
+              </p>
+              <div className="ambient-capture-items">
+                {state.ambientCaptureEvent.itemSummaries.map((item) => (
+                  <span key={`${state.ambientCaptureEvent?.captureId}_${item.closetItemId}`}>
+                    <i className={item.status === 'new' ? 'is-new' : 'is-known'} />
+                    {item.label}
+                    <small>{item.status === 'new' ? '新记录' : '已识别'}</small>
+                  </span>
+                ))}
+              </div>
+              {state.ambientCaptureEvent.newItemIds.length > 0 && (
+                <p className="ambient-capture-footnote">之后推荐时会一起考虑</p>
+              )}
+            </section>
+          )}
+
           {state.showApproval && approval && (
             <div className="mirror-canvas-approval">{approval}</div>
           )}

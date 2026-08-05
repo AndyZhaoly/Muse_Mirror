@@ -144,3 +144,46 @@ Vite development mode exposes the same fixtures in a developer-only selector. Th
 default and only projects the selected decision through `deriveMirrorScreenState()`. It performs no camera
 capture, model call, Agent turn, tool call, browser persistence, or business-state mutation. No situation
 observation is connected to the real camera in this PR.
+
+## Ambient outfit capture vertical slice
+
+PR8 connects a narrowly supported, explicitly authorized background capture path to the PR7 policy seam.
+It remains separate from the Muse Agent and adds no Agent tool or language router:
+
+```text
+real browser camera
+        -> local pixel stability detector
+        -> high-quality still capture packet
+        -> deterministic situation-policy preflight
+        -> real worn-outfit observation provider
+        -> per-session garment tracks
+        -> replaceable garment identity provider
+        -> deterministic capture proposal validator
+        -> atomic per-user wardrobe repository commit
+        -> OutfitCaptureCompletedEvent
+        -> Mirror Screen completion card
+```
+
+The path runs only after a one-time `ambient-worn-garments-v1` grant. The grant narrowly means that,
+in the single-user demo context, garments visibly worn by the browser user may be recorded as provisional
+closet items. It does not cover held garments, guests, multi-person frames, identity inference, or continuous
+video recording. The client uploads a still only after three stable local pixel samples; the server requires a
+fresh packet, one person, good three-quarter/full-body coverage, a complete worn outfit, and two consistent
+garment-track observations. Active Agent/image tasks defer the capture, and multi-person observations enter
+privacy pause.
+
+`OutfitObservationProvider` reports visual facts only. `GarmentIdentityProvider` returns
+`matched_existing`, `new_to_closet`, `ambiguous`, or `insufficient_evidence` per item. The initial
+deterministic identity implementation matches durable user appearance fingerprints conservatively; base
+catalog metadata can produce ambiguity but cannot claim the same physical item without user appearance
+evidence. Ambiguous outcomes write nothing.
+
+`JsonUserWardrobeRepository` owns the per-browser overlay and atomically writes new provisional
+`ClosetItem` records, `GarmentAppearance`, `OutfitCapture`, and `WearEvent` records with an idempotency key.
+The existing closet recommendation service reads the base closet plus that user overlay. A completion card
+is emitted only after the durable transaction succeeds. The selected still-frame evidence is stored under
+the configured output directory; continuous camera video remains in the browser.
+
+This is a constrained investor-demo vertical slice, not general wardrobe ingestion. Face ID, household
+identity, held-garment capture, changing-clothes detection, multi-person tracking, production fashion ReID,
+and cross-device persistence remain out of scope.

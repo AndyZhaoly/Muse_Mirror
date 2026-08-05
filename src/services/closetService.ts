@@ -83,12 +83,17 @@ export class ClosetService {
     return scored.slice(0, input.limit ?? 8).map(({ item }) => item);
   }
 
-  recommend(input: ClosetRecommendationInput): { result: ClosetRecommendationResult; items: ClosetItem[]; looks: ClosetLookCandidate[] } {
+  recommend(
+    input: ClosetRecommendationInput,
+    additionalItems: readonly ClosetItem[] = [],
+  ): { result: ClosetRecommendationResult; items: ClosetItem[]; looks: ClosetLookCandidate[] } {
     const createdAt = new Date().toISOString();
-    const recommendationId = `rec_${hashStable(`${createdAt}:${input.query}:${this.closetVersion}`)}`;
+    const allItems = uniqueClosetItems([...this.items, ...additionalItems]);
+    const closetVersion = additionalItems.length ? buildClosetVersion(allItems) : this.closetVersion;
+    const recommendationId = `rec_${hashStable(`${createdAt}:${input.query}:${closetVersion}`)}`;
     const profileSnapshotId = stylingProfileSnapshotId(input.profile);
     const mustUse = new Set(input.mustUseItemIds ?? []);
-    const evaluated = this.items
+    const evaluated = allItems
       .filter((item) => matchesSearchInput(item, input) || mustUse.has(item.id))
       .map((item) => ({
         item,
@@ -113,7 +118,7 @@ export class ClosetService {
         evaluated,
         recommendationId,
         profileSnapshotId,
-        closetVersion: this.closetVersion,
+        closetVersion,
         createdAt,
       }))
       .filter((candidate): candidate is ClosetOutfitCandidate => Boolean(candidate))
@@ -123,14 +128,14 @@ export class ClosetService {
       evaluated,
       recommendationId,
       profileSnapshotId,
-      closetVersion: this.closetVersion,
+      closetVersion,
       createdAt,
     });
     const candidates = uniqueCandidates([
       ...lookCandidates,
       ...(syntheticCandidate ? [syntheticCandidate] : []),
     ]).slice(0, input.limit ?? 4);
-    const candidateItems = this.getByIds(candidates.flatMap((candidate) => candidate.itemIds));
+    const candidateItems = this.getByIds(candidates.flatMap((candidate) => candidate.itemIds), additionalItems);
     const items = uniqueClosetItems([...candidateItems, ...directItems]).slice(0, input.limit ?? 12);
     const coverage = buildCoverage(evaluated);
     const status = recommendationStatus(input.profile, candidates, coverage);
@@ -138,7 +143,7 @@ export class ClosetService {
 	      recommendationId,
 	      profileSnapshotId,
 	      policyVersion: PRESENTATION_POLICY_VERSION,
-	      closetVersion: this.closetVersion,
+	      closetVersion,
       createdAt,
       status,
       candidates,
@@ -174,9 +179,13 @@ export class ClosetService {
     };
   }
 
-  getByIds(ids: string[]): ClosetItem[] {
+  getByIds(ids: string[], additionalItems: readonly ClosetItem[] = []): ClosetItem[] {
     const wanted = new Set(ids);
-    return this.items.filter((item) => wanted.has(item.id));
+    return uniqueClosetItems([...this.items, ...additionalItems]).filter((item) => wanted.has(item.id));
+  }
+
+  allItems(): ClosetItem[] {
+    return this.items.map((item) => ({ ...item, styleTags: [...item.styleTags] }));
   }
 
   searchLooks(input: ClosetSearchInput): ClosetLookCandidate[] {

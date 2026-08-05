@@ -210,7 +210,14 @@ export function deriveMirrorScreenState(input: MirrorScreenControllerInput): Mir
       (message) => message.id === input.activeAssistantId && message.role === 'assistant',
     )
     : undefined;
-  const completedAssistant = latestCompletedAssistant(input.messages);
+  const ambientCaptureEvent = !activeAssistant &&
+    !input.responding &&
+    !input.generating &&
+    !input.hasPendingApproval &&
+    (input.voice.state === 'disabled' || input.voice.state === 'idle' || input.voice.state === 'listening')
+    ? input.ambientCaptureEvent
+    : undefined;
+  const completedAssistant = ambientCaptureEvent ? undefined : latestCompletedAssistant(input.messages);
   const ownerMessage = activeAssistant ?? completedAssistant;
   const activeText = activeAssistant?.text?.trim() || undefined;
   const activeCommentary = activeAssistant?.commentary?.trim() || undefined;
@@ -247,6 +254,7 @@ export function deriveMirrorScreenState(input: MirrorScreenControllerInput): Mir
   } else if (
     phase === 'idle' &&
     !input.hasPendingApproval &&
+    !ambientCaptureEvent &&
     input.voice.state !== 'error'
   ) {
     museText = IDLE_FALLBACK;
@@ -289,20 +297,20 @@ export function deriveMirrorScreenState(input: MirrorScreenControllerInput): Mir
     : undefined;
 
   return {
-    phase,
-    contentKind: primaryArtifact?.contentKind ?? (
+    phase: ambientCaptureEvent && phase === 'idle' ? 'showing_result' : phase,
+    contentKind: ambientCaptureEvent ? 'garment_ingestion' : primaryArtifact?.contentKind ?? (
       input.situationDecision?.presentation.visibility === 'foreground'
         ? input.situationDecision.presentation.contentKind
         : 'conversation'
     ),
-    priority,
+    priority: ambientCaptureEvent && phase === 'idle' ? 30 : priority,
     ownerMessageId: ownerMessage?.id,
     ambient: {
       agentStatusLabel: input.agentStatusLabel,
       perceptionLabel: input.perceptionLabel,
     },
     caption: {
-      latestUserText: toCanvasPlainText(recognizingText ?? latestUserText(input.messages)),
+      latestUserText: ambientCaptureEvent ? undefined : toCanvasPlainText(recognizingText ?? latestUserText(input.messages)),
       museText: toCanvasPlainText(museText),
       museTextSource,
       activityLabel,
@@ -316,5 +324,6 @@ export function deriveMirrorScreenState(input: MirrorScreenControllerInput): Mir
     showApproval: input.hasPendingApproval,
     isActiveTurn: Boolean(activeAssistant),
     situationDecision: input.situationDecision,
+    ambientCaptureEvent,
   };
 }

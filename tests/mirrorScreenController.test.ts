@@ -112,6 +112,62 @@ test('empty state is idle conversation without approval or artifact', () => {
   assert.equal(state.primaryArtifact, undefined);
 });
 
+test('ambient capture completion owns the passive canvas instead of stale conversation content', () => {
+  const state = deriveMirrorScreenState(input({
+    messages: [
+      { id: 'u1', role: 'user', text: '上一轮问题' },
+      { id: 'a1', role: 'assistant', text: '上一轮回答' },
+    ],
+    ambientCaptureEvent: {
+      eventId: 'event-1',
+      type: 'outfit_capture_completed',
+      userId: 'user-1',
+      sessionId: 'session-1',
+      captureId: 'capture-1',
+      episodeId: 'episode-1',
+      newItemIds: ['top-1'],
+      recognizedItemIds: ['bottom-1'],
+      itemSummaries: [
+        { closetItemId: 'top-1', slot: 'top', label: '蓝色上衣', status: 'new' },
+        { closetItemId: 'bottom-1', slot: 'bottom', label: '米色长裤', status: 'recognized' },
+      ],
+      repeatedOutfit: false,
+      committedAt: '2026-08-05T00:00:00.000Z',
+    },
+  }));
+
+  assert.equal(state.phase, 'showing_result');
+  assert.equal(state.priority, 30);
+  assert.equal(state.contentKind, 'garment_ingestion');
+  assert.equal(state.caption.latestUserText, undefined);
+  assert.equal(state.caption.museText, undefined);
+  assert.equal(state.ambientCaptureEvent?.captureId, 'capture-1');
+});
+
+test('active assistant turn hides an older ambient completion event', () => {
+  const state = deriveMirrorScreenState(input({
+    messages: [{ id: 'a2', role: 'assistant' }],
+    activeAssistantId: 'a2',
+    responding: true,
+    ambientCaptureEvent: {
+      eventId: 'event-1',
+      type: 'outfit_capture_completed',
+      userId: 'user-1',
+      sessionId: 'session-1',
+      captureId: 'capture-1',
+      episodeId: 'episode-1',
+      newItemIds: [],
+      recognizedItemIds: [],
+      itemSummaries: [],
+      repeatedOutfit: true,
+      committedAt: '2026-08-05T00:00:00.000Z',
+    },
+  }));
+
+  assert.equal(state.phase, 'thinking');
+  assert.equal(state.ambientCaptureEvent, undefined);
+});
+
 test('situation decision is projected as a hint without changing conversation lifecycle', () => {
   const decision = situationDecision();
   const state = deriveMirrorScreenState(input({ situationDecision: decision }));

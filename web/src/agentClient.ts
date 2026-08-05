@@ -141,6 +141,8 @@ export type AgentArtifact =
       text: string;
     };
 
+import type { ClosetItem } from '../../src/types.js';
+
 export interface AgentActivity {
   id: string;
   type:
@@ -596,6 +598,62 @@ export interface MirrorFrameResult {
   perception?: PerceptionState;
 }
 
+export interface AmbientCaptureCompletedEvent {
+  eventId: string;
+  type: 'outfit_capture_completed';
+  userId: string;
+  sessionId: string;
+  captureId: string;
+  episodeId: string;
+  newItemIds: string[];
+  recognizedItemIds: string[];
+  itemSummaries: Array<{
+    closetItemId: string;
+    slot: 'top' | 'bottom' | 'dress' | 'outerwear' | 'shoes' | 'bag' | 'accessory';
+    label: string;
+    status: 'new' | 'recognized';
+  }>;
+  repeatedOutfit: boolean;
+  committedAt: string;
+}
+
+export interface AmbientCaptureOutcome {
+  status:
+    | 'disabled'
+    | 'observing'
+    | 'deferred'
+    | 'privacy_paused'
+    | 'insufficient_evidence'
+    | 'ambiguous'
+    | 'committed'
+    | 'recognized'
+    | 'mixed'
+    | 'already_committed'
+    | 'episode_ended'
+    | 'unavailable';
+  reasonCodes: string[];
+  episodeId?: string;
+  observationId?: string;
+  retryAfterMs?: number;
+  completedEvent?: AmbientCaptureCompletedEvent;
+}
+
+export interface AmbientCaptureState {
+  grant?: { grantedAt: string; revokedAt?: string };
+  closetItems: Array<{ item: ClosetItem; status: 'provisional' | 'confirmed' }>;
+  captures: Array<{ captureId: string; repeatedOutfit: boolean; capturedAt: string }>;
+  wearEvents: Array<{ wearEventId: string; closetItemId: string; wornAt: string }>;
+  diagnostics: {
+    enabled: boolean;
+    providerReady: boolean;
+    grantActive: boolean;
+    closetItemCount: number;
+    captureCount: number;
+    wearEventCount: number;
+    lastOutcome?: AmbientCaptureOutcome;
+  };
+}
+
 export async function getAgentStatus(): Promise<AgentStatus> {
   const response = await fetch('/api/fashion/status');
   const body = await response.json().catch(() => ({}));
@@ -713,6 +771,43 @@ export function runAgentTurn(input: TurnRequest): Promise<AgentTurnResult> {
 
 export function sendMirrorFrame(input: MirrorFrameRequest): Promise<MirrorFrameResult> {
   return postJson<MirrorFrameResult>('/api/fashion/mirror/frame', input);
+}
+
+export async function getAmbientCaptureState(userId: string): Promise<AmbientCaptureState> {
+  const response = await fetch(`/api/ambient-capture/state?userId=${encodeURIComponent(userId)}`);
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(typeof body.error === 'string' ? body.error : `Ambient capture state failed with HTTP ${response.status}`);
+  return body as AmbientCaptureState;
+}
+
+export function setAmbientCaptureGrant(input: { userId: string; enabled: boolean }): Promise<{ ok: true; enabled: boolean }> {
+  return postJson('/api/ambient-capture/grant', input);
+}
+
+export function sendAmbientCaptureFrame(input: {
+  userId: string;
+  sessionId: string;
+  frameId: string;
+  capturedAt: string;
+  capturedImageDataUrl: string;
+  activeTask: boolean;
+  stability: {
+    score: number;
+    stableSamples: number;
+    sampleIntervalMs: number;
+    sourceWidth: number;
+    sourceHeight: number;
+  };
+}): Promise<{ ok: true; outcome: AmbientCaptureOutcome }> {
+  return postJson('/api/ambient-capture/frame', input);
+}
+
+export function endAmbientCaptureEpisode(input: { userId: string; sessionId: string }): Promise<{ ok: true; outcome: AmbientCaptureOutcome }> {
+  return postJson('/api/ambient-capture/episode/end', input);
+}
+
+export function resetAmbientCapture(userId: string): Promise<{ ok: true }> {
+  return postJson('/api/ambient-capture/debug/reset', { userId });
 }
 
 export async function getPerceptionStatus(sessionId: string): Promise<PerceptionState> {

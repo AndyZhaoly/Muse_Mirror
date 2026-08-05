@@ -51,6 +51,25 @@ For the development UI smoke, run `npm run server` and `npm run web:dev`, then s
 `DEVELOPER ONLY` situation panel. Verify that the policy result appears without camera capture, Agent
 Activity, TTS, a network request, or closet mutation. The panel must not exist in the production build.
 
+Ambient capture tests use real-provider-shaped structured observations and a durable temporary JSON
+repository. They cover the three required rounds (new outfit, repeated outfit after repository reload, and
+mixed new/existing items), explicit grant gating, stale packets, multi-person privacy pause, garment-track
+stability, ambiguous identity rollback, duplicate/concurrent request idempotency, browser-user isolation,
+overlay recommendation retrieval, and local pixel stability:
+
+```bash
+node --import tsx --test \
+  tests/ambientCapture.test.ts \
+  tests/ambientFrameStability.test.ts \
+  tests/ambientCaptureUi.test.ts
+```
+
+For a real local smoke, configure a real vision provider, open the camera, accept the one-time automatic
+recording grant, and use a clearly distinct top and bottom under good lighting. Leave the frame or pause the
+camera to end round one, then return in the same outfit for round two. Replace only one garment for round
+three. Use `?ambientDebug=1` to inspect safe counts/outcome reason codes or reset the current browser user's
+overlay. Do not claim a real-provider smoke unless those live camera rounds were actually executed.
+
 Run the focused streaming suite with:
 
 ```bash

@@ -25,6 +25,10 @@ import {
   JsonMuseMemoryStore,
   memoryFromPreferenceEvent,
 } from '../runtime/memoryStore.js';
+import { createServiceContainer } from '../runtime/serviceContainer.js';
+import { RealOutfitObservationProvider } from '../services/outfitObservationProvider.js';
+import { DeterministicGarmentIdentityProvider } from '../services/garmentIdentityProvider.js';
+import { AmbientCaptureCoordinator } from '../runtime/ambientCaptureCoordinator.js';
 import type {
   AgentActivity,
   AttachmentInput,
@@ -54,13 +58,27 @@ const demoAccess = loadDemoAccessControl();
 let gemma4EndpointStatus = await ensureGemma4Endpoint(config);
 const providerReadiness = new ProviderReadinessCache(config);
 const memoryStore = new JsonMuseMemoryStore(config.memoryDataPath);
+const sharedServices = createServiceContainer(config);
+const wardrobeRepository = sharedServices.wardrobeRepository!;
+const ambientCaptureCoordinator = new AmbientCaptureCoordinator({
+  observationProvider: new RealOutfitObservationProvider({
+    provider: config.visionProvider,
+    openaiModel: config.openaiVisionModel,
+    ollamaEndpoint: config.gemma4OllamaEndpoint,
+    ollamaModel: config.ollamaVisionModel,
+  }),
+  identityProvider: new DeterministicGarmentIdentityProvider(),
+  repository: wardrobeRepository,
+  baseClosetItems: () => sharedServices.closet.allItems(),
+  evidenceDirectory: config.outputDir,
+});
 void providerReadiness.refresh();
 const runtime =
   config.agentProvider === 'gemma4'
     ? new GemmaFashionRuntime({ config })
     : config.runtimeProvider === 'legacy'
       ? new FashionAgentRuntime({ config })
-      : new OpenAIMuseRuntime({ config });
+      : new OpenAIMuseRuntime({ config, services: sharedServices });
 
 const port = Number(process.env.PORT ?? process.env.FASHION_AGENT_WEB_PORT ?? 8787);
 let voiceGateway: ReturnType<typeof attachVoiceGateway> | undefined;
@@ -73,6 +91,22 @@ interface WebTurnRequest extends Omit<FashionTurnInput, 'attachments'> {
 interface WebMirrorFrameRequest extends Omit<MirrorFrameInput, 'attachments'> {
   attachments?: AttachmentInput[];
   capturedImageDataUrl?: string;
+}
+
+interface WebAmbientCaptureRequest {
+  userId?: string;
+  sessionId?: string;
+  frameId?: string;
+  capturedAt?: string;
+  capturedImageDataUrl?: string;
+  activeTask?: boolean;
+  stability?: {
+    score?: number;
+    stableSamples?: number;
+    sampleIntervalMs?: number;
+    sourceWidth?: number;
+    sourceHeight?: number;
+  };
 }
 
 function jsonResponse(
@@ -766,6 +800,108 @@ async function handleMirrorFrame(
   jsonResponse(res, 200, { ok: true, status: 'skipped' } satisfies MirrorFrameResult);
 }
 
+async function handleAmbientCapture(
+  req: http.IncomingMessage,
+  url: URL,
+  res: http.ServerResponse,
+): Promise<void> {
+  const queryUserId = url.searchParams.get('userId');
+
+  if (req.method === 'GET' && url.pathname === '/api/ambient-capture/state') {
+    const userId = requireUserId(res, queryUserId);
+    if (!userId) return;
+    const [state, diagnostics] = await Promise.all([
+      wardrobeRepository.getState(userId),
+      ambientCaptureCoordinator.diagnostics(userId),
+    ]);
+    jsonResponse(res, 200, {
+      grant: state.grant,
+      closetItems: state.closetItems,
+      captures: state.captures,
+      wearEvents: state.wearEvents,
+      diagnostics,
+    });
+    return;
+  }
+
+  if (req.method === 'POST' && url.pathname === '/api/ambient-capture/grant') {
+    const body = await readJson(req) as { userId?: string; enabled?: boolean };
+    const userId = requireUserId(res, body.userId ?? queryUserId);
+    if (!userId) return;
+    if (typeof body.enabled !== 'boolean') {
+      jsonResponse(res, 400, { error: 'enabled must be a boolean.' });
+      return;
+    }
+    const grant = await wardrobeRepository.setGrant(userId, body.enabled);
+    jsonResponse(res, 200, { ok: true, grant, enabled: Boolean(grant && !grant.revokedAt) });
+    return;
+  }
+
+  if (req.method === 'POST' && url.pathname === '/api/ambient-capture/frame') {
+    const body = await readJson(req) as WebAmbientCaptureRequest;
+    const userId = requireUserId(res, body.userId ?? queryUserId);
+    if (!userId) return;
+    if (!body.sessionId?.trim() || !body.capturedImageDataUrl || !body.stability) {
+      jsonResponse(res, 400, { error: 'sessionId, capturedImageDataUrl, and stability are required.' });
+      return;
+    }
+    const captured = await saveCapturedImage({
+      sessionId: `${body.sessionId}_ambient`,
+      capturedImageDataUrl: body.capturedImageDataUrl,
+    });
+    if (!captured?.localPath) {
+      jsonResponse(res, 400, { error: 'A valid camera frame is required.' });
+      return;
+    }
+    try {
+      const outcome = await ambientCaptureCoordinator.process({
+        packetId: makeId('ambient_packet'),
+        userId,
+        sessionId: body.sessionId,
+        frameId: body.frameId?.trim() || makeId('ambient_frame'),
+        capturedAt: body.capturedAt ?? new Date().toISOString(),
+        imagePath: captured.localPath,
+        imageMimeType: captured.mimeType ?? 'image/jpeg',
+        activeTask: Boolean(body.activeTask),
+        stability: {
+          score: Number(body.stability.score ?? 0),
+          stableSamples: Math.max(0, Math.round(Number(body.stability.stableSamples ?? 0))),
+          sampleIntervalMs: Math.max(0, Math.round(Number(body.stability.sampleIntervalMs ?? 0))),
+          sourceWidth: Math.max(0, Math.round(Number(body.stability.sourceWidth ?? 0))),
+          sourceHeight: Math.max(0, Math.round(Number(body.stability.sourceHeight ?? 0))),
+        },
+      });
+      jsonResponse(res, 200, { ok: true, outcome });
+    } finally {
+      await fs.unlink(captured.localPath).catch(() => undefined);
+    }
+    return;
+  }
+
+  if (req.method === 'POST' && url.pathname === '/api/ambient-capture/episode/end') {
+    const body = await readJson(req) as { userId?: string; sessionId?: string };
+    const userId = requireUserId(res, body.userId ?? queryUserId);
+    if (!userId) return;
+    if (!body.sessionId?.trim()) {
+      jsonResponse(res, 400, { error: 'sessionId is required.' });
+      return;
+    }
+    jsonResponse(res, 200, { ok: true, outcome: await ambientCaptureCoordinator.endEpisode(userId, body.sessionId) });
+    return;
+  }
+
+  if (req.method === 'POST' && url.pathname === '/api/ambient-capture/debug/reset') {
+    const body = await readJson(req) as { userId?: string };
+    const userId = requireUserId(res, body.userId ?? queryUserId);
+    if (!userId) return;
+    await ambientCaptureCoordinator.resetUser(userId);
+    jsonResponse(res, 200, { ok: true });
+    return;
+  }
+
+  textResponse(res, 404, 'Not found');
+}
+
 function handlePerceptionStatus(
   url: URL,
   res: http.ServerResponse,
@@ -941,6 +1077,10 @@ async function route(req: http.IncomingMessage, res: http.ServerResponse): Promi
     }
     if (url.pathname === '/api/context-overrides' || url.pathname.startsWith('/api/context-overrides/')) {
       await handleContextOverrides(req, url, res);
+      return;
+    }
+    if (url.pathname === '/api/ambient-capture' || url.pathname.startsWith('/api/ambient-capture/')) {
+      await handleAmbientCapture(req, url, res);
       return;
     }
     if (req.method === 'POST' && url.pathname === '/api/fashion/turn') {

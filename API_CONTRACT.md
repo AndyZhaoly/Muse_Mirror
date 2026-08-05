@@ -25,6 +25,24 @@ A successful login sets a signed HttpOnly, SameSite=Lax session cookie. It is Se
 
 When the access code is not configured, the gate is disabled for local development.
 
+## Ambient outfit capture
+
+Ambient capture is an authenticated background capability outside the Muse Agent tool loop. All endpoints
+are scoped by the browser `userId`; production deployments with the team gate also require its signed cookie.
+
+- `GET /api/ambient-capture/state?userId=...` returns grant state, counts, current episode, and the last safe outcome.
+- `POST /api/ambient-capture/grant` with `{ userId, enabled }` creates or revokes the one-time grant.
+- `POST /api/ambient-capture/frame` accepts a real camera still, frame metadata, local stability evidence, and active-task status.
+- `POST /api/ambient-capture/episode/end` ends the current session episode when the user leaves or pauses the mirror.
+- `POST /api/ambient-capture/debug/reset` deletes only the requesting user's ambient overlay and capture records.
+
+The frame endpoint may return `disabled`, `observing`, `deferred`, `privacy_paused`,
+`insufficient_evidence`, `ambiguous`, `committed`, `recognized`, `mixed`, `already_committed`,
+`episode_ended`, or `unavailable`. Only committed/recognized outcomes may carry an
+`OutfitCaptureCompletedEvent`; the UI must never synthesize that event from a model answer or an optimistic
+client state. Uploaded request frames are temporary. A selected evidence image is copied into generated
+storage only as part of a successful capture proposal.
+
 ## Start a turn
 
 ```ts

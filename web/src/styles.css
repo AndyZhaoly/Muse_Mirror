@@ -202,7 +202,31 @@ button:focus-visible, input:focus-visible { outline: 3px solid rgba(102, 112, 90
 .round-control:hover { background: #fffdf8; }
 .capture-status { min-height: 40px; border-radius: 999px; background: rgba(255,253,248,.7); color: var(--muted); padding: 7px 14px 7px 8px; display: flex; align-items: center; gap: 9px; font-size: 10px; border: 1px solid var(--line); }
 .capture-status span { width: 26px; height: 26px; border-radius: 50%; background: #ece6dc; color: var(--ink); display: grid; place-items: center; }
+.ambient-capture-toggle { min-height: 40px; border: 1px solid var(--line); background: rgba(255,253,248,.72); color: var(--muted); padding: 8px 12px; display: inline-flex; align-items: center; gap: 8px; font-size: 10px; cursor: pointer; }
+.ambient-capture-toggle i { width: 8px; height: 8px; border-radius: 50%; background: #aaa59b; box-shadow: 0 0 0 4px rgba(170,165,155,.12); }
+.ambient-capture-toggle.is-active { color: var(--ink); border-color: #b9c1aa; background: #f2f4ec; }
+.ambient-capture-toggle.is-active i { background: #7f9472; box-shadow: 0 0 0 4px rgba(127,148,114,.14); }
+.ambient-capture-debug { margin-top: 8px; color: var(--subtle); font-size: 10px; }
+.ambient-capture-debug code { display: block; margin: 6px 0; white-space: normal; }
+.ambient-capture-debug button { border: 1px solid var(--line); background: transparent; color: var(--muted); padding: 5px 8px; font-size: 10px; }
+.ambient-capture-consent { margin: 0 22px 14px; border: 1px solid #cdd4c3; background: #f5f7f0; padding: 14px 16px; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 18px; }
+.ambient-capture-consent > div:first-child { display: grid; gap: 4px; }
+.ambient-capture-consent span { color: #718065; font-size: 9px; text-transform: uppercase; }
+.ambient-capture-consent strong { font-family: var(--serif); font-size: 18px; font-weight: 500; }
+.ambient-capture-consent p { margin: 0; color: var(--muted); font-size: 10px; line-height: 1.6; max-width: 680px; }
+.ambient-capture-consent-actions { display: flex; align-items: center; gap: 8px; }
+.ambient-capture-consent-actions button { min-height: 36px; border: 1px solid var(--line); background: transparent; color: var(--ink); padding: 8px 12px; cursor: pointer; }
+.ambient-capture-consent-actions .primary-action { border-color: var(--ink); background: var(--ink); color: #fff; }
 .mirror-footer > p { display: flex; align-items: center; gap: 6px; margin: 0; color: var(--subtle); font-size: 10px; }
+
+.ambient-capture-complete { border-top: 1px solid var(--line); padding-top: 18px; display: grid; gap: 10px; }
+.ambient-capture-complete > strong { font-family: var(--serif); font-size: 24px; font-weight: 500; }
+.ambient-capture-summary, .ambient-capture-footnote { margin: 0; color: var(--muted); font-size: 10px; }
+.ambient-capture-items { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.ambient-capture-items > span { min-height: 54px; border: 1px solid var(--line); background: rgba(255,255,255,.56); padding: 9px; display: grid; grid-template-columns: 8px minmax(0, 1fr); align-items: center; gap: 4px 8px; font-size: 11px; }
+.ambient-capture-items i { width: 7px; height: 7px; border-radius: 50%; background: #8ea07e; }
+.ambient-capture-items i.is-known { background: #565d50; }
+.ambient-capture-items small { grid-column: 2; color: var(--subtle); font-size: 9px; }
 
 .outfit-stage { height: 100%; min-height: 450px; padding: 30px; background: linear-gradient(135deg, #f4f0e7 0%, #e8e1d5 100%); position: relative; overflow: hidden; }
 .outfit-stage::before { content: ""; position: absolute; width: 360px; height: 360px; border: 1px solid rgba(93,81,65,.09); border-radius: 50%; top: -120px; right: -90px; }
@@ -1389,6 +1413,8 @@ button:focus-visible, input:focus-visible { outline: 3px solid rgba(102, 112, 90
   .permission-card h2 { font-size: 23px; }
   .permission-card p { font-size: 11px; }
   .mirror-footer { padding-top: 12px; }
+  .ambient-capture-consent { margin-inline: 12px; grid-template-columns: 1fr; }
+  .ambient-capture-consent-actions { justify-content: flex-start; }
   .outfit-stage { padding: 20px 16px; }
   .outfit-stage-heading h2 { font-size: 27px; }
   .flatlay-grid { height: calc(100% - 90px); gap: 8px; padding-top: 12px; }

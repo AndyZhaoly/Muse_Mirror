@@ -13,6 +13,7 @@ import { ProductService } from '../services/productService.js';
 import { FashionSkillRegistry } from '../services/skillRegistry.js';
 import { VisionService } from '../services/visionService.js';
 import { WeatherService } from '../services/weatherService.js';
+import { JsonUserWardrobeRepository } from '../services/userWardrobeRepository.js';
 import type { StoredImage } from '../types.js';
 
 export interface ImageGenerationService {
@@ -38,6 +39,7 @@ export interface ServiceContainer {
   vision: VisionService;
   imageGeneration: ImageGenerationService;
   visualGeneration: VisualGenerationService;
+  wardrobeRepository?: JsonUserWardrobeRepository;
 }
 
 export function createServiceContainer(config: AppConfig): ServiceContainer {
@@ -81,6 +83,7 @@ export function createServiceContainer(config: AppConfig): ServiceContainer {
               imageStore,
             ),
           ),
+    wardrobeRepository: new JsonUserWardrobeRepository(config.ambientWardrobeDataPath),
   };
 }
 
