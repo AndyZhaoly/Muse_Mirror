@@ -125,6 +125,35 @@ decision summaries, memory disclosures, or every past artifact. Those belong in 
 `ConversationDrawer`. Commentary may temporarily replace the current Muse caption while a tool
 turn is active, but it does not become a persisted assistant answer.
 
+### Mirror Screen Controller
+
+`deriveMirrorScreenState()` is the single read-only presentation projection between App state and
+`MirrorAgentCanvas`. The application continues to own messages, voice lifecycle, approvals,
+artifacts, camera state, and all Agent execution. The controller performs no requests, persistence,
+timers, tool calls, or state updates.
+
+Interaction lifecycle and displayed content are orthogonal:
+
+- phases: `idle`, `listening`, `recognizing`, `thinking`, `showing_result`, `speaking`,
+  `awaiting_approval`, and reserved blocking `error`;
+- content kinds: `conversation`, `closet`, `recommendation`, `look_board`, `try_on`, `visual`,
+  `products`, `information`, `device_feedback`, and reserved `garment_ingestion`.
+
+The phase priority is approval, active answer, active thinking, generation, recognition,
+listening, completed-result speech, latest completed result, then idle. A voice error is
+nonblocking when a readable result exists; the text remains on screen and the Voice Dock reports
+the audio failure.
+
+Caption, Activity, and artifact ownership always use one message owner. During an active turn,
+only the active assistant message may supply current text, Activity, or a primary artifact. An
+empty active message represents waiting and never falls back to a previous answer. With no active
+turn, only the latest completed assistant message may own the displayed result and artifact. The
+left visual stage may retain its last image while the right Canvas hides an artifact summary that
+does not belong to the current turn.
+
+`garment_ingestion` is a reserved content boundary only. This controller does not implement
+garment detection, capture, ingestion UI, closet writes, or mode-specific renderers.
+
 ## Complete conversation drawer
 
 The lower drawer preserves the existing conversation experience without making it the primary

@@ -42,7 +42,14 @@ import {
 import { getOrCreateBrowserUserId } from './browserIdentity';
 import { ConversationDrawer } from './components/mirror/ConversationDrawer';
 import { MirrorAgentCanvas } from './components/mirror/MirrorAgentCanvas';
-import { deriveCurrentCanvasContent } from './components/mirror/mirrorCanvasContent';
+import {
+  deriveMirrorScreenState,
+  isMirrorVisualGenerationTool,
+  mirrorActivityLabel,
+  mirrorToolActivity,
+  mirrorVoiceStatusLabel,
+  summarizeMirrorActivity,
+} from './components/mirror/mirrorScreenController';
 import { MirrorWorkspace } from './components/mirror/MirrorWorkspace';
 
 type CameraState = 'idle' | 'requesting' | 'active' | 'paused' | 'error';
@@ -194,29 +201,6 @@ function imagePreviewLabel(artifact: Extract<AgentArtifact, { type: 'image' }>):
   if (artifact.previewScope === 'full_body_synthetic') return 'AI 全身概念预览 · 下半身为推测';
   if (artifact.previewScope === 'full_body') return '本人全身预览 · 仅供视觉参考';
   return 'AI 上身预览 · 仅供视觉参考';
-}
-
-function artifactSummaryLabel(artifact: Exclude<AgentArtifact, { type: 'notice' }>): string {
-  if (artifact.type === 'item_grid') return `${artifact.title} · ${artifact.items.length} 件衣柜单品`;
-  if (artifact.type === 'product_cards') return `${artifact.title} · ${artifact.products.length} 个真实商品`;
-  if (artifact.type === 'item_collection') return `${artifact.title} · ${artifact.items.length} 张概念单品图`;
-  if (artifact.type === 'look_board') return `${artifact.title} · Look Board 已生成`;
-  if (artifact.type === 'item_visual') return `${artifact.label} · 单品图已生成`;
-  return `${artifact.label} · ${imagePreviewLabel(artifact).split(' · ')[0]}`;
-}
-
-function voiceStatusLabel(state: ReturnType<typeof useVoiceSession>['state']): string {
-  const labels = {
-    disabled: '语音模式未开启',
-    idle: '正在准备聆听',
-    requesting_permission: '正在请求麦克风权限',
-    listening: '正在聆听',
-    recognizing: '正在确认你说的话',
-    thinking: 'Muse 正在回复',
-    speaking: 'Muse 正在说话',
-    error: '语音暂不可用',
-  } as const;
-  return labels[state];
 }
 
 async function loadCanvasImage(src: string): Promise<HTMLImageElement> {
@@ -717,7 +701,7 @@ function ArtifactStrip({ artifacts }: { artifacts: AgentArtifact[] }) {
 }
 
 function ActivityTimeline({ activity }: { activity?: AgentActivity[] }) {
-  const toolActivity = timelineToolActivity(activity);
+  const toolActivity = mirrorToolActivity(activity);
   if (!toolActivity.length || !shouldShowActivityTimeline(toolActivity)) return null;
   const visible = toolActivity.slice(0, 6);
   const statusLabel: Record<AgentActivity['status'], string> = {
@@ -727,7 +711,7 @@ function ActivityTimeline({ activity }: { activity?: AgentActivity[] }) {
     cancelled: '已取消',
   };
   const hasActiveStep = toolActivity.some((item) => item.status === 'started');
-  const summary = activityTimelineSummary(toolActivity, hasActiveStep);
+  const summary = summarizeMirrorActivity(toolActivity) ?? '完成了需要的能力';
   return (
     <details className="activity-timeline" aria-label="处理过程" open={hasActiveStep}>
       <summary>
@@ -742,7 +726,7 @@ function ActivityTimeline({ activity }: { activity?: AgentActivity[] }) {
           <div className={`activity-item status-${item.status}`} key={item.id}>
             <i />
             <div>
-              <strong>{item.label ?? activityLabel(item)}</strong>
+              <strong>{item.label ?? mirrorActivityLabel(item)}</strong>
               <span>{item.displayDetail ?? statusLabel[item.status]}</span>
             </div>
           </div>
@@ -750,21 +734,6 @@ function ActivityTimeline({ activity }: { activity?: AgentActivity[] }) {
       </div>
     </details>
   );
-}
-
-function activityTimelineSummary(activity: AgentActivity[], hasActiveStep: boolean): string {
-  const names = new Set(activity.map((item) => item.toolName));
-  if (hasActiveStep) {
-    if ([...names].some(isVisualGenerationTool)) return '正在生成视觉结果';
-    if (names.has('recommend_from_closet')) return '正在查真实衣柜';
-    if (hasPerceptionTool(names)) return '正在看当前画面';
-    return '正在处理';
-  }
-  if (activity.some((item) => item.status === 'failed')) return '有部分能力暂时没完成';
-  if ([...names].some(isVisualGenerationTool)) return '生成并检查了视觉结果';
-  if (names.has('recommend_from_closet')) return '查了真实衣柜';
-  if (hasPerceptionTool(names)) return '看了一下当前画面';
-  return '完成了需要的能力';
 }
 
 function DecisionSummaryCard({
@@ -1016,58 +985,14 @@ function MemoryPanel({
   );
 }
 
-function activityLabel(activity: AgentActivity): string {
-  if (activity.type.startsWith('tool.')) return toolDisplayName(activity.toolName);
-  const labels: Record<AgentActivity['type'], string> = {
-    'perception.started': '正在看当前画面',
-    'perception.completed': '已看完当前画面',
-    'perception.failed': '当前画面暂未看清',
-    'weather.started': '正在查看天气',
-    'weather.completed': '已查看天气',
-    'weather.failed': '天气暂时没取到',
-    'wardrobe.started': '正在找衣柜里的合适单品',
-    'wardrobe.completed': '已找到衣柜候选',
-    'wardrobe.failed': '衣柜暂时没取到',
-    'strategy.started': '正在参考穿搭方法',
-    'strategy.completed': '已参考穿搭方法',
-    'strategy.failed': '穿搭方法暂时没取到',
-    'synthesis.started': '正在整理建议',
-    'synthesis.completed': '已整理建议',
-    'synthesis.failed': '暂时没有返回',
-    'generation.started': '正在准备视觉结果',
-    'generation.completed': '视觉结果已完成',
-    'generation.failed': '视觉结果暂未完成',
-    'state.updated': '已更新本轮状态',
-    'policy.warning': '已按权限边界处理',
-    'turn.cancelled': '上一轮已取消',
-    'tool.started': '正在处理',
-    'tool.completed': '已完成',
-    'tool.failed': '暂未完成',
-  };
-  return labels[activity.type];
-}
-
-function timelineToolActivity(activity?: AgentActivity[]): AgentActivity[] {
-  return (activity ?? []).filter((item) => item.type.startsWith('tool.'));
-}
-
 function shouldShowActivityTimeline(activity: AgentActivity[]): boolean {
   if (!activity.length) return false;
   const names = new Set(activity.map((item) => item.toolName));
-  if ([...names].some(isVisualGenerationTool)) return true;
+  if ([...names].some(isMirrorVisualGenerationTool)) return true;
   if (names.size >= 2) return true;
   const single = activity[activity.length - 1];
   const elapsed = single.elapsedMs ?? (single.status === 'started' ? Date.now() - single.timestamp : 0);
   return elapsed > 1200 && !hasOnlyFastPerception(names);
-}
-
-function isVisualGenerationTool(name?: string): boolean {
-  return Boolean(
-    name === 'create_style_visual' ||
-      name === 'update_style_visual' ||
-      name === 'edit_style_visual' ||
-      name === 'restore_visual_version',
-  );
 }
 
 function hasPerceptionTool(names: Set<string | undefined>): boolean {
@@ -1076,21 +1001,6 @@ function hasPerceptionTool(names: Set<string | undefined>): boolean {
 
 function hasOnlyFastPerception(names: Set<string | undefined>): boolean {
   return names.size === 1 && hasPerceptionTool(names);
-}
-
-function toolDisplayName(name?: string): string {
-  const labels: Record<string, string> = {
-    observe_current_frame: '看当前画面',
-    recommend_from_closet: '查真实衣柜',
-    commit_outfit: '确认搭配方案',
-    get_item_images: '查看衣服图片',
-    get_weather: '查看天气',
-    create_style_visual: '生成视觉参考',
-    update_style_visual: '编辑视觉版本',
-    edit_style_visual: '编辑视觉版本',
-    restore_visual_version: '恢复上一版',
-  };
-  return name ? labels[name] ?? '处理能力' : '处理能力';
 }
 
 function mergeActivity(current: AgentActivity[] = [], activity: AgentActivity): AgentActivity[] {
@@ -2123,32 +2033,39 @@ function App() {
     pendingApproval?.approvals[0]?.reason ??
     '默认不长期保存原图。预览不代表真实尺码、面料垂坠或剪裁。';
 
-  const canvasContent = useMemo(
-    () => deriveCurrentCanvasContent(messages, streamingAssistantId),
-    [messages, streamingAssistantId],
+  const mirrorScreenState = useMemo(
+    () => deriveMirrorScreenState({
+      messages,
+      activeAssistantId: streamingAssistantId,
+      responding,
+      generating,
+      liveActivity,
+      hasPendingApproval: Boolean(pendingApproval),
+      voice: {
+        enabled: voice.enabled,
+        state: voice.state,
+        partialTranscript: voice.partialTranscript,
+        error: voice.lastError,
+      },
+      agentStatusLabel,
+      perceptionLabel: perceptionLabel(cameraState, perception),
+    }),
+    [
+      agentStatusLabel,
+      cameraState,
+      generating,
+      liveActivity,
+      messages,
+      pendingApproval,
+      perception,
+      responding,
+      streamingAssistantId,
+      voice.enabled,
+      voice.lastError,
+      voice.partialTranscript,
+      voice.state,
+    ],
   );
-  const currentCanvasActivity = useMemo(() => {
-    if (!responding && !generating) return undefined;
-    const activeMessage = canvasContent.assistantMessageId
-      ? messages.find((message) => message.id === canvasContent.assistantMessageId)
-      : undefined;
-    const activity = activeMessage?.activity?.length ? activeMessage.activity : liveActivity;
-    const toolActivity = timelineToolActivity(activity);
-    if (!toolActivity.length) return responding ? 'Muse 正在回复' : '正在准备视觉结果';
-    return activityTimelineSummary(
-      toolActivity,
-      toolActivity.some((item) => item.status === 'started'),
-    );
-  }, [canvasContent.assistantMessageId, generating, liveActivity, messages, responding]);
-  const latestArtifactSummary = useMemo(() => {
-    for (const message of [...messages].reverse()) {
-      const artifact = [...(message.artifacts ?? [])]
-        .reverse()
-        .find((item): item is Exclude<AgentArtifact, { type: 'notice' }> => item.type !== 'notice');
-      if (artifact) return artifactSummaryLabel(artifact);
-    }
-    return undefined;
-  }, [messages]);
 
   return (
     <div className="app-shell">
@@ -2242,32 +2159,14 @@ function App() {
         )}
         canvas={(
           <MirrorAgentCanvas
-            agentStatusLabel={agentStatusLabel}
-            perceptionLabel={perceptionLabel(cameraState, perception)}
-            latestUserText={canvasContent.latestUserText}
-            latestAssistantText={canvasContent.latestAssistantText}
-            latestAssistantCommentary={canvasContent.latestAssistantCommentary}
-            assistantIsTyping={canvasContent.assistantIsTyping}
-            assistantIsActive={responding || generating}
-            currentActivityLabel={currentCanvasActivity}
-            latestArtifactSummary={latestArtifactSummary}
-            approval={pendingApproval ? (
+            state={mirrorScreenState}
+            approval={mirrorScreenState.showApproval && pendingApproval ? (
               <ConsentCard
                 busy={generating}
                 reason={consentReason}
                 onApprove={(faceMode) => { void approveTryOn(faceMode); }}
                 onCancel={() => { void cancelTryOn(); }}
               />
-            ) : undefined}
-            voiceDock={(voice.enabled || voice.partialTranscript || voice.lastError) ? (
-              <div className={`voice-session voice-${voice.state}`} aria-live="polite">
-                <span className="voice-session-dot" />
-                <div>
-                  <strong>{voiceStatusLabel(voice.state)}</strong>
-                  {voice.partialTranscript && <span>{voice.partialTranscript}</span>}
-                  {!voice.partialTranscript && voice.lastError && <span>{voice.lastError}</span>}
-                </div>
-              </div>
             ) : undefined}
             composer={(
               <div className="agent-composer-area">
@@ -2279,7 +2178,7 @@ function App() {
                     className={`voice-button ${voice.enabled ? 'is-active' : ''} voice-${voice.state}`}
                     aria-label={voice.enabled ? '停止或关闭语音模式' : '开启语音模式'}
                     aria-pressed={voice.enabled}
-                    title={voice.available ? voiceStatusLabel(voice.state) : '语音服务尚未配置'}
+                    title={voice.available ? mirrorVoiceStatusLabel(voice.state) : '语音服务尚未配置'}
                     onClick={voice.toggle}
                   >
                     <Icon name="mic" size={18} />
