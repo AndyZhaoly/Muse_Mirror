@@ -290,7 +290,11 @@ export function deriveMirrorScreenState(input: MirrorScreenControllerInput): Mir
 
   return {
     phase,
-    contentKind: primaryArtifact?.contentKind ?? 'conversation',
+    contentKind: primaryArtifact?.contentKind ?? (
+      input.situationDecision?.presentation.visibility === 'foreground'
+        ? input.situationDecision.presentation.contentKind
+        : 'conversation'
+    ),
     priority,
     ownerMessageId: ownerMessage?.id,
     ambient: {
@@ -311,5 +315,6 @@ export function deriveMirrorScreenState(input: MirrorScreenControllerInput): Mir
     primaryArtifact,
     showApproval: input.hasPendingApproval,
     isActiveTurn: Boolean(activeAssistant),
+    situationDecision: input.situationDecision,
   };
 }

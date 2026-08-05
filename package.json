@@ -10,6 +10,7 @@
     "build": "tsc",
     "test": "node --import tsx --test tests/**/*.test.ts",
     "demo:services": "tsx src/cli/demoServices.ts",
+    "simulate:mirror-situations": "tsx src/cli/mirrorSituationScenarios.ts",
     "chat": "tsx src/cli/chat.ts",
     "start": "node dist/cli/chat.js",
     "validate:skills": "node scripts/validate-skills.mjs",

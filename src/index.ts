@@ -5,3 +5,7 @@ export * from './agent/api.js';
 export * from './runtime/stateStore.js';
 export * from './runtime/sessionManager.js';
 export * from './runtime/serviceContainer.js';
+export * from './domain/mirrorSituation.js';
+export * from './domain/outfitEpisode.js';
+export * from './policy/mirrorSituationPolicy.js';
+export * from './policy/mirrorSituationScenarios.js';

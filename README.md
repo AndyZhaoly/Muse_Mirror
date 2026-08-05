@@ -129,6 +129,11 @@ npm run web:dev
 Open [http://localhost:5173](http://localhost:5173). Vite proxies API and generated-asset requests to port `8787`.
 The `/api` proxy also forwards WebSocket upgrades for local ASR and TTS development.
 
+Development builds also include a disabled-by-default Mirror Situation policy simulator above the main
+workspace. It replays static observations through the pure Outfit Episode reducer and situation policy;
+it is not connected to the real camera or closet. Run the same fixtures in the terminal with
+`npm run simulate:mirror-situations`.
+
 ## Configuration
 
 The checked-in `.env.example` is the complete local template. Important defaults are:

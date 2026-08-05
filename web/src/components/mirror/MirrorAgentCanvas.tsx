@@ -92,6 +92,18 @@ export function MirrorAgentCanvas({
             </div>
           )}
 
+          {state.situationDecision &&
+            state.situationDecision.presentation.visibility !== 'hidden' && (
+              <section
+                className={`mirror-situation-hint tone-${state.situationDecision.presentation.tone}`}
+                aria-label="镜前情境策略提示"
+                data-situation-action={state.situationDecision.action}
+              >
+                <span>{state.situationDecision.presentation.title}</span>
+                <p>{state.situationDecision.presentation.detail}</p>
+              </section>
+            )}
+
           {state.showApproval && approval && (
             <div className="mirror-canvas-approval">{approval}</div>
           )}

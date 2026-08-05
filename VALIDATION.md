@@ -36,6 +36,21 @@ Voice-response tests verify that text mode remains unchanged, voice-only instruc
 
 OpenAI final-answer streaming tests use deterministic async iterables through the runtime's `responseCreate` injection. They verify that final-answer deltas arrive before `response.completed`, commentary remains separate, tool-following rounds stream, unknown phases buffer safely, retry cannot duplicate visible text, final grounding remains authoritative, and SSE preserves delta order before `result`.
 
+Mirror Situation policy tests use only static observations and episode events. They cover privacy priority,
+stale and limited observations, motion, active-task deferral, matched garments, unknown ownership, one-time
+ownership questions, explicit ownership confirmation, candidate eligibility, permission-gated persistence,
+episode stability, immutability, and deterministic replay. The golden scenario catalog contains at least
+twelve cases and can be inspected without any provider credentials:
+
+```bash
+npm run simulate:mirror-situations
+node --import tsx --test tests/mirrorSituationPolicy.test.ts tests/mirrorSituationScenarios.test.ts
+```
+
+For the development UI smoke, run `npm run server` and `npm run web:dev`, then select a fixture in the
+`DEVELOPER ONLY` situation panel. Verify that the policy result appears without camera capture, Agent
+Activity, TTS, a network request, or closet mutation. The panel must not exist in the production build.
+
 Run the focused streaming suite with:
 
 ```bash
