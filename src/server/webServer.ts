@@ -1,6 +1,5 @@
 import fs from 'node:fs/promises';
 import { createReadStream } from 'node:fs';
-import { createHash } from 'node:crypto';
 import http from 'node:http';
 import path from 'node:path';
 import sharp from 'sharp';
@@ -30,6 +29,7 @@ import {
 import { createServiceContainer } from '../runtime/serviceContainer.js';
 import { RealOutfitObservationProvider } from '../services/outfitObservationProvider.js';
 import { VisualGarmentIdentityProvider } from '../services/garmentIdentityProvider.js';
+import { buildBaseCatalogAssets } from '../services/baseCatalogAssetService.js';
 import { AmbientCaptureCoordinator } from '../runtime/ambientCaptureCoordinator.js';
 import { GarmentImageAssetService } from '../services/garmentImageAssetService.js';
 import {
@@ -111,46 +111,11 @@ const ambientCaptureCoordinator = new AmbientCaptureCoordinator({
   productImageProvider,
   productImageVerifier,
   productImageVerifyConfidence: config.productImageVerifyConfidence,
-  baseCatalogAssets: () => buildBaseCatalogAssets(sharedServices.closet.allItems()),
+  baseCatalogAssets: () => buildBaseCatalogAssets(sharedServices.closet.allItems(), {
+    publicDir,
+    demo2ProductImageDir: config.demo2ProductImageDir,
+  }),
 });
-
-async function buildBaseCatalogAssets(items: ClosetItem[]): Promise<Map<string, GarmentImageAsset>> {
-  const assets = new Map<string, GarmentImageAsset>();
-  await Promise.all(items.map(async (item) => {
-    const storagePath = baseCatalogStoragePath(item.imageUrl);
-    if (!storagePath) return;
-    try {
-      const [bytes, metadata] = await Promise.all([fs.readFile(storagePath), sharp(storagePath).metadata()]);
-      if (!metadata.width || !metadata.height) return;
-      const mimeType: GarmentImageAsset['mimeType'] = /\.webp$/i.test(storagePath)
-        ? 'image/webp'
-        : /\.png$/i.test(storagePath) ? 'image/png' : 'image/jpeg';
-      assets.set(item.id, {
-        assetId: `base_catalog_${createHash('sha256').update(item.id).digest('hex').slice(0, 18)}`,
-        ownerUserId: 'base_catalog',
-        role: 'canonical_product',
-        imageUrl: item.imageUrl,
-        storagePath,
-        closetItemId: item.id,
-        width: metadata.width,
-        height: metadata.height,
-        mimeType,
-        verificationStatus: 'not_required',
-        contentHash: createHash('sha256').update(bytes).digest('hex'),
-        createdAt: new Date(0).toISOString(),
-      });
-    } catch {
-      // Missing fixture images are excluded from visual identity recall.
-    }
-  }));
-  return assets;
-}
-
-function baseCatalogStoragePath(imageUrl: string): string | undefined {
-  if (imageUrl.startsWith('/agent-assets/')) return path.join(publicDir, imageUrl.slice('/agent-assets/'.length));
-  if (imageUrl.startsWith('/demo2-product-images/')) return path.join(config.demo2ProductImageDir, imageUrl.slice('/demo2-product-images/'.length));
-  return undefined;
-}
 void providerReadiness.refresh();
 const runtime =
   config.agentProvider === 'gemma4'
