@@ -231,6 +231,14 @@ The recommendation runtime reads the same signed-browser overlay as ambient capt
 card displays product images only after all required jobs are verified; repeat recognition reuses existing
 primary images without another generation call.
 
+Duplicate repair is an explicit repository transaction, never a direct JSON edit. `previewClosetItemMerge()`
+reports every affected reference before mutation. `mergeClosetItems()` is per-user, atomic, and idempotent;
+it migrates appearances, assets, wear events, captures and signatures, product jobs, completion summaries,
+events, and identity traces. The duplicate remains archived with `identityStatus=merged` and an alias to the
+active canonical item. Base fixtures and cross-user IDs cannot be merged. The transaction preserves the
+canonical item's ownership and identity status and adopts a duplicate primary image only when the canonical
+record lacks a verified ready image.
+
 This is a constrained investor-demo vertical slice, not general wardrobe ingestion. Face ID, household
 identity, held-garment capture, changing-clothes detection, multi-person tracking, trained FashionCLIP ReID,
 and cross-device persistence remain out of scope. The current visual verifier is an API-backed demo path,

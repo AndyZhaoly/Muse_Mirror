@@ -157,6 +157,7 @@ export interface AmbientClosetItem {
   status: 'active' | 'archived';
   source: 'ambient_capture';
   appearanceFingerprint: string;
+  mergedIntoItemId?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -349,6 +350,7 @@ export type WardrobeEventType =
   | 'product_image_generated'
   | 'product_image_verified'
   | 'closet_primary_image_updated'
+  | 'closet_items_merged'
   | 'product_image_failed';
 
 export interface WardrobeEvent {
@@ -390,9 +392,36 @@ export interface UserWardrobeState {
   committedIdempotencyKeys: string[];
   productImageJobs: ProductImageJob[];
   identityDecisionTraces: GarmentIdentityDecisionTrace[];
+  closetItemAliases: Record<string, string>;
   events: WardrobeEvent[];
   pendingCompletionEvent?: OutfitCaptureCompletedEvent;
   updatedAt: string;
+}
+
+export interface ClosetItemMergePreview {
+  status: 'ready' | 'already_merged' | 'blocked';
+  userId: string;
+  canonicalItemId: string;
+  duplicateItemId: string;
+  blocker?: string;
+  migrations: {
+    appearances: number;
+    assets: number;
+    wearEvents: number;
+    outfitCaptures: number;
+    productImageJobs: number;
+    completionSummaries: number;
+    wardrobeEvents: number;
+    identityDecisionTraces: number;
+  };
+  primaryImageWillChange: boolean;
+}
+
+export interface MergeClosetItemsResult {
+  status: 'merged' | 'already_merged';
+  preview: ClosetItemMergePreview;
+  canonicalItem: AmbientClosetItem;
+  duplicateItem: AmbientClosetItem;
 }
 
 export type AmbientCaptureOutcomeStatus =

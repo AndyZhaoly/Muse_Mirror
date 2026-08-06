@@ -875,7 +875,7 @@ async function handleAmbientCapture(
     ]);
     jsonResponse(res, 200, {
       grant: state.grant,
-      closetItems: state.closetItems,
+      closetItems: state.closetItems.filter((entry) => entry.status === 'active' && entry.item.identityStatus !== 'merged'),
       captures: state.captures,
       wearEvents: state.wearEvents,
       pendingCompletionEvent: state.pendingCompletionEvent,
@@ -892,6 +892,28 @@ async function handleAmbientCapture(
     jsonResponse(res, 200, {
       traces: state.identityDecisionTraces.slice(-limit).reverse(),
     });
+    return;
+  }
+
+  if (req.method === 'POST' && (
+    url.pathname === '/api/dev/outfit-capture/closet-item-merge/preview' ||
+    url.pathname === '/api/dev/outfit-capture/closet-item-merge/apply'
+  )) {
+    const body = await readJson(req) as { canonicalItemId?: string; duplicateItemId?: string };
+    if (!body.canonicalItemId?.trim() || !body.duplicateItemId?.trim()) {
+      jsonResponse(res, 400, { error: 'canonicalItemId and duplicateItemId are required.' });
+      return;
+    }
+    const input = {
+      userId,
+      canonicalItemId: body.canonicalItemId,
+      duplicateItemId: body.duplicateItemId,
+    };
+    if (url.pathname.endsWith('/preview')) {
+      jsonResponse(res, 200, { preview: await wardrobeRepository.previewClosetItemMerge(input) });
+    } else {
+      jsonResponse(res, 200, { result: await wardrobeRepository.mergeClosetItems(input) });
+    }
     return;
   }
 
@@ -1230,7 +1252,8 @@ async function route(req: http.IncomingMessage, res: http.ServerResponse): Promi
     }
     if (url.pathname === '/api/fashion/outfit-capture/acknowledge' ||
         url.pathname === '/api/dev/outfit-capture/retry-product-image' ||
-        url.pathname === '/api/dev/outfit-capture/identity-traces') {
+        url.pathname === '/api/dev/outfit-capture/identity-traces' ||
+        url.pathname.startsWith('/api/dev/outfit-capture/closet-item-merge/')) {
       await handleAmbientCapture(req, url, res);
       return;
     }

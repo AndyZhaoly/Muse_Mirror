@@ -1,5 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { createHash } from 'node:crypto';
 import type {
   AmbientCaptureGrant,
   AmbientClosetItem,
@@ -8,6 +9,8 @@ import type {
   GarmentAppearance,
   GarmentImageAsset,
   GarmentIdentityDecisionTrace,
+  ClosetItemMergePreview,
+  MergeClosetItemsResult,
   OutfitCapture,
   OutfitCaptureCommitResult,
   UserWardrobeState,
@@ -33,6 +36,17 @@ export interface WardrobeRepository {
     traces: GarmentIdentityDecisionTrace[],
     limit?: number,
   ): Promise<void>;
+  previewClosetItemMerge(input: {
+    userId: string;
+    canonicalItemId: string;
+    duplicateItemId: string;
+  }): Promise<ClosetItemMergePreview>;
+  mergeClosetItems(input: {
+    userId: string;
+    canonicalItemId: string;
+    duplicateItemId: string;
+  }): Promise<MergeClosetItemsResult>;
+  resolveClosetItemId(userId: string, closetItemId: string): Promise<string>;
 }
 
 export class JsonUserWardrobeRepository implements WardrobeRepository {
@@ -62,6 +76,118 @@ export class JsonUserWardrobeRepository implements WardrobeRepository {
       ].slice(-Math.max(1, Math.round(limit)));
       bump(state, sanitized.at(-1)?.createdAt ?? new Date().toISOString());
       await this.writeFile(file);
+    });
+  }
+
+  async previewClosetItemMerge(input: {
+    userId: string;
+    canonicalItemId: string;
+    duplicateItemId: string;
+  }): Promise<ClosetItemMergePreview> {
+    const state = await this.getState(input.userId);
+    return previewMerge(state, input.canonicalItemId, input.duplicateItemId);
+  }
+
+  async resolveClosetItemId(userId: string, closetItemId: string): Promise<string> {
+    const state = await this.getState(userId);
+    return resolveAlias(state.closetItemAliases, closetItemId);
+  }
+
+  async mergeClosetItems(input: {
+    userId: string;
+    canonicalItemId: string;
+    duplicateItemId: string;
+  }): Promise<MergeClosetItemsResult> {
+    return this.exclusive(async () => {
+      const file = await this.readFile();
+      const state = ensureUser(file, input.userId);
+      const preview = previewMerge(state, input.canonicalItemId, input.duplicateItemId);
+      const canonical = state.closetItems.find((entry) => entry.item.id === input.canonicalItemId);
+      const duplicate = state.closetItems.find((entry) => entry.item.id === input.duplicateItemId);
+      if (preview.status === 'already_merged' && canonical && duplicate) {
+        return {
+          status: 'already_merged',
+          preview,
+          canonicalItem: structuredClone(canonical),
+          duplicateItem: structuredClone(duplicate),
+        };
+      }
+      if (preview.status === 'blocked' || !canonical || !duplicate) {
+        throw new Error(preview.blocker ?? 'CLOSET_ITEM_MERGE_BLOCKED');
+      }
+
+      const now = new Date().toISOString();
+      const canonicalReady = hasReadyPrimary(state, canonical);
+      const duplicateReady = hasReadyPrimary(state, duplicate);
+      const duplicateAppearanceIds = new Set(state.appearances
+        .filter((appearance) => appearance.closetItemId === duplicate.item.id)
+        .map((appearance) => appearance.appearanceAssetId));
+
+      for (const appearance of state.appearances) {
+        if (appearance.closetItemId === duplicate.item.id) appearance.closetItemId = canonical.item.id;
+      }
+      for (const asset of state.assets) {
+        if (asset.closetItemId === duplicate.item.id) asset.closetItemId = canonical.item.id;
+      }
+      for (const event of state.wearEvents) {
+        if (event.closetItemId === duplicate.item.id) event.closetItemId = canonical.item.id;
+      }
+      for (const capture of state.captures) {
+        if (!capture.closetItemIds.includes(duplicate.item.id)) continue;
+        capture.closetItemIds = unique(capture.closetItemIds.map((itemId) =>
+          itemId === duplicate.item.id ? canonical.item.id : itemId));
+        capture.outfitSignature = outfitSignature(capture.closetItemIds);
+      }
+      for (const job of state.productImageJobs) {
+        if (job.closetItemId === duplicate.item.id) job.closetItemId = canonical.item.id;
+      }
+      for (const wardrobeEvent of state.events) {
+        if (wardrobeEvent.closetItemId === duplicate.item.id) wardrobeEvent.closetItemId = canonical.item.id;
+      }
+      for (const trace of state.identityDecisionTraces) migrateTraceItemId(trace, duplicate.item.id, canonical.item.id);
+
+      if (state.pendingCompletionEvent) {
+        state.pendingCompletionEvent.newItemIds = unique(state.pendingCompletionEvent.newItemIds.map((itemId) =>
+          itemId === duplicate.item.id ? canonical.item.id : itemId));
+        state.pendingCompletionEvent.recognizedItemIds = unique(state.pendingCompletionEvent.recognizedItemIds.map((itemId) =>
+          itemId === duplicate.item.id ? canonical.item.id : itemId));
+        state.pendingCompletionEvent.itemSummaries = dedupeCompletionSummaries(
+          state.pendingCompletionEvent.itemSummaries.map((summary) => summary.closetItemId === duplicate.item.id
+            ? { ...summary, closetItemId: canonical.item.id }
+            : summary),
+        );
+      }
+
+      canonical.item.appearanceAssetIds = unique([
+        ...(canonical.item.appearanceAssetIds ?? []),
+        ...(duplicate.item.appearanceAssetIds ?? []),
+        ...duplicateAppearanceIds,
+      ]);
+      if (!canonicalReady && duplicateReady) {
+        canonical.item.primaryImageAssetId = duplicate.item.primaryImageAssetId;
+        canonical.item.imageUrl = duplicate.item.imageUrl;
+        canonical.item.imageStatus = duplicate.item.imageStatus;
+      }
+      canonical.createdAt = earliest(canonical.createdAt, duplicate.createdAt);
+      canonical.updatedAt = latest(canonical.updatedAt, duplicate.updatedAt, now);
+
+      duplicate.status = 'archived';
+      duplicate.item.identityStatus = 'merged';
+      duplicate.mergedIntoItemId = canonical.item.id;
+      duplicate.updatedAt = now;
+      state.closetItemAliases[duplicate.item.id] = canonical.item.id;
+      state.events.push(event(input.userId, 'closet_items_merged', now, {
+        closetItemId: canonical.item.id,
+        reasonCode: `MERGED_DUPLICATE:${duplicate.item.id}`,
+      }));
+      bump(state, now);
+      await this.writeFile(file);
+      return {
+        status: 'merged',
+        preview,
+        canonicalItem: structuredClone(canonical),
+        duplicateItem: structuredClone(duplicate),
+      };
     });
   }
 
@@ -435,6 +561,7 @@ function emptyUserState(userId: string): UserWardrobeState {
     committedIdempotencyKeys: [],
     productImageJobs: [],
     identityDecisionTraces: [],
+    closetItemAliases: {},
     events: [],
     updatedAt: new Date(0).toISOString(),
   };
@@ -451,6 +578,7 @@ function normalizeUserState(state: UserWardrobeState): void {
   state.episodes ??= [];
   state.committedIdempotencyKeys ??= [];
   state.identityDecisionTraces ??= [];
+  state.closetItemAliases ??= {};
   for (const entry of state.closetItems) {
     const legacyStatus = entry.status as string;
     if (legacyStatus === 'provisional' || legacyStatus === 'confirmed') entry.status = 'active';
@@ -508,4 +636,133 @@ function hasCriticalProductMismatch(verification: ProductImageVerification): boo
   if (!checks.colorMatch || !checks.patternMatch) return true;
   return ['necklineMatch', 'closureMatch', 'pocketMatch', 'silhouetteMatch', 'lengthMatch', 'logoMatch']
     .some((key) => checks[key as keyof typeof checks] === false);
+}
+
+function previewMerge(
+  state: UserWardrobeState,
+  canonicalItemId: string,
+  duplicateItemId: string,
+): ClosetItemMergePreview {
+  const base = {
+    userId: state.userId,
+    canonicalItemId,
+    duplicateItemId,
+    migrations: {
+      appearances: state.appearances.filter((item) => item.closetItemId === duplicateItemId).length,
+      assets: state.assets.filter((item) => item.closetItemId === duplicateItemId).length,
+      wearEvents: state.wearEvents.filter((item) => item.closetItemId === duplicateItemId).length,
+      outfitCaptures: state.captures.filter((item) => item.closetItemIds.includes(duplicateItemId)).length,
+      productImageJobs: state.productImageJobs.filter((item) => item.closetItemId === duplicateItemId).length,
+      completionSummaries: state.pendingCompletionEvent?.itemSummaries
+        .filter((item) => item.closetItemId === duplicateItemId).length ?? 0,
+      wardrobeEvents: state.events.filter((item) => item.closetItemId === duplicateItemId).length,
+      identityDecisionTraces: state.identityDecisionTraces.filter((trace) => traceReferences(trace, duplicateItemId)).length,
+    },
+    primaryImageWillChange: false,
+  };
+  if (canonicalItemId === duplicateItemId) {
+    return { ...base, status: 'blocked', blocker: 'CLOSET_ITEM_MERGE_IDS_MUST_DIFFER' };
+  }
+  const canonical = state.closetItems.find((entry) => entry.item.id === canonicalItemId);
+  const duplicate = state.closetItems.find((entry) => entry.item.id === duplicateItemId);
+  if (state.closetItemAliases[duplicateItemId] === canonicalItemId && canonical && duplicate?.mergedIntoItemId === canonicalItemId) {
+    return { ...base, status: 'already_merged' };
+  }
+  if (!canonical || !duplicate) {
+    return { ...base, status: 'blocked', blocker: 'CLOSET_ITEM_NOT_FOUND_FOR_USER' };
+  }
+  if (canonical.source !== 'ambient_capture' || duplicate.source !== 'ambient_capture' ||
+      canonical.item.source === 'demo_fixture' || duplicate.item.source === 'demo_fixture') {
+    return { ...base, status: 'blocked', blocker: 'BASE_CLOSET_ITEMS_CANNOT_BE_MERGED' };
+  }
+  if (canonical.status !== 'active' || canonical.item.identityStatus === 'merged') {
+    return { ...base, status: 'blocked', blocker: 'CANONICAL_ITEM_IS_NOT_ACTIVE' };
+  }
+  if (duplicate.status !== 'active' || duplicate.item.identityStatus === 'merged') {
+    return { ...base, status: 'blocked', blocker: 'DUPLICATE_ITEM_IS_NOT_ACTIVE' };
+  }
+  return {
+    ...base,
+    status: 'ready',
+    primaryImageWillChange: !hasReadyPrimary(state, canonical) && hasReadyPrimary(state, duplicate),
+  };
+}
+
+function hasReadyPrimary(state: UserWardrobeState, entry: AmbientClosetItem): boolean {
+  if (entry.item.imageStatus !== 'ready' || !entry.item.primaryImageAssetId) return false;
+  return state.assets.some((asset) =>
+    asset.assetId === entry.item.primaryImageAssetId && asset.verificationStatus === 'passed');
+}
+
+function outfitSignature(closetItemIds: string[]): string {
+  return createHash('sha256').update([...closetItemIds].sort().join('|')).digest('hex').slice(0, 24);
+}
+
+function migrateTraceItemId(trace: GarmentIdentityDecisionTrace, duplicateItemId: string, canonicalItemId: string): void {
+  for (const candidate of trace.recall.candidates) {
+    if (candidate.closetItemId === duplicateItemId) candidate.closetItemId = canonicalItemId;
+  }
+  trace.recall.candidates = dedupeTraceCandidates(trace.recall.candidates);
+  for (const verification of trace.pairwiseVerifications) {
+    if (verification.candidateClosetItemId === duplicateItemId) verification.candidateClosetItemId = canonicalItemId;
+  }
+  trace.pairwiseVerifications = dedupePairwiseTraces(trace.pairwiseVerifications);
+  if (trace.matchedClosetItemId === duplicateItemId) trace.matchedClosetItemId = canonicalItemId;
+}
+
+function traceReferences(trace: GarmentIdentityDecisionTrace, closetItemId: string): boolean {
+  return trace.matchedClosetItemId === closetItemId ||
+    trace.recall.candidates.some((candidate) => candidate.closetItemId === closetItemId) ||
+    trace.pairwiseVerifications.some((verification) => verification.candidateClosetItemId === closetItemId);
+}
+
+function dedupeTraceCandidates(
+  candidates: GarmentIdentityDecisionTrace['recall']['candidates'],
+): GarmentIdentityDecisionTrace['recall']['candidates'] {
+  const byId = new Map<string, GarmentIdentityDecisionTrace['recall']['candidates'][number]>();
+  for (const candidate of candidates) {
+    const previous = byId.get(candidate.closetItemId);
+    if (!previous || candidate.effectivePrior > previous.effectivePrior) byId.set(candidate.closetItemId, candidate);
+  }
+  return [...byId.values()];
+}
+
+function dedupePairwiseTraces(
+  verifications: GarmentIdentityDecisionTrace['pairwiseVerifications'],
+): GarmentIdentityDecisionTrace['pairwiseVerifications'] {
+  const byId = new Map<string, GarmentIdentityDecisionTrace['pairwiseVerifications'][number]>();
+  for (const verification of verifications) {
+    if (!byId.has(verification.candidateClosetItemId)) byId.set(verification.candidateClosetItemId, verification);
+  }
+  return [...byId.values()];
+}
+
+function dedupeCompletionSummaries(
+  summaries: NonNullable<UserWardrobeState['pendingCompletionEvent']>['itemSummaries'],
+): NonNullable<UserWardrobeState['pendingCompletionEvent']>['itemSummaries'] {
+  const byId = new Map<string, NonNullable<UserWardrobeState['pendingCompletionEvent']>['itemSummaries'][number]>();
+  for (const summary of summaries) if (!byId.has(summary.closetItemId)) byId.set(summary.closetItemId, summary);
+  return [...byId.values()];
+}
+
+function unique(values: string[]): string[] {
+  return [...new Set(values)];
+}
+
+function earliest(...values: string[]): string {
+  return [...values].sort()[0]!;
+}
+
+function latest(...values: string[]): string {
+  return [...values].sort().at(-1)!;
+}
+
+function resolveAlias(aliases: Record<string, string>, closetItemId: string): string {
+  let current = closetItemId;
+  const visited = new Set<string>();
+  while (aliases[current] && !visited.has(current)) {
+    visited.add(current);
+    current = aliases[current]!;
+  }
+  return current;
 }

@@ -312,6 +312,7 @@ export class AmbientCaptureCoordinator {
 
   async retryProductImage(userId: string, closetItemId: string): Promise<AmbientCaptureOutcome> {
     return this.exclusive(userId, async () => {
+      closetItemId = await this.options.repository.resolveClosetItemId(userId, closetItemId);
       const state = await this.options.repository.getState(userId);
       const entry = state.closetItems.find((item) => item.item.id === closetItemId);
       const appearance = [...state.appearances].reverse().find((item) => item.closetItemId === closetItemId);
@@ -375,7 +376,7 @@ export class AmbientCaptureCoordinator {
       productImageVerifierReady: this.options.productImageVerifier.ready,
       grantActive: activeGrant(state.grant),
       currentEpisode: [...state.episodes].reverse().find((episode) => episode.status !== 'ended'),
-      closetItemCount: state.closetItems.length,
+      closetItemCount: state.closetItems.filter((entry) => entry.status === 'active' && entry.item.identityStatus !== 'merged').length,
       captureCount: state.captures.length,
       wearEventCount: state.wearEvents.length,
       assetCounts: {
@@ -383,8 +384,9 @@ export class AmbientCaptureCoordinator {
         garment_appearance: state.assets.filter((asset) => asset.role === 'garment_appearance').length,
         canonical_product: state.assets.filter((asset) => asset.role === 'canonical_product').length,
       },
-      processingImageCount: state.closetItems.filter((entry) => entry.item.imageStatus === 'processing').length,
-      needsReviewImageCount: state.closetItems.filter((entry) => entry.item.imageStatus === 'needs_review' || entry.item.imageStatus === 'failed').length,
+      processingImageCount: state.closetItems.filter((entry) => entry.status === 'active' && entry.item.imageStatus === 'processing').length,
+      needsReviewImageCount: state.closetItems.filter((entry) => entry.status === 'active' &&
+        (entry.item.imageStatus === 'needs_review' || entry.item.imageStatus === 'failed')).length,
       lastOutcome: this.lastOutcomes.get(userId),
     };
   }

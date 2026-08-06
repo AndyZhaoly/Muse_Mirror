@@ -71,6 +71,8 @@ construction evidence can establish a safe match or difference; occlusion, crop,
 drift cannot silently create a duplicate. Recent wear raises a candidate's prior without proving identity,
 and a strong prior vetoes automatic creation. Ambiguous evidence writes no ClosetItem. The latest 200
 sanitized decision traces remain available to the signed browser identity for diagnostics.
+Duplicate overlay items can be repaired through a dry-run-first, atomic repository merge; the duplicate is
+archived as an alias and is excluded from recommendation without deleting its historical appearances or wear.
 
 After two similar frames are independently confirmed by the server as `NO_PERSON_PRESENT`, the browser keeps
 a low-resolution empty-scene reference and suppresses ordinary high-resolution ambient uploads. A changed

@@ -3754,7 +3754,9 @@ ${JSON.stringify(context.personalization ?? { persistentMemories: [], contextOve
       return;
     }
     const state = await repository.getState(userId);
-    this.wardrobeOverlays.set(userId, state.closetItems.map((entry) => entry.item));
+    this.wardrobeOverlays.set(userId, state.closetItems
+      .filter((entry) => entry.status === 'active' && entry.item.identityStatus !== 'merged')
+      .map((entry) => entry.item));
   }
 
   private pushNotice(
