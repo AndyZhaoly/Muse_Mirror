@@ -18,6 +18,13 @@ test('ambient capture UI exposes explicit grant, real completion, and developer 
   assert.match(canvas, /未通过校验的图片不会展示/);
   assert.match(app, /acknowledgeAmbientCapture/);
   assert.match(app, /7_000/);
+  assert.match(app, /evaluateEmptySceneGuard/);
+  assert.match(app, /ambientEmptySceneStreamId/);
+  assert.match(app, /resetAmbientEmptySceneGuard/);
+  assert.match(app, /document\.hidden/);
+  assert.match(app, /window\.clearInterval\(timer\)/);
+  assert.match(app, /forcedProbeCount/);
+  assert.match(app, /reentryLatencyMs/);
 });
 
 test('ambient capture runs outside Muse Agent tools and has no keyword router', () => {

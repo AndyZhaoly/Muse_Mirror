@@ -40,6 +40,11 @@ in a query or body are ignored for ambient storage and private assets.
 - `POST /api/dev/outfit-capture/retry-product-image` retries one current-browser item in `needs_review`/`failed` state.
 - `GET /api/fashion/wardrobe-assets/:assetId` serves an owned asset after cookie and path validation.
 
+`GET /api/fashion/status` exposes non-secret empty-scene guard configuration under
+`ambientCapture.emptyScene`: `threshold`, `confirmations`, and `forceProbeMs`. A frame result with
+`NO_PERSON_PRESENT` includes a 10-second retry backoff. Client suppression requires two similar server
+confirmations and must not be inferred from camera status alone.
+
 The frame endpoint may return `disabled`, `observing`, `deferred`, `privacy_paused`,
 `insufficient_evidence`, `ambiguous`, `committed`, `recognized`, `mixed`, `already_committed`,
 `episode_ended`, or `unavailable`, plus the two-stage image states documented in `src/domain/ambientCapture.ts`.

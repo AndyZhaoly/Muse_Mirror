@@ -66,6 +66,9 @@ export interface AppConfig {
   outputDir: string;
   memoryDataPath: string;
   ambientWardrobeDataPath: string;
+  emptySceneThreshold: number;
+  emptySceneConfirmations: number;
+  emptySceneForceProbeMs: number;
   productImageProvider: 'openai' | 'disabled';
   openaiProductImageModel: string;
   openaiProductImageQuality: 'low' | 'medium' | 'high';
@@ -79,6 +82,12 @@ export interface AppConfig {
   trace: boolean;
   visualQcEnabled: boolean;
   voice: VoiceConfig;
+}
+
+export interface EmptySceneConfig {
+  threshold: number;
+  confirmations: number;
+  forceProbeMs: number;
 }
 
 function boolEnv(name: string, fallback: boolean): boolean {
@@ -99,6 +108,14 @@ function optionalNumberEnv(name: string): number | undefined {
   if (value === undefined || value.trim() === '') return undefined;
   const parsed = Number(value);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
+}
+
+export function loadEmptySceneConfig(env: NodeJS.ProcessEnv = process.env): EmptySceneConfig {
+  return {
+    threshold: Math.min(1, Math.max(0.001, numberFromEnv(env, 'FASHION_AGENT_EMPTY_SCENE_THRESHOLD', 0.03))),
+    confirmations: Math.max(2, Math.round(numberFromEnv(env, 'FASHION_AGENT_EMPTY_SCENE_CONFIRMATIONS', 2))),
+    forceProbeMs: Math.max(10_000, Math.round(numberFromEnv(env, 'FASHION_AGENT_EMPTY_SCENE_FORCE_PROBE_MS', 90_000))),
+  };
 }
 
 function portFromEndpoint(endpoint: string): number | undefined {
@@ -283,6 +300,7 @@ export function loadConfig(): AppConfig {
         path.resolve('./data/mock-presentation-metadata.json'),
       ]),
   );
+  const emptyScene = loadEmptySceneConfig();
 
   return {
     runtimeProvider: runtimeProviderEnv(process.env.FASHION_AGENT_RUNTIME),
@@ -348,6 +366,9 @@ export function loadConfig(): AppConfig {
     ambientWardrobeDataPath: path.resolve(
       process.env.FASHION_AGENT_AMBIENT_WARDROBE_DATA ?? './out/ambient-wardrobe-v1.json',
     ),
+    emptySceneThreshold: emptyScene.threshold,
+    emptySceneConfirmations: emptyScene.confirmations,
+    emptySceneForceProbeMs: emptyScene.forceProbeMs,
     productImageProvider: process.env.FASHION_AGENT_PRODUCT_IMAGE_PROVIDER === 'openai' ? 'openai' : 'disabled',
     openaiProductImageModel: process.env.OPENAI_PRODUCT_IMAGE_MODEL ?? 'gpt-image-2',
     openaiProductImageQuality: ['low', 'medium', 'high'].includes(process.env.OPENAI_PRODUCT_IMAGE_QUALITY ?? '')

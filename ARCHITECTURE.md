@@ -175,6 +175,14 @@ fresh packet, one person, good three-quarter/full-body coverage, a complete worn
 garment-track observations. Active Agent/image tasks defer the capture, and multi-person observations enter
 privacy pause.
 
+The browser's empty-scene guard is a deterministic upload optimization, not a person detector. One
+`NO_PERSON_PRESENT` result creates only a candidate. Two similar server-confirmed results are required before
+ordinary uploads are suppressed. Low-resolution scene difference immediately clears candidate/confirmed
+state, resets capture backoff, and starts a new three-sample stability window. Confirmed empty scenes still
+send a forced probe on a configurable TTL (90 seconds by default). Camera pause, capture disable, or MediaStream
+replacement clears the guard. The client diagnostic panel exposes confirmation count, skip/probe counts,
+scene difference, configured threshold, confirmation time, and observed re-entry latency.
+
 The image model has three non-interchangeable roles: `capture_evidence` is the selected full still,
 `garment_appearance` is an independently cropped real garment used for identity and image editing, and
 `canonical_product` is a cleaned catalog image. Only a canonical image whose source-crop comparison passes

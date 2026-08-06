@@ -43,9 +43,13 @@ import {
 	  type AmbientCaptureOutcome,
 	} from './agentClient';
 import {
+  evaluateEmptySceneGuard,
   frameStabilityScore,
   nextStableSampleCount,
+  resolveEmptySceneObservation,
   sampleVideoFrame,
+  type EmptySceneGuardConfig,
+  type EmptySceneGuardState,
   type FrameStabilitySample,
 } from './ambientCapture';
 import { useVoiceSession } from './voice/useVoiceSession';
@@ -107,6 +111,22 @@ type Message = {
   memoryUsage?: MemoryUsageDisclosure[];
   pendingMemoryCandidates?: ExplicitPreferenceEvent[];
 };
+
+const defaultEmptySceneGuardConfig: EmptySceneGuardConfig = {
+  threshold: 0.03,
+  confirmations: 2,
+  forceProbeMs: 90_000,
+};
+
+interface AmbientEmptySceneDiagnostics {
+  status: EmptySceneGuardState['status'];
+  candidateCount: number;
+  confirmedAt?: number;
+  skippedUploadCount: number;
+  forcedProbeCount: number;
+  sceneDifference?: number;
+  reentryLatencyMs?: number;
+}
 
 const defaultStylingProfile: StylingProfile = {
   presentationPreference: 'unknown',
@@ -1260,6 +1280,13 @@ function App() {
   const [ambientCaptureEvent, setAmbientCaptureEvent] = useState<AmbientCaptureCompletedEvent>();
   const [ambientCaptureOutcome, setAmbientCaptureOutcome] = useState<AmbientCaptureOutcome>();
   const [ambientCaptureCounts, setAmbientCaptureCounts] = useState({ closet: 0, captures: 0 });
+  const [emptySceneGuardConfig, setEmptySceneGuardConfig] = useState(defaultEmptySceneGuardConfig);
+  const [ambientEmptySceneDiagnostics, setAmbientEmptySceneDiagnostics] = useState<AmbientEmptySceneDiagnostics>({
+    status: 'inactive',
+    candidateCount: 0,
+    skippedUploadCount: 0,
+    forcedProbeCount: 0,
+  });
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const mirrorFrameInFlight = useRef(false);
@@ -1267,9 +1294,32 @@ function App() {
   const ambientPreviousSample = useRef<FrameStabilitySample | undefined>(undefined);
   const ambientStableSamples = useRef(0);
   const ambientNextCaptureAt = useRef(0);
+  const ambientEmptySceneGuard = useRef<EmptySceneGuardState>({ status: 'inactive' });
+  const ambientEmptySceneStreamId = useRef<string | undefined>(undefined);
+  const ambientSceneReentryDetectedAt = useRef<number | undefined>(undefined);
+  const ambientSkippedUploadCount = useRef(0);
+  const ambientForcedProbeCount = useRef(0);
+  const ambientDiagnosticsPublishedAt = useRef(0);
   const messageEndRef = useRef<HTMLDivElement>(null);
   const typingTimerRef = useRef<number | undefined>(undefined);
   const idRef = useRef(1);
+
+  const resetAmbientEmptySceneGuard = useCallback((resetCounters = false) => {
+    ambientEmptySceneGuard.current = { status: 'inactive' };
+    ambientEmptySceneStreamId.current = undefined;
+    ambientSceneReentryDetectedAt.current = undefined;
+    if (resetCounters) {
+      ambientSkippedUploadCount.current = 0;
+      ambientForcedProbeCount.current = 0;
+      ambientDiagnosticsPublishedAt.current = 0;
+    }
+    setAmbientEmptySceneDiagnostics(() => ({
+      status: 'inactive',
+      candidateCount: 0,
+      skippedUploadCount: resetCounters ? 0 : ambientSkippedUploadCount.current,
+      forcedProbeCount: resetCounters ? 0 : ambientForcedProbeCount.current,
+    }));
+  }, []);
 
   const bindVideoRef = useCallback((element: HTMLVideoElement | null) => {
     videoRef.current = element;
@@ -1373,6 +1423,9 @@ function App() {
 	          );
           if (typeof status.mirrorFrameIntervalMs === 'number') {
             setMirrorFrameIntervalMs(status.mirrorFrameIntervalMs);
+          }
+          if (status.ambientCapture?.emptyScene) {
+            setEmptySceneGuardConfig(status.ambientCapture.emptyScene);
           }
         } else {
           setTransport('mock');
@@ -1648,23 +1701,79 @@ function App() {
     if (!ambientCaptureEnabled || cameraState !== 'active' || !streamRef.current) {
       ambientPreviousSample.current = undefined;
       ambientStableSamples.current = 0;
+      ambientNextCaptureAt.current = 0;
+      resetAmbientEmptySceneGuard();
       return undefined;
     }
     let cancelled = false;
-    const sampleIntervalMs = 1200;
+    const sampleIntervalMs = 600;
     const inspect = async () => {
       const video = videoRef.current;
       if (!video || cancelled || document.hidden || ambientFrameInFlight.current) return;
+      const streamId = streamRef.current?.id;
+      if (!streamId) return;
+      if (ambientEmptySceneStreamId.current !== streamId) {
+        ambientPreviousSample.current = undefined;
+        ambientStableSamples.current = 0;
+        ambientNextCaptureAt.current = 0;
+        resetAmbientEmptySceneGuard();
+        ambientEmptySceneStreamId.current = streamId;
+      }
       const sample = sampleVideoFrame(video, mirror);
       if (!sample) return;
       const score = frameStabilityScore(ambientPreviousSample.current, sample);
       ambientPreviousSample.current = sample;
       ambientStableSamples.current = nextStableSampleCount(ambientStableSamples.current, score);
-      if (ambientStableSamples.current < 3 || Date.now() < ambientNextCaptureAt.current) return;
+      const now = Date.now();
+      const guardEvaluation = evaluateEmptySceneGuard(
+        ambientEmptySceneGuard.current,
+        sample,
+        now,
+        emptySceneGuardConfig,
+      );
+      ambientEmptySceneGuard.current = guardEvaluation.state;
+      if (guardEvaluation.sceneChanged) {
+        ambientStableSamples.current = 0;
+        ambientNextCaptureAt.current = 0;
+        ambientSceneReentryDetectedAt.current = now;
+        setAmbientEmptySceneDiagnostics((current) => ({
+          ...current,
+          status: 'inactive',
+          candidateCount: 0,
+          confirmedAt: undefined,
+          sceneDifference: guardEvaluation.difference,
+        }));
+        return;
+      }
+      if (guardEvaluation.skippedUpload) {
+        ambientSkippedUploadCount.current += 1;
+        if (now - ambientDiagnosticsPublishedAt.current >= 5_000) {
+          ambientDiagnosticsPublishedAt.current = now;
+          setAmbientEmptySceneDiagnostics((current) => ({
+            ...current,
+            status: guardEvaluation.state.status,
+            skippedUploadCount: ambientSkippedUploadCount.current,
+            forcedProbeCount: ambientForcedProbeCount.current,
+            sceneDifference: guardEvaluation.difference,
+          }));
+        }
+        return;
+      }
+      if (ambientStableSamples.current < 3) return;
+      if (!guardEvaluation.forcedProbe && now < ambientNextCaptureAt.current) return;
       const capturedImageDataUrl = takeSnapshot(1280, 0.9);
       if (!capturedImageDataUrl) return;
       ambientFrameInFlight.current = true;
       ambientStableSamples.current = 0;
+      if (guardEvaluation.forcedProbe) {
+        ambientForcedProbeCount.current += 1;
+        setAmbientEmptySceneDiagnostics((current) => ({
+          ...current,
+          skippedUploadCount: ambientSkippedUploadCount.current,
+          forcedProbeCount: ambientForcedProbeCount.current,
+          sceneDifference: guardEvaluation.difference,
+        }));
+      }
       try {
         const response = await sendAmbientCaptureFrame({
           userId,
@@ -1690,9 +1799,61 @@ function App() {
             captures: current.captures + (response.outcome.status === 'already_committed' ? 0 : 1),
           }));
         }
-        ambientNextCaptureAt.current = Date.now() + (response.outcome.retryAfterMs ?? 5_000);
+        const completedAt = Date.now();
+        const noPerson = response.outcome.reasonCodes.includes('NO_PERSON_PRESENT');
+        if (noPerson) {
+          ambientEmptySceneGuard.current = resolveEmptySceneObservation(
+            ambientEmptySceneGuard.current,
+            sample,
+            completedAt,
+            emptySceneGuardConfig,
+            true,
+          );
+        } else if (response.outcome.observationId) {
+          ambientEmptySceneGuard.current = resolveEmptySceneObservation(
+            ambientEmptySceneGuard.current,
+            sample,
+            completedAt,
+            emptySceneGuardConfig,
+            false,
+          );
+        }
+        let guardState = ambientEmptySceneGuard.current;
+        if (
+          guardEvaluation.forcedProbe
+          && !noPerson
+          && !response.outcome.observationId
+          && guardState.status === 'confirmed'
+        ) {
+          guardState = {
+            ...guardState,
+            nextForcedProbeAt: completedAt + (response.outcome.retryAfterMs ?? 10_000),
+          };
+          ambientEmptySceneGuard.current = guardState;
+        }
+        const reentryLatencyMs = ambientSceneReentryDetectedAt.current === undefined
+          ? undefined
+          : completedAt - ambientSceneReentryDetectedAt.current;
+        if (reentryLatencyMs !== undefined) ambientSceneReentryDetectedAt.current = undefined;
+        setAmbientEmptySceneDiagnostics((current) => ({
+          ...current,
+          status: guardState.status,
+          candidateCount: guardState.status === 'candidate' ? guardState.confirmationCount : 0,
+          confirmedAt: guardState.status === 'confirmed' ? guardState.confirmedAt : undefined,
+          skippedUploadCount: ambientSkippedUploadCount.current,
+          forcedProbeCount: ambientForcedProbeCount.current,
+          reentryLatencyMs: reentryLatencyMs ?? current.reentryLatencyMs,
+        }));
+        ambientNextCaptureAt.current = completedAt + (response.outcome.retryAfterMs ?? 5_000);
       } catch {
-        ambientNextCaptureAt.current = Date.now() + 10_000;
+        const retryAt = Date.now() + 10_000;
+        ambientNextCaptureAt.current = retryAt;
+        if (ambientEmptySceneGuard.current.status === 'confirmed') {
+          ambientEmptySceneGuard.current = {
+            ...ambientEmptySceneGuard.current,
+            nextForcedProbeAt: retryAt,
+          };
+        }
         // Ambient capture is deliberately non-blocking. Chat and the local
         // mirror continue even when its real vision provider is unavailable.
       } finally {
@@ -1704,7 +1865,18 @@ function App() {
       cancelled = true;
       window.clearInterval(timer);
     };
-  }, [ambientCaptureEnabled, cameraState, generating, mirror, pendingApproval, responding, sessionId, userId]);
+  }, [
+    ambientCaptureEnabled,
+    cameraState,
+    emptySceneGuardConfig,
+    generating,
+    mirror,
+    pendingApproval,
+    resetAmbientEmptySceneGuard,
+    responding,
+    sessionId,
+    userId,
+  ]);
 
   const enableAmbientCapture = async () => {
     await setAmbientCaptureGrant({ userId, enabled: true });
@@ -1713,6 +1885,7 @@ function App() {
     ambientPreviousSample.current = undefined;
     ambientStableSamples.current = 0;
     ambientNextCaptureAt.current = 0;
+    resetAmbientEmptySceneGuard(true);
   };
 
   const disableAmbientCapture = async () => {
@@ -1722,6 +1895,7 @@ function App() {
     ambientPreviousSample.current = undefined;
     ambientStableSamples.current = 0;
     ambientNextCaptureAt.current = 0;
+    resetAmbientEmptySceneGuard(true);
     await endAmbientCaptureEpisode({ userId, sessionId }).catch(() => undefined);
   };
 
@@ -2381,6 +2555,9 @@ function App() {
                 <summary>Ambient capture diagnostics</summary>
                 <code>
                   grant={String(ambientCaptureEnabled)} · items={ambientCaptureCounts.closet} · captures={ambientCaptureCounts.captures} · outcome={ambientCaptureOutcome?.status ?? 'none'}
+                </code>
+                <code>
+                  empty={ambientEmptySceneDiagnostics.status} · candidate={ambientEmptySceneDiagnostics.candidateCount} · confirmedAt={ambientEmptySceneDiagnostics.confirmedAt ?? 'none'} · skipped={ambientEmptySceneDiagnostics.skippedUploadCount} · forced={ambientEmptySceneDiagnostics.forcedProbeCount} · diff={ambientEmptySceneDiagnostics.sceneDifference?.toFixed(4) ?? 'none'} · threshold={emptySceneGuardConfig.threshold} · reentryMs={ambientEmptySceneDiagnostics.reentryLatencyMs ?? 'none'}
                 </code>
                 <button type="button" onClick={() => { void resetAmbientCaptureFromUi(); }}>Reset my ambient wardrobe</button>
               </details>

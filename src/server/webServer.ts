@@ -1207,6 +1207,11 @@ async function route(req: http.IncomingMessage, res: http.ServerResponse): Promi
           productImageModel: config.openaiProductImageModel,
           productImageProviderReady: productImageProvider.ready,
           productImageVerifierReady: productImageVerifier.ready,
+          emptyScene: {
+            threshold: config.emptySceneThreshold,
+            confirmations: config.emptySceneConfirmations,
+            forceProbeMs: config.emptySceneForceProbeMs,
+          },
         },
         transport: gemma4EndpointStatus.transport,
         message: gemma4EndpointStatus.message,

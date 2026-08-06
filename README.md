@@ -66,6 +66,12 @@ tracking, and recall share a canonical appearance vocabulary for color, pattern,
 and Chinese labels are normalized only at comparison time, while visually uncertain color and fit stay
 `unknown` and contribute no identity similarity.
 
+After two similar frames are independently confirmed by the server as `NO_PERSON_PRESENT`, the browser keeps
+a low-resolution empty-scene reference and suppresses ordinary high-resolution ambient uploads. A changed
+scene clears suppression and starts a fresh three-sample stability window; a configurable forced probe still
+runs every 90 seconds by default so one bad observation cannot silence capture permanently. This guard is
+client-local and stores no additional camera image on the server.
+
 More detail is available in [ARCHITECTURE.md](ARCHITECTURE.md), [API_CONTRACT.md](API_CONTRACT.md), and [SKILL_TOOL_POLICY_MATRIX.md](SKILL_TOOL_POLICY_MATRIX.md).
 
 ## Requirements
@@ -172,6 +178,9 @@ FASHION_AGENT_DEMO2_PRODUCT_IMAGE_DIR=./data/demo2-product-images
 FASHION_AGENT_OUTPUT_DIR=./out
 FASHION_AGENT_MEMORY_DATA=./out/muse-memory-v1.json
 FASHION_AGENT_AMBIENT_WARDROBE_DATA=./out/ambient-wardrobe-v1.json
+FASHION_AGENT_EMPTY_SCENE_THRESHOLD=0.03
+FASHION_AGENT_EMPTY_SCENE_CONFIRMATIONS=2
+FASHION_AGENT_EMPTY_SCENE_FORCE_PROBE_MS=90000
 FASHION_AGENT_PRODUCT_IMAGE_PROVIDER=disabled
 OPENAI_PRODUCT_IMAGE_MODEL=gpt-image-2
 OPENAI_PRODUCT_IMAGE_QUALITY=medium

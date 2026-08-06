@@ -92,7 +92,13 @@ export class AmbientCaptureCoordinator {
     if (observation.personCount === 0) {
       episode = { ...episode, status: 'ended', endedAt: observation.analyzedAt, lastObservationId: observation.observationId, lastObservedAt: observation.analyzedAt };
       await this.options.repository.upsertEpisode(packet.userId, episode);
-      return this.remember(packet.userId, { status: 'episode_ended', reasonCodes: ['NO_PERSON_PRESENT'], episodeId: episode.episodeId, observationId: observation.observationId });
+      return this.remember(packet.userId, {
+        status: 'episode_ended',
+        reasonCodes: ['NO_PERSON_PRESENT'],
+        episodeId: episode.episodeId,
+        observationId: observation.observationId,
+        retryAfterMs: 10_000,
+      });
     }
 
     const observedEnvelope = decideMirrorSituation({

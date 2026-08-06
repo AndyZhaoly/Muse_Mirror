@@ -126,6 +126,41 @@ test('three rounds create verified products, recognize real appearances, then ad
   assert.equal(round3State.pendingCompletionEvent?.recognizedItemIds.length, 1);
 });
 
+test('a verified empty observation ends the episode with a bounded client backoff', async () => {
+  const fixture = await createFixture('empty-scene-backoff');
+  await fixture.repository.setGrant(userId, true);
+  const emptyObservation: WornOutfitObservation = {
+    observationId: 'observation_empty_scene',
+    provider: 'test-real-contract',
+    model: 'fixture',
+    analyzedAt: new Date().toISOString(),
+    personCount: 0,
+    coverage: 'none',
+    quality: 'good',
+    garments: [],
+    uncertainties: [],
+  };
+  const runtime = coordinator({
+    repository: fixture.repository,
+    assetService: fixture.assetService,
+    observations: [
+      emptyObservation,
+      outfit([
+        garment('top-after-empty', 'top', 'navy', 'short sleeve crew neck tee'),
+        garment('bottom-after-empty', 'bottom', 'sand', 'straight trousers'),
+      ]),
+    ],
+    productCalls: [],
+  });
+  const result = await runtime.process(packet(fixture.framePath, 'empty-scene', 'empty-1'));
+  assert.equal(result.status, 'episode_ended');
+  assert.deepEqual(result.reasonCodes, ['NO_PERSON_PRESENT']);
+  assert.equal(result.retryAfterMs, 10_000);
+  const reentered = await runtime.process(packet(fixture.framePath, 'empty-scene', 'person-1'));
+  assert.equal(reentered.status, 'observing');
+  assert.notEqual(reentered.episodeId, result.episodeId, 're-entry must start a fresh outfit episode');
+});
+
 test('crop service stores separate evidence and appearance assets and rejects invalid boxes', async () => {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'muse-ambient-crops-'));
   const framePath = await writeFrame(path.join(directory, 'frame.jpg'), '#1d3159', '#d2af73');

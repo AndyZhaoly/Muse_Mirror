@@ -579,6 +579,20 @@ export interface AgentStatus {
       errorCode?: string;
     };
   };
+  ambientCapture?: {
+    observationProviderReady: boolean;
+    identityVerifierReady: boolean;
+    identityTopK: number;
+    productImageProvider: string;
+    productImageModel: string;
+    productImageProviderReady: boolean;
+    productImageVerifierReady: boolean;
+    emptyScene?: {
+      threshold: number;
+      confirmations: number;
+      forceProbeMs: number;
+    };
+  };
   transport: string;
   message?: string;
 }

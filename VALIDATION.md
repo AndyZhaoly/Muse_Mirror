@@ -74,6 +74,17 @@ node --import tsx --test \
 matching without substring errors, observable `unknown` values, graded color similarity, consistent jumpsuit
 slotting, and the rule that neighboring color evidence alone cannot preserve a garment track.
 
+`tests/ambientFrameStability.test.ts` verifies the empty-scene state machine: one false no-person result does
+not suppress uploads, two matching confirmations do, changed scenes cancel candidates, small light flicker
+stays below the configured threshold, forced probes resume at the TTL, and a person result clears suppression.
+`tests/emptySceneConfig.test.ts` covers defaults and environment bounds. `tests/ambientCaptureUi.test.ts` keeps
+camera/feature/stream cleanup, hidden-tab handling, timer cleanup, and safe diagnostics wired into the client.
+
+Physical empty-scene threshold calibration remains required before declaring production readiness. With a
+real camera, observe an empty room for 3-5 minutes, verify ordinary request suppression after two server
+confirmations, then enter the frame and record the time to resumed capture eligibility. Repeat under material
+lighting changes; do not report `0.03` as calibrated from deterministic fixtures alone.
+
 For a real local smoke, configure a real vision provider, open the camera, accept the one-time automatic
 recording grant, set `FASHION_AGENT_PRODUCT_IMAGE_PROVIDER=openai`, and use a clearly distinct top and bottom
 under good lighting. Verify Round 1 produces two different real crops and two verified product images. Leave
