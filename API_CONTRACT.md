@@ -50,6 +50,11 @@ wear events, and capture. Stage B edits each new appearance into a product image
 visual verification. Private evidence, appearances, and generated product images are never served by the
 public `/generated` route.
 
+Worn-garment observation fields use canonical color, pattern, and fit values. `unknown` is a valid color and
+fit result when the frame does not support a reliable label. The server canonicalizes historical and current
+descriptors during comparison; clients must not treat a neighboring color bucket or an unknown value as an
+exact garment identity match.
+
 Ambient closet state exposes three independent semantics. `identityStatus` is `provisional` until a future
 explicit identity-confirmation workflow; `ownershipStatus` is `unverified` until explicit user confirmation;
 and `imageStatus` reports only catalog-image processing. A product-image pass updates `imageStatus`,

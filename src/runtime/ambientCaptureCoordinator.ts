@@ -18,6 +18,7 @@ import type { ClosetItem } from '../types.js';
 import { makeId } from '../utils/ids.js';
 import type { GarmentIdentityProvider } from '../services/garmentIdentityProvider.js';
 import { appearanceFingerprint, descriptorFromObservation } from '../services/garmentIdentityProvider.js';
+import { canonicalizePattern, colorSimilarity } from '../services/garmentVocabulary.js';
 import type { OutfitObservationProvider } from '../services/outfitObservationProvider.js';
 import type { JsonUserWardrobeRepository } from '../services/userWardrobeRepository.js';
 import type { GarmentImageAssetService } from '../services/garmentImageAssetService.js';
@@ -508,7 +509,7 @@ function updateGarmentTracks(
     const previous = previousTracks.find((track) =>
       track.slot === garment.slot &&
       track.category === garment.category &&
-      trackDescriptorSimilarity(track.descriptor, descriptor) >= 0.7
+      trackDescriptorSimilarity(track.descriptor, descriptor) >= TRACK_CONTINUITY_THRESHOLD
     );
     return {
       trackId: previous?.trackId ?? makeId('garment_track'),
@@ -523,18 +524,41 @@ function updateGarmentTracks(
   });
 }
 
-function trackDescriptorSimilarity(
+export const TRACK_CONTINUITY_THRESHOLD = 0.7;
+const NEIGHBOR_COLOR_WITHOUT_STRONG_EVIDENCE_CAP = TRACK_CONTINUITY_THRESHOLD - 0.01;
+
+export function trackDescriptorSimilarity(
   left: AmbientGarmentTrack['descriptor'],
   right: AmbientGarmentTrack['descriptor'],
 ): number {
   if (left.slot !== right.slot || left.category !== right.category) return 0;
   let score = 0.35;
-  if (left.dominantColor === right.dominantColor) score += 0.35;
-  if (left.pattern === right.pattern) score += 0.1;
-  if (left.fit === right.fit) score += 0.08;
-  if (tokenOverlap(left.silhouette, right.silhouette) >= 0.5) score += 0.07;
-  if (arrayOverlap(left.distinctiveFeatures, right.distinctiveFeatures) >= 0.5) score += 0.05;
-  return score;
+  const colorScore = colorSimilarity(left.dominantColor, right.dominantColor);
+  score += 0.35 * colorScore;
+  const pattern = canonicalizePattern(left.pattern);
+  const samePattern = pattern === canonicalizePattern(right.pattern);
+  if (samePattern) score += 0.1;
+  if (left.fit !== 'unknown' && right.fit !== 'unknown' && left.fit === right.fit) score += 0.08;
+  const silhouettesAreObservable = normalizeDescriptorToken(left.silhouette) !== 'unknown'
+    && normalizeDescriptorToken(right.silhouette) !== 'unknown';
+  const silhouetteOverlap = silhouettesAreObservable
+    ? tokenOverlap(left.silhouette, right.silhouette)
+    : 0;
+  const distinctiveOverlap = arrayOverlap(left.distinctiveFeatures, right.distinctiveFeatures);
+  if (silhouetteOverlap >= 0.5) score += 0.07;
+  if (distinctiveOverlap >= 0.5) score += 0.05;
+
+  const hasStrongEvidence = silhouetteOverlap >= 0.5 || distinctiveOverlap >= 0.5 || (
+    samePattern && pattern !== 'solid' && pattern !== 'other'
+  );
+  if (colorScore > 0 && colorScore < 1 && !hasStrongEvidence) {
+    return Math.min(score, NEIGHBOR_COLOR_WITHOUT_STRONG_EVIDENCE_CAP);
+  }
+  return Math.min(1, score);
+}
+
+function normalizeDescriptorToken(value: string): string {
+  return value.trim().toLowerCase();
 }
 
 function tokenOverlap(left: string, right: string): number {

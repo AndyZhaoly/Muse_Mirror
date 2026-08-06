@@ -171,8 +171,8 @@ function identityInput(overrides: Partial<GarmentIdentityInput> = {}): GarmentId
 
 function driftedTrousers(): WornGarmentObservation {
   return {
-    observationItemId: 'observed-dark-navy-pants', slot: 'bottom', category: 'bottom',
-    description: 'dark navy relaxed pants', dominantColor: 'dark navy', secondaryColors: [],
+    observationItemId: 'observed-faded-olive-pants', slot: 'bottom', category: 'bottom',
+    description: 'faded olive relaxed pants', dominantColor: 'faded olive', secondaryColors: [],
     pattern: 'twill', silhouette: 'straight-leg', fit: 'relaxed',
     distinctiveFeatures: ['soft drape', 'straight leg'],
     boundingBox: { x: 0.25, y: 0.48, width: 0.5, height: 0.48 },

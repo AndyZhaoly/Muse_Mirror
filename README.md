@@ -61,7 +61,10 @@ usable `provisional` records with `unverified` ownership while their image statu
 appearance crops are edited into clean catalog images and compared back to the source. Only verified images
 become closet-card primary images. Product-image verification changes image state only: it never confirms
 garment identity or ownership. Repeat recognition uses historical real appearances, tolerates metadata label
-drift, preserves provisional/unverified status, and does not generate another product image.
+drift, preserves provisional/unverified status, and does not generate another product image. Observation,
+tracking, and recall share a canonical appearance vocabulary for color, pattern, and fit. Free-form English
+and Chinese labels are normalized only at comparison time, while visually uncertain color and fit stay
+`unknown` and contribute no identity similarity.
 
 More detail is available in [ARCHITECTURE.md](ARCHITECTURE.md), [API_CONTRACT.md](API_CONTRACT.md), and [SKILL_TOOL_POLICY_MATRIX.md](SKILL_TOOL_POLICY_MATRIX.md).
 

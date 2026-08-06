@@ -99,8 +99,8 @@ test('real image pipeline survives reload, label drift, repeat recognition, and 
   await runtime1.acknowledge(owner);
   await runtime1.endEpisode(owner, 'round-1');
 
-  // Reload every stateful/runtime component. Round 2 labels intentionally drift
-  // enough to miss metadata recall while the pixels still depict the same garments.
+  // Reload every stateful/runtime component. Round 2 labels drift in wording;
+  // canonical buckets keep track continuity while real appearances still decide identity.
   const repository2 = new JsonUserWardrobeRepository(statePath);
   const reloaded1 = await repository2.getState(owner);
   assert.equal(reloaded1.assets.length, state1.assets.length);

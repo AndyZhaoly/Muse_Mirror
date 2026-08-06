@@ -9,6 +9,13 @@ import type {
 } from '../domain/ambientCapture.js';
 import type { ClosetItem } from '../types.js';
 import type { GarmentVisualVerifier } from './garmentVisualVerifier.js';
+import {
+  canonicalizeColor,
+  canonicalizeFit,
+  canonicalizeGarmentSlot,
+  canonicalizePattern,
+  colorSimilarity,
+} from './garmentVocabulary.js';
 
 export interface GarmentIdentityInput {
   userId: string;
@@ -229,13 +236,13 @@ export class DeterministicGarmentIdentityProvider implements GarmentIdentityProv
 
 export function descriptorFromObservation(garment: WornGarmentObservation): GarmentAppearanceDescriptor {
   return {
-    slot: garment.slot,
+    slot: canonicalizeGarmentSlot(garment.slot, garment.category),
     category: garment.category,
-    dominantColor: normalize(garment.dominantColor),
-    secondaryColors: garment.secondaryColors.map(normalize).sort(),
-    pattern: normalize(garment.pattern),
+    dominantColor: canonicalizeColor(garment.dominantColor),
+    secondaryColors: garment.secondaryColors.map(canonicalizeColor).filter((color) => color !== 'unknown').sort(),
+    pattern: canonicalizePattern(garment.pattern),
     silhouette: normalize(garment.silhouette),
-    fit: normalize(garment.fit),
+    fit: canonicalizeFit(garment.fit),
     distinctiveFeatures: garment.distinctiveFeatures.map(normalize).filter(Boolean).sort(),
   };
 }
@@ -313,15 +320,24 @@ function descriptorForItem(item: ClosetItem, appearances: GarmentAppearance[]): 
   const latest = appearances
     .filter((appearance) => appearance.closetItemId === item.id)
     .sort((a, b) => b.capturedAt.localeCompare(a.capturedAt))[0];
-  if (latest) return latest.descriptor;
+  if (latest) {
+    return {
+      ...latest.descriptor,
+      slot: canonicalizeGarmentSlot(latest.descriptor.slot, latest.descriptor.category),
+      dominantColor: canonicalizeColor(latest.descriptor.dominantColor),
+      secondaryColors: latest.descriptor.secondaryColors.map(canonicalizeColor).filter((color) => color !== 'unknown').sort(),
+      pattern: canonicalizePattern(latest.descriptor.pattern),
+      fit: canonicalizeFit(latest.descriptor.fit),
+    };
+  }
   return {
-    slot: item.category === 'jumpsuit' ? 'dress' : item.category,
+    slot: canonicalizeGarmentSlot(item.category, item.category),
     category: item.category,
-    dominantColor: normalize(item.color),
+    dominantColor: canonicalizeColor(item.color),
     secondaryColors: [],
-    pattern: normalize(item.styleTags.find((tag) => /stripe|check|print|solid|条纹|格纹|印花|纯色/i.test(tag)) ?? 'unknown'),
+    pattern: canonicalizePattern(item.styleTags.find((tag) => /stripe|check|print|solid|条纹|格纹|印花|纯色/i.test(tag)) ?? 'other'),
     silhouette: normalize(item.fit),
-    fit: normalize(item.fit),
+    fit: canonicalizeFit(item.fit),
     distinctiveFeatures: item.styleTags.map(normalize).filter(Boolean).sort(),
   };
 }
@@ -329,10 +345,10 @@ function descriptorForItem(item: ClosetItem, appearances: GarmentAppearance[]): 
 function scoreDescriptor(left: GarmentAppearanceDescriptor, right: GarmentAppearanceDescriptor): number {
   if (left.category !== right.category || left.slot !== right.slot) return 0;
   let score = 0.35;
-  if (left.dominantColor === right.dominantColor) score += 0.25;
+  score += 0.25 * colorSimilarity(left.dominantColor, right.dominantColor);
   if (left.pattern === right.pattern) score += 0.12;
   if (left.silhouette === right.silhouette) score += 0.1;
-  if (left.fit === right.fit) score += 0.08;
+  if (left.fit !== 'unknown' && right.fit !== 'unknown' && left.fit === right.fit) score += 0.08;
   const overlap = intersectionRatio(left.distinctiveFeatures, right.distinctiveFeatures);
   score += overlap * 0.1;
   return Math.min(1, score);

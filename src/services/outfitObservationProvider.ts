@@ -7,6 +7,15 @@ import type {
 } from '../domain/ambientCapture.js';
 import { extractJsonObject } from '../utils/json.js';
 import { makeId } from '../utils/ids.js';
+import {
+  CANONICAL_PATTERNS,
+  OBSERVABLE_COLORS,
+  OBSERVABLE_FITS,
+  canonicalizeColor,
+  canonicalizeFit,
+  canonicalizeGarmentSlot,
+  canonicalizePattern,
+} from './garmentVocabulary.js';
 
 export interface OutfitObservationInput {
   packet: AmbientCapturePacket;
@@ -58,11 +67,11 @@ const observationSchema = {
             enum: ['top', 'bottom', 'dress', 'jumpsuit', 'outerwear', 'shoes', 'bag', 'accessory'],
           },
           description: { type: 'string' },
-          dominantColor: { type: 'string' },
-          secondaryColors: { type: 'array', items: { type: 'string' }, maxItems: 4 },
-          pattern: { type: 'string' },
+          dominantColor: { type: 'string', enum: [...OBSERVABLE_COLORS] },
+          secondaryColors: { type: 'array', items: { type: 'string', enum: [...OBSERVABLE_COLORS] }, maxItems: 4 },
+          pattern: { type: 'string', enum: [...CANONICAL_PATTERNS] },
           silhouette: { type: 'string' },
-          fit: { type: 'string' },
+          fit: { type: 'string', enum: [...OBSERVABLE_FITS] },
           distinctiveFeatures: { type: 'array', items: { type: 'string' }, maxItems: 8 },
           boundingBox: {
             type: 'object',
@@ -173,6 +182,8 @@ Return only the structured observation requested by the schema.
 - Describe only garments visibly WORN by the single person. Ignore garments held in hands, furniture, bedding, and background clothing.
 - Emit separate items by slot. A visible open overshirt is outerwear; the shirt beneath it is top.
 - Use stable visual attributes useful for recognizing the same physical garment later: category, main color, pattern, silhouette, fit, and distinctive visible details.
+- Use only these color values: ${OBSERVABLE_COLORS.join(', ')}. Use unknown when color is not reliable; never invent a free-text shade.
+- pattern must be one of: ${CANONICAL_PATTERNS.join(', ')}. fit must be one of: ${OBSERVABLE_FITS.join(', ')}; use unknown when fit is not reliable.
 - Bounding boxes are normalized to the entire image (0..1).
 - quality=good only when garment color and shape are sufficiently clear.
 - coverage=three_quarter requires the upper body and most of the legs; full_body requires feet.
@@ -193,26 +204,29 @@ function normalizeObservation(
     personCount: integer(value?.personCount, 0, 5),
     coverage: enumValue(value?.coverage, ['none', 'head_shoulders', 'upper_body', 'three_quarter', 'full_body'], 'none'),
     quality: enumValue(value?.quality, ['unusable', 'limited', 'good'], 'unusable'),
-    garments: garments.map((item: any, index: number) => ({
-      observationItemId: `${makeId('observed_garment')}_${index}`,
-      slot: enumValue(item?.slot, ['top', 'bottom', 'dress', 'outerwear', 'shoes', 'bag', 'accessory'], 'accessory'),
-      category: enumValue(item?.category, ['top', 'bottom', 'dress', 'jumpsuit', 'outerwear', 'shoes', 'bag', 'accessory'], 'accessory'),
-      description: text(item?.description, 'visible garment'),
-      dominantColor: text(item?.dominantColor, 'unknown'),
-      secondaryColors: texts(item?.secondaryColors),
-      pattern: text(item?.pattern, 'solid'),
-      silhouette: text(item?.silhouette, 'unknown'),
-      fit: text(item?.fit, 'unknown'),
-      distinctiveFeatures: texts(item?.distinctiveFeatures),
-      boundingBox: {
-        x: unit(item?.boundingBox?.x),
-        y: unit(item?.boundingBox?.y),
-        width: unit(item?.boundingBox?.width),
-        height: unit(item?.boundingBox?.height),
-      },
-      confidence: unit(item?.confidence),
-      uncertainties: texts(item?.uncertainties),
-    })),
+    garments: garments.map((item: any, index: number) => {
+      const category = enumValue(item?.category, ['top', 'bottom', 'dress', 'jumpsuit', 'outerwear', 'shoes', 'bag', 'accessory'], 'accessory');
+      return {
+        observationItemId: `${makeId('observed_garment')}_${index}`,
+        slot: canonicalizeGarmentSlot(item?.slot, category),
+        category,
+        description: text(item?.description, 'visible garment'),
+        dominantColor: canonicalizeColor(text(item?.dominantColor, 'unknown')),
+        secondaryColors: texts(item?.secondaryColors).map(canonicalizeColor).filter((color) => color !== 'unknown'),
+        pattern: canonicalizePattern(text(item?.pattern, 'other')),
+        silhouette: text(item?.silhouette, 'unknown'),
+        fit: canonicalizeFit(text(item?.fit, 'unknown')),
+        distinctiveFeatures: texts(item?.distinctiveFeatures),
+        boundingBox: {
+          x: unit(item?.boundingBox?.x),
+          y: unit(item?.boundingBox?.y),
+          width: unit(item?.boundingBox?.width),
+          height: unit(item?.boundingBox?.height),
+        },
+        confidence: unit(item?.confidence),
+        uncertainties: texts(item?.uncertainties),
+      };
+    }),
     uncertainties: texts(value?.uncertainties),
   };
 }

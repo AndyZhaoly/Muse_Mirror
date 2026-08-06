@@ -190,6 +190,14 @@ base catalog image yields `ambiguous`; only a truly empty compatible closet, or 
 against every viable candidate, may yield `new_to_closet`. New-item confidence is capped and never hardcoded
 to `1`. Generated product images may assist display but are never the sole identity ground truth.
 
+Observation, garment-track continuity, and identity recall use the same canonical appearance vocabulary.
+The structured vision schema includes explicit `unknown` values for color and fit instead of forcing weak
+evidence into a named bucket. Legacy and current descriptors are normalized at comparison time; persisted
+records are not rewritten. Exact color buckets score `1`, neighboring buckets score `0.6`, and unknown or
+unrelated colors score `0`. A neighboring color alone cannot preserve a track without stronger silhouette,
+distinctive-detail, or non-generic pattern evidence. Jumpsuits consistently use the one-piece `dress` slot
+and are never normalized as accessories.
+
 `JsonUserWardrobeRepository` owns the signed-browser overlay. Stage A atomically writes an active, searchable
 `ClosetItem` whose identity is `provisional`, ownership is `unverified`, and image state is `processing`, plus
 appearance, capture, wear, evidence, and audit records with an idempotency key. These three state dimensions

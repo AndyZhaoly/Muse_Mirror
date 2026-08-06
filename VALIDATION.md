@@ -70,6 +70,10 @@ node --import tsx --test \
   tests/ambientCaptureUi.test.ts
 ```
 
+`tests/garmentVocabulary.test.ts` separately verifies English/Chinese appearance normalization, longest-phrase
+matching without substring errors, observable `unknown` values, graded color similarity, consistent jumpsuit
+slotting, and the rule that neighboring color evidence alone cannot preserve a garment track.
+
 For a real local smoke, configure a real vision provider, open the camera, accept the one-time automatic
 recording grant, set `FASHION_AGENT_PRODUCT_IMAGE_PROVIDER=openai`, and use a clearly distinct top and bottom
 under good lighting. Verify Round 1 produces two different real crops and two verified product images. Leave
