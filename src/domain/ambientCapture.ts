@@ -169,14 +169,89 @@ export interface GarmentIdentityHypothesis {
   confidence: number;
   candidateItemIds: string[];
   reasonCodes: string[];
+  decisionTrace?: GarmentIdentityDecisionTrace;
 }
 
-export interface GarmentVisualVerification {
-  result: 'same' | 'different' | 'uncertain';
-  matchedClosetItemId?: string;
+export type GarmentIdentityFeature =
+  | 'color'
+  | 'pattern'
+  | 'neckline'
+  | 'sleeve'
+  | 'closure'
+  | 'button'
+  | 'zipper'
+  | 'pocket'
+  | 'drawstring'
+  | 'logo'
+  | 'decoration'
+  | 'stitching'
+  | 'hem'
+  | 'waistband'
+  | 'texture'
+  | 'length'
+  | 'silhouette'
+  | 'fit';
+
+export interface GarmentFeatureComparison {
+  feature: GarmentIdentityFeature;
+  currentVisibility: 'visible' | 'partial' | 'not_visible';
+  referenceVisibility: 'visible' | 'partial' | 'not_visible';
+  relation: 'same' | 'different' | 'unknown';
+  discriminativeStrength: 'weak' | 'medium' | 'strong';
+  note: string;
+}
+
+export interface PairwiseGarmentVerification {
+  verdict: 'same' | 'different' | 'uncertain';
   confidence: number;
-  evidence: string[];
-  mismatches: string[];
+  featureComparisons: GarmentFeatureComparison[];
+  occlusions: string[];
+  jointlyVisibleEvidence: string[];
+  model: string;
+}
+
+export type IdentityCandidateTier = 'strong' | 'plausible' | 'fallback';
+export type IdentityCategoryCompatibility = 'exact' | 'compatible' | 'conflicting';
+
+export interface GarmentIdentityDecisionTrace {
+  traceId: string;
+  episodeId: string;
+  observationItemId: string;
+  currentAppearanceAssetId: string;
+  recall: {
+    strategy: string;
+    candidates: Array<{
+      closetItemId: string;
+      source: 'base' | 'user';
+      metadataScore: number;
+      continuityPrior: number;
+      effectivePrior: number;
+      tier: IdentityCandidateTier;
+      categoryCompatibility: IdentityCategoryCompatibility;
+      referenceAssetIds: string[];
+    }>;
+  };
+  pairwiseVerifications: Array<{
+    candidateClosetItemId: string;
+    rawResult: PairwiseGarmentVerification;
+    normalizedResult: PairwiseGarmentVerification;
+    serverDowngradeReasons: string[];
+    requiredDifferentConfidence: number;
+    autoCreateVeto: boolean;
+    model: string;
+    latencyMs: number;
+  }>;
+  thresholds: {
+    matchConfidence: number;
+    baseNewConfidence: number;
+    strongPriorVeto: number;
+  };
+  finalDecision: GarmentIdentityStatus;
+  matchedClosetItemId?: string;
+  reasonCodes: string[];
+  promptVersion: string;
+  schemaVersion: number;
+  createdAt: string;
 }
 
 export interface OutfitCapture {
@@ -314,6 +389,7 @@ export interface UserWardrobeState {
   episodes: AmbientOutfitEpisode[];
   committedIdempotencyKeys: string[];
   productImageJobs: ProductImageJob[];
+  identityDecisionTraces: GarmentIdentityDecisionTrace[];
   events: WardrobeEvent[];
   pendingCompletionEvent?: OutfitCaptureCompletedEvent;
   updatedAt: string;

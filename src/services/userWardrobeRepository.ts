@@ -7,6 +7,7 @@ import type {
   CommitOutfitCaptureCommand,
   GarmentAppearance,
   GarmentImageAsset,
+  GarmentIdentityDecisionTrace,
   OutfitCapture,
   OutfitCaptureCommitResult,
   UserWardrobeState,
@@ -27,6 +28,11 @@ interface WardrobeRepositoryFile {
 export interface WardrobeRepository {
   getState(userId: string): Promise<UserWardrobeState>;
   commitCapture(command: CommitOutfitCaptureCommand): Promise<OutfitCaptureCommitResult>;
+  appendIdentityDecisionTraces(
+    userId: string,
+    traces: GarmentIdentityDecisionTrace[],
+    limit?: number,
+  ): Promise<void>;
 }
 
 export class JsonUserWardrobeRepository implements WardrobeRepository {
@@ -37,6 +43,26 @@ export class JsonUserWardrobeRepository implements WardrobeRepository {
   async getState(userId: string): Promise<UserWardrobeState> {
     const file = await this.readFile();
     return structuredClone(file.users[userId] ?? emptyUserState(userId));
+  }
+
+  async appendIdentityDecisionTraces(
+    userId: string,
+    traces: GarmentIdentityDecisionTrace[],
+    limit = 200,
+  ): Promise<void> {
+    if (!traces.length) return;
+    await this.exclusive(async () => {
+      const file = await this.readFile();
+      const state = ensureUser(file, userId);
+      const sanitized = traces.map(sanitizeIdentityTrace);
+      state.identityDecisionTraces = [
+        ...state.identityDecisionTraces.filter((existing) =>
+          !sanitized.some((trace) => trace.traceId === existing.traceId)),
+        ...sanitized,
+      ].slice(-Math.max(1, Math.round(limit)));
+      bump(state, sanitized.at(-1)?.createdAt ?? new Date().toISOString());
+      await this.writeFile(file);
+    });
   }
 
   async setGrant(userId: string, enabled: boolean, occurredAt = new Date().toISOString()): Promise<AmbientCaptureGrant | undefined> {
@@ -408,6 +434,7 @@ function emptyUserState(userId: string): UserWardrobeState {
     episodes: [],
     committedIdempotencyKeys: [],
     productImageJobs: [],
+    identityDecisionTraces: [],
     events: [],
     updatedAt: new Date(0).toISOString(),
   };
@@ -423,6 +450,7 @@ function normalizeUserState(state: UserWardrobeState): void {
   state.wearEvents ??= [];
   state.episodes ??= [];
   state.committedIdempotencyKeys ??= [];
+  state.identityDecisionTraces ??= [];
   for (const entry of state.closetItems) {
     const legacyStatus = entry.status as string;
     if (legacyStatus === 'provisional' || legacyStatus === 'confirmed') entry.status = 'active';
@@ -431,6 +459,25 @@ function normalizeUserState(state: UserWardrobeState): void {
       entry.item.ownershipStatus ??= 'unverified';
     }
   }
+}
+
+function sanitizeIdentityTrace(trace: GarmentIdentityDecisionTrace): GarmentIdentityDecisionTrace {
+  const cloned = structuredClone(trace);
+  const serialized = JSON.stringify(cloned);
+  if (/data:image\/|;base64,/i.test(serialized)) {
+    throw new Error('Identity traces must not contain image payloads.');
+  }
+  if (containsAbsolutePath(cloned)) {
+    throw new Error('Identity traces must not contain absolute paths.');
+  }
+  return cloned;
+}
+
+function containsAbsolutePath(value: unknown): boolean {
+  if (typeof value === 'string') return /^(?:\/|[A-Za-z]:\\)/.test(value);
+  if (Array.isArray(value)) return value.some(containsAbsolutePath);
+  if (value && typeof value === 'object') return Object.values(value).some(containsAbsolutePath);
+  return false;
 }
 
 function ensureUser(file: WardrobeRepositoryFile, userId: string): UserWardrobeState {

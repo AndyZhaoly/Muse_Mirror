@@ -101,9 +101,15 @@ const ambientCaptureCoordinator = new AmbientCaptureCoordinator({
   identityProvider: new VisualGarmentIdentityProvider({
     verifier: garmentVisualVerifier,
     topK: config.identityTopK,
-    matchConfidence: config.identityMatchConfidence,
-    newConfidence: config.identityNewConfidence,
+    matchConfidence: config.identityPairMatchConfidence,
+    baseNewConfidence: config.identityBaseNewConfidence,
+    strongPriorVeto: config.identityStrongPriorVeto,
     newConfidenceCeiling: config.identityNewConfidenceCeiling,
+    strongContinuityWindowMs: config.identityStrongContinuityWindowMs,
+    weakContinuityWindowMs: config.identityWeakContinuityWindowMs,
+    strongContinuityWeight: config.identityStrongContinuityWeight,
+    weakContinuityWeight: config.identityWeakContinuityWeight,
+    trace: config.trace,
   }),
   repository: wardrobeRepository,
   baseClosetItems: () => sharedServices.closet.allItems(),
@@ -111,6 +117,7 @@ const ambientCaptureCoordinator = new AmbientCaptureCoordinator({
   productImageProvider,
   productImageVerifier,
   productImageVerifyConfidence: config.productImageVerifyConfidence,
+  identityTraceLimit: config.identityTraceLimit,
   baseCatalogAssets: () => buildBaseCatalogAssets(sharedServices.closet.allItems(), {
     publicDir,
     demo2ProductImageDir: config.demo2ProductImageDir,
@@ -878,6 +885,16 @@ async function handleAmbientCapture(
     return;
   }
 
+  if (req.method === 'GET' && url.pathname === '/api/dev/outfit-capture/identity-traces') {
+    const requestedLimit = Number(url.searchParams.get('limit') ?? 50);
+    const limit = Math.min(200, Math.max(1, Number.isFinite(requestedLimit) ? Math.round(requestedLimit) : 50));
+    const state = await wardrobeRepository.getState(userId);
+    jsonResponse(res, 200, {
+      traces: state.identityDecisionTraces.slice(-limit).reverse(),
+    });
+    return;
+  }
+
   if (req.method === 'POST' && url.pathname === '/api/ambient-capture/grant') {
     const body = await readJson(req) as { userId?: string; enabled?: boolean };
     if (typeof body.enabled !== 'boolean') {
@@ -1211,7 +1228,9 @@ async function route(req: http.IncomingMessage, res: http.ServerResponse): Promi
       await handleAmbientCapture(req, url, res);
       return;
     }
-    if (url.pathname === '/api/fashion/outfit-capture/acknowledge' || url.pathname === '/api/dev/outfit-capture/retry-product-image') {
+    if (url.pathname === '/api/fashion/outfit-capture/acknowledge' ||
+        url.pathname === '/api/dev/outfit-capture/retry-product-image' ||
+        url.pathname === '/api/dev/outfit-capture/identity-traces') {
       await handleAmbientCapture(req, url, res);
       return;
     }

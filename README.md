@@ -66,6 +66,12 @@ tracking, and recall share a canonical appearance vocabulary for color, pattern,
 and Chinese labels are normalized only at comparison time, while visually uncertain color and fit stay
 `unknown` and contribute no identity similarity.
 
+Identity resolution keeps recall broad but verifies one ClosetItem at a time. Only jointly visible
+construction evidence can establish a safe match or difference; occlusion, crop, length, fit, and silhouette
+drift cannot silently create a duplicate. Recent wear raises a candidate's prior without proving identity,
+and a strong prior vetoes automatic creation. Ambiguous evidence writes no ClosetItem. The latest 200
+sanitized decision traces remain available to the signed browser identity for diagnostics.
+
 After two similar frames are independently confirmed by the server as `NO_PERSON_PRESENT`, the browser keeps
 a low-resolution empty-scene reference and suppresses ordinary high-resolution ambient uploads. A changed
 scene clears suppression and starts a fresh three-sample stability window; a configurable forced probe still
@@ -187,9 +193,15 @@ OPENAI_PRODUCT_IMAGE_QUALITY=medium
 OPENAI_PRODUCT_IMAGE_SIZE=1024x1024
 FASHION_AGENT_PRODUCT_IMAGE_VERIFY_CONFIDENCE=0.84
 FASHION_AGENT_IDENTITY_TOP_K=4
-FASHION_AGENT_IDENTITY_MATCH_CONFIDENCE=0.82
-FASHION_AGENT_IDENTITY_NEW_CONFIDENCE=0.78
+FASHION_AGENT_IDENTITY_PAIR_MATCH_CONFIDENCE=0.88
+FASHION_AGENT_IDENTITY_BASE_NEW_CONFIDENCE=0.78
+FASHION_AGENT_IDENTITY_STRONG_PRIOR_VETO=0.85
 FASHION_AGENT_IDENTITY_NEW_CONFIDENCE_CEILING=0.9
+FASHION_AGENT_IDENTITY_TRACE_LIMIT=200
+FASHION_AGENT_IDENTITY_STRONG_CONTINUITY_WINDOW_MS=3600000
+FASHION_AGENT_IDENTITY_WEAK_CONTINUITY_WINDOW_MS=43200000
+FASHION_AGENT_IDENTITY_STRONG_CONTINUITY_WEIGHT=0.08
+FASHION_AGENT_IDENTITY_WEAK_CONTINUITY_WEIGHT=0.02
 
 FASHION_AGENT_ASR_PROVIDER=disabled
 FASHION_AGENT_TTS_PROVIDER=disabled

@@ -211,9 +211,9 @@ test('visual identity uses metadata only for recall and can match a base catalog
   let candidateIds: string[] = [];
   const verifier: GarmentVisualVerifier = {
     ready: true,
-    async verify(input) {
-      candidateIds = input.candidates.map((candidate) => candidate.closetItem.id);
-      return { result: 'same', matchedClosetItemId: baseItem.id, confidence: 0.96, evidence: ['visual match'], mismatches: [] };
+    async verifyPair(input) {
+      candidateIds.push(input.candidate.closetItem.id);
+      return pairwise('same', 0.96);
     },
   };
   const provider = new VisualGarmentIdentityProvider({ verifier });
@@ -230,7 +230,7 @@ test('visual identity uses metadata only for recall and can match a base catalog
   assert.equal(result.matchedClosetItemId, baseItem.id);
 });
 
-test('visual verifier rejects a model-selected ID outside the recalled allowlist', async () => {
+test('visual verifier converts invalid legacy-shaped output to uncertain', async () => {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'muse-ambient-allowlist-'));
   const service = new GarmentImageAssetService({ rootDirectory: path.join(directory, 'out') });
   const frame = await writeFrame(path.join(directory, 'frame.jpg'), '#17233b', '#c5a66b');
@@ -247,18 +247,18 @@ test('visual verifier rejects a model-selected ID outside the recalled allowlist
       }),
     }),
   });
-  const result = await verifier.verify({
+  const result = await verifier.verifyPair({
     currentAppearance: current,
-    candidates: [{
+    candidate: {
       closetItem: {
         id: 'allowed-item', name: 'Allowed', category: 'top', color: 'navy', fit: 'regular',
         styleTags: [], formality: 'casual', imageUrl: '/allowed.jpg', marketedFor: 'unisex',
       },
-      appearanceAssets: [current],
-    }],
+      referenceAppearances: [current],
+    },
   });
-  assert.equal(result.result, 'uncertain');
-  assert.deepEqual(result.mismatches, ['VISUAL_VERIFIER_RETURNED_NON_ALLOWLIST_ID']);
+  assert.equal(result.verdict, 'uncertain');
+  assert.deepEqual(result.occlusions, ['VISUAL_VERIFIER_INVALID_OUTPUT']);
 });
 
 test('OpenAI catalog provider uses source-image edit and never puts user identity in the prompt', async () => {
@@ -453,23 +453,35 @@ function coordinator(input: {
 
 class PixelGarmentVerifier implements GarmentVisualVerifier {
   readonly ready = true;
-  async verify(input: Parameters<GarmentVisualVerifier['verify']>[0]) {
+  async verifyPair(input: Parameters<GarmentVisualVerifier['verifyPair']>[0]) {
     const current = await averageRgb(input.currentAppearance);
-    let best: { id: string; distance: number } | undefined;
-    for (const candidate of input.candidates) {
-      const references = candidate.appearanceAssets.length
-        ? candidate.appearanceAssets
-        : candidate.fallbackCatalogImage ? [candidate.fallbackCatalogImage] : [];
-      for (const reference of references) {
-        const distance = colorDistance(current, await averageRgb(reference));
-        if (!best || distance < best.distance) best = { id: candidate.closetItem.id, distance };
-      }
+    const references = input.candidate.referenceAppearances.length
+      ? input.candidate.referenceAppearances
+      : input.candidate.catalogFallbackImage ? [input.candidate.catalogFallbackImage] : [];
+    let bestDistance = Number.POSITIVE_INFINITY;
+    for (const reference of references) {
+      bestDistance = Math.min(bestDistance, colorDistance(current, await averageRgb(reference)));
     }
-    if (best && best.distance < 20) {
-      return { result: 'same' as const, matchedClosetItemId: best.id, confidence: 0.97, evidence: ['pixel fixture match'], mismatches: [] };
-    }
-    return { result: 'different' as const, confidence: 0.96, evidence: [], mismatches: ['pixel fixture differs'] };
+    return bestDistance < 20 ? pairwise('same', 0.97) : pairwise('different', 0.96);
   }
+}
+
+function pairwise(verdict: 'same' | 'different', confidence: number) {
+  return {
+    verdict,
+    confidence,
+    featureComparisons: [{
+      feature: 'pocket' as const,
+      currentVisibility: 'visible' as const,
+      referenceVisibility: 'visible' as const,
+      relation: verdict,
+      discriminativeStrength: 'strong' as const,
+      note: 'pixel fixture',
+    }],
+    occlusions: [],
+    jointlyVisibleEvidence: ['pixel fixture'],
+    model: 'pixel-fixture',
+  };
 }
 
 class EditingFakeProductProvider implements ProductImageProvider {

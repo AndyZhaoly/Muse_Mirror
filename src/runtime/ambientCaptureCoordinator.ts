@@ -39,6 +39,7 @@ export class AmbientCaptureCoordinator {
       productImageProvider: ProductImageProvider;
       productImageVerifier: ProductImageVerifier;
       productImageVerifyConfidence?: number;
+      identityTraceLimit?: number;
       baseCatalogAssets?: () => Promise<Map<string, GarmentImageAsset>>;
     },
   ) {}
@@ -198,14 +199,23 @@ export class AmbientCaptureCoordinator {
     const baseCatalogAssets = await this.options.baseCatalogAssets?.() ?? new Map<string, GarmentImageAsset>();
     const identities = await Promise.all(observation.garments.map((garment, index) => this.options.identityProvider.resolve({
       userId: packet.userId,
+      episodeId: episode.episodeId,
+      capturedAt: packet.capturedAt,
       garment,
       currentAppearance: appearanceAssets[index]!,
       baseClosetItems: this.options.baseClosetItems(),
       userClosetItems: freshState.closetItems,
       appearances: freshState.appearances,
       assets: freshState.assets,
+      captures: freshState.captures,
+      wearEvents: freshState.wearEvents,
       baseCatalogAssets,
     })));
+    await this.options.repository.appendIdentityDecisionTraces(
+      packet.userId,
+      identities.flatMap((identity) => identity.decisionTrace ? [identity.decisionTrace] : []),
+      this.options.identityTraceLimit ?? 200,
+    );
     const unresolved = identities.filter((identity) => identity.status === 'ambiguous' || identity.status === 'insufficient_evidence');
     if (unresolved.length) {
       await this.options.assetService.deleteAssets([evidenceAsset, ...appearanceAssets]);

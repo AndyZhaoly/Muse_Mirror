@@ -75,9 +75,15 @@ export interface AppConfig {
   openaiProductImageSize: string;
   productImageVerifyConfidence: number;
   identityTopK: number;
-  identityMatchConfidence: number;
-  identityNewConfidence: number;
+  identityPairMatchConfidence: number;
+  identityBaseNewConfidence: number;
+  identityStrongPriorVeto: number;
   identityNewConfidenceCeiling: number;
+  identityTraceLimit: number;
+  identityStrongContinuityWindowMs: number;
+  identityWeakContinuityWindowMs: number;
+  identityStrongContinuityWeight: number;
+  identityWeakContinuityWeight: number;
   skillsDir: string;
   trace: boolean;
   visualQcEnabled: boolean;
@@ -377,12 +383,18 @@ export function loadConfig(): AppConfig {
     openaiProductImageSize: process.env.OPENAI_PRODUCT_IMAGE_SIZE ?? '1024x1024',
     productImageVerifyConfidence: numberEnv('FASHION_AGENT_PRODUCT_IMAGE_VERIFY_CONFIDENCE', 0.84),
     identityTopK: Math.max(1, Math.round(numberEnv('FASHION_AGENT_IDENTITY_TOP_K', 4))),
-    identityMatchConfidence: numberEnv('FASHION_AGENT_IDENTITY_MATCH_CONFIDENCE', 0.82),
-    identityNewConfidence: numberEnv('FASHION_AGENT_IDENTITY_NEW_CONFIDENCE', 0.78),
+    identityPairMatchConfidence: numberEnv('FASHION_AGENT_IDENTITY_PAIR_MATCH_CONFIDENCE', 0.88),
+    identityBaseNewConfidence: numberEnv('FASHION_AGENT_IDENTITY_BASE_NEW_CONFIDENCE', 0.78),
+    identityStrongPriorVeto: numberEnv('FASHION_AGENT_IDENTITY_STRONG_PRIOR_VETO', 0.85),
     identityNewConfidenceCeiling: Math.min(
       0.99,
       Math.max(0, numberEnv('FASHION_AGENT_IDENTITY_NEW_CONFIDENCE_CEILING', 0.9)),
     ),
+    identityTraceLimit: Math.max(1, Math.round(numberEnv('FASHION_AGENT_IDENTITY_TRACE_LIMIT', 200))),
+    identityStrongContinuityWindowMs: numberEnv('FASHION_AGENT_IDENTITY_STRONG_CONTINUITY_WINDOW_MS', 60 * 60 * 1000),
+    identityWeakContinuityWindowMs: numberEnv('FASHION_AGENT_IDENTITY_WEAK_CONTINUITY_WINDOW_MS', 12 * 60 * 60 * 1000),
+    identityStrongContinuityWeight: numberEnv('FASHION_AGENT_IDENTITY_STRONG_CONTINUITY_WEIGHT', 0.08),
+    identityWeakContinuityWeight: numberEnv('FASHION_AGENT_IDENTITY_WEAK_CONTINUITY_WEIGHT', 0.02),
     skillsDir: path.resolve(process.env.FASHION_AGENT_SKILLS_DIR ?? './skills'),
     trace: boolEnv('FASHION_AGENT_TRACE', false),
     visualQcEnabled: boolEnv('FASHION_AGENT_VISUAL_QC', true),

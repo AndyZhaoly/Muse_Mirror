@@ -184,28 +184,35 @@ function pipeline(input: {
 class PixelVerifier implements GarmentVisualVerifier {
   readonly ready = true;
   constructor(private readonly calls: Array<{ currentFrameId?: string; references: Array<{ role: GarmentImageAsset['role']; sourceFrameId?: string }> }>) {}
-  async verify(input: Parameters<GarmentVisualVerifier['verify']>[0]) {
-    const references = input.candidates.flatMap((candidate) =>
-      candidate.appearanceAssets.length ? candidate.appearanceAssets : candidate.fallbackCatalogImage ? [candidate.fallbackCatalogImage] : []
-    );
+  async verifyPair(input: Parameters<GarmentVisualVerifier['verifyPair']>[0]) {
+    const references = input.candidate.referenceAppearances.length
+      ? input.candidate.referenceAppearances
+      : input.candidate.catalogFallbackImage ? [input.candidate.catalogFallbackImage] : [];
     this.calls.push({
       currentFrameId: input.currentAppearance.sourceFrameId,
       references: references.map((reference) => ({ role: reference.role, sourceFrameId: reference.sourceFrameId })),
     });
     const current = await average(input.currentAppearance);
-    let best: { id: string; distance: number } | undefined;
-    for (const candidate of input.candidates) {
-      const candidateReferences = candidate.appearanceAssets.length
-        ? candidate.appearanceAssets
-        : candidate.fallbackCatalogImage ? [candidate.fallbackCatalogImage] : [];
-      for (const reference of candidateReferences) {
-        const distance = colorDistance(current, await average(reference));
-        if (!best || distance < best.distance) best = { id: candidate.closetItem.id, distance };
-      }
+    let bestDistance = Number.POSITIVE_INFINITY;
+    for (const reference of references) {
+      bestDistance = Math.min(bestDistance, colorDistance(current, await average(reference)));
     }
-    return best && best.distance < 35
-      ? { result: 'same' as const, matchedClosetItemId: best.id, confidence: 0.97, evidence: ['real crop pixel match'], mismatches: [] }
-      : { result: 'different' as const, confidence: 0.95, evidence: [], mismatches: ['real crop pixels differ'] };
+    const verdict = bestDistance < 35 ? 'same' as const : 'different' as const;
+    return {
+      verdict,
+      confidence: verdict === 'same' ? 0.97 : 0.95,
+      featureComparisons: [{
+        feature: 'texture' as const,
+        currentVisibility: 'visible' as const,
+        referenceVisibility: 'visible' as const,
+        relation: verdict,
+        discriminativeStrength: 'strong' as const,
+        note: 'pixel fixture',
+      }],
+      occlusions: [],
+      jointlyVisibleEvidence: ['pixel fixture'],
+      model: 'pixel-fixture',
+    };
   }
 }
 

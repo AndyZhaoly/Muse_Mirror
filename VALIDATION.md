@@ -66,6 +66,7 @@ node --import tsx --test \
   tests/ambientCapture.test.ts \
   tests/ambientCaptureImagePipeline.test.ts \
   tests/garmentIdentityProvider.test.ts \
+  tests/identityDecisionTrace.test.ts \
   tests/ambientFrameStability.test.ts \
   tests/ambientCaptureUi.test.ts
 ```

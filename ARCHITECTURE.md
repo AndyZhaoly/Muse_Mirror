@@ -189,14 +189,28 @@ The image model has three non-interchangeable roles: `capture_evidence` is the s
 the product verifier can become `ClosetItem.imageUrl`. Full-person evidence and raw crops never become a
 closet card.
 
-`OutfitObservationProvider` reports visual facts only. Identity first recalls a small Top-K set from slot,
-category, color, and pattern. A metadata miss is recall failure, not new-item proof: compatible same-slot or
-category-family records with historical real appearances enter a visual fallback Top-K. The verifier then
-compares the current real crop with those appearances in one strict allowlisted call. Base catalog images are
-a fallback for fixture items. A potentially compatible item with neither a real appearance nor a readable
-base catalog image yields `ambiguous`; only a truly empty compatible closet, or a confident visual `different`
-against every viable candidate, may yield `new_to_closet`. New-item confidence is capped and never hardcoded
-to `1`. Generated product images may assist display but are never the sole identity ground truth.
+`OutfitObservationProvider` reports visual facts only. Identity uses wide metadata recall, then assigns each
+candidate a `strong`, `plausible`, or `fallback` tier. Every visual request compares the current real crop with
+exactly one ClosetItem and at most two of that item's recent real appearances. Different ClosetItems are never
+sent in the same verifier request, so unrelated fallback candidates cannot change a strong candidate's verdict.
+Base fixture items may use their verified catalog image only when no real appearance exists; generated product
+images are never the sole identity ground truth for a user item.
+
+The pairwise verifier returns structured feature visibility and relations. Server normalization treats covered
+or cropped details as `unknown`, caps length/fit/silhouette evidence at weak, and requires jointly visible
+medium/strong construction evidence for a safe match or difference. An AI confidence value is a routing signal,
+not a calibrated probability. The default match threshold is `0.88`; the required different threshold rises
+from `0.78` with the candidate's effective prior. A candidate seen in the immediately previous same-slot capture
+within 60 minutes receives a `0.08` continuity prior; a 12-hour WearEvent receives `0.02`. These priors affect
+ranking and auto-create safety only, never establish a match. An effective prior of at least `0.85` prevents
+silent auto-creation and yields `ambiguous`. `uncertain` never creates an item, and fallback candidates cannot
+decide whether a garment is new.
+
+Each resolution persists a bounded, sanitized `GarmentIdentityDecisionTrace` containing recall scores, tiers,
+reference asset IDs, raw and normalized pairwise evidence, downgrade reasons, thresholds, latency, and final
+reason codes. The repository retains the latest 200 traces per browser user without image payloads, prompts,
+absolute paths, or user IDs. `FASHION_AGENT_TRACE=true` emits the same redacted decision summary to server logs.
+The signed-browser diagnostics route exposes only the current user's traces.
 
 Observation, garment-track continuity, and identity recall use the same canonical appearance vocabulary.
 The structured vision schema includes explicit `unknown` values for color and fit instead of forcing weak

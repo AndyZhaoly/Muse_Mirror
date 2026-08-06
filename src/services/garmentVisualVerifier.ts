@@ -1,25 +1,31 @@
 import fs from 'node:fs/promises';
 import OpenAI from 'openai';
 import type {
+  GarmentIdentityFeature,
   GarmentImageAsset,
-  GarmentVisualVerification,
+  PairwiseGarmentVerification,
   ProductImageVerification,
 } from '../domain/ambientCapture.js';
 import type { ClosetItem } from '../types.js';
 
-export interface GarmentVisualVerifierInput {
+export const GARMENT_PAIRWISE_PROMPT_VERSION = 'garment-pairwise-v1';
+
+export interface GarmentPairwiseVerificationInput {
   currentAppearance: GarmentImageAsset;
-  candidates: Array<{
+  candidate: {
     closetItem: ClosetItem;
-    appearanceAssets: GarmentImageAsset[];
-    fallbackCatalogImage?: GarmentImageAsset;
-  }>;
+    referenceAppearances: GarmentImageAsset[];
+    catalogFallbackImage?: GarmentImageAsset;
+  };
 }
 
-export interface GarmentVisualVerifier {
+export interface GarmentPairwiseVerifier {
   readonly ready: boolean;
-  verify(input: GarmentVisualVerifierInput): Promise<GarmentVisualVerification>;
+  verifyPair(input: GarmentPairwiseVerificationInput): Promise<PairwiseGarmentVerification>;
 }
+
+/** @deprecated Pairwise verification is the only supported identity contract. */
+export type GarmentVisualVerifier = GarmentPairwiseVerifier;
 
 export interface ProductImageVerifier {
   readonly ready: boolean;
@@ -30,7 +36,7 @@ export interface ProductImageVerifier {
   }): Promise<ProductImageVerification>;
 }
 
-export class OpenAIGarmentVisualVerifier implements GarmentVisualVerifier {
+export class OpenAIGarmentVisualVerifier implements GarmentPairwiseVerifier {
   readonly ready: boolean;
 
   constructor(
@@ -43,76 +49,81 @@ export class OpenAIGarmentVisualVerifier implements GarmentVisualVerifier {
     this.ready = Boolean(options.responseCreate || options.apiKey);
   }
 
-  async verify(input: GarmentVisualVerifierInput): Promise<GarmentVisualVerification> {
-    if (!this.ready) return uncertainGarmentVerification('VISUAL_VERIFIER_UNAVAILABLE');
-    if (!input.candidates.length) {
-      return { result: 'different', confidence: 0.9, evidence: ['No recalled candidate exists.'], mismatches: [] };
-    }
-    const allowedIds = input.candidates.map((candidate) => candidate.closetItem.id);
+  async verifyPair(input: GarmentPairwiseVerificationInput): Promise<PairwiseGarmentVerification> {
+    if (!this.ready) return uncertainGarmentVerification('VISUAL_VERIFIER_UNAVAILABLE', this.options.model);
+    const references = input.candidate.referenceAppearances.length
+      ? input.candidate.referenceAppearances.slice(-2)
+      : input.candidate.catalogFallbackImage ? [input.candidate.catalogFallbackImage] : [];
+    if (!references.length) return uncertainGarmentVerification('VISUAL_REFERENCE_UNAVAILABLE', this.options.model);
     const content: Array<Record<string, unknown>> = [
       {
         type: 'input_text',
         text: [
-          'Compare the current garment crop against only the supplied candidate garments.',
-          'Ignore the wearer, face, body, pose, lighting, and background.',
-          'Use garment identity details: neckline, sleeves, closures, pockets, pattern placement, stitching, cuffs, length, texture, and silhouette proportions.',
-          `Allowed candidate IDs: ${allowedIds.join(', ')}`,
-          'Return same only when one candidate is visibly the same physical garment. Return different when every candidate is clearly different. Otherwise return uncertain.',
+          `Pairwise garment identity verification. Prompt version: ${GARMENT_PAIRWISE_PROMPT_VERSION}.`,
+          'Compare the current garment crop with exactly one candidate ClosetItem.',
+          `Candidate ID: ${input.candidate.closetItem.id}`,
+          'Use only regions and features that are jointly visible in the current and reference images.',
+          'A feature visible in one image but occluded, covered, or cropped out in the other is unknown, never different.',
+          'For example, when a shirt covers a trouser waistband or drawstring, absence of that detail is not identity evidence.',
+          'Length, fit, looseness, and silhouette are affected by crop, distance, wearer pose, and body position. They may be weak supporting evidence but can never alone decide different.',
+          'Lighting and white balance can change apparent color. Slight color drift is not decisive.',
+          'Prefer jointly visible construction details: pocket structure, drawstring design and placement, fly, buttons, zippers, pattern/logo placement, distinctive stitching, hem construction, waistband construction, and fabric texture.',
+          'Ignore the wearer, face, body shape, pose, and background.',
+          'Return uncertain whenever jointly visible discriminative evidence is insufficient.',
+          'Use high confidence only when the structured evidence supports it.',
         ].join('\n'),
       },
       { type: 'input_text', text: 'CURRENT GARMENT' },
       { type: 'input_image', image_url: await assetDataUrl(input.currentAppearance) },
+      { type: 'input_text', text: `REFERENCE GARMENT: ${input.candidate.closetItem.id}` },
     ];
-    for (const candidate of input.candidates) {
-      content.push({ type: 'input_text', text: `CANDIDATE ${candidate.closetItem.id}` });
-      const references = candidate.appearanceAssets.length
-        ? candidate.appearanceAssets.slice(-2)
-        : candidate.fallbackCatalogImage ? [candidate.fallbackCatalogImage] : [];
-      for (const reference of references) {
-        content.push({ type: 'input_image', image_url: await assetDataUrl(reference) });
-      }
+    for (const reference of references) {
+      content.push({ type: 'input_image', image_url: await assetDataUrl(reference) });
     }
-    const response = await this.create({
-      model: this.options.model,
-      store: false,
-      input: [{ role: 'user', content }],
-      text: {
-        format: {
-          type: 'json_schema',
-          name: 'garment_visual_verification',
-          strict: true,
-          schema: {
-            type: 'object',
-            additionalProperties: false,
-            properties: {
-              result: { type: 'string', enum: ['same', 'different', 'uncertain'] },
-              matchedClosetItemId: { type: ['string', 'null'] },
-              confidence: { type: 'number', minimum: 0, maximum: 1 },
-              evidence: { type: 'array', items: { type: 'string' } },
-              mismatches: { type: 'array', items: { type: 'string' } },
+    try {
+      const response = await this.create({
+        model: this.options.model,
+        store: false,
+        input: [{ role: 'user', content }],
+        text: {
+          format: {
+            type: 'json_schema',
+            name: 'pairwise_garment_verification',
+            strict: true,
+            schema: {
+              type: 'object',
+              additionalProperties: false,
+              properties: {
+                verdict: { type: 'string', enum: ['same', 'different', 'uncertain'] },
+                confidence: { type: 'number', minimum: 0, maximum: 1 },
+                featureComparisons: {
+                  type: 'array',
+                  items: {
+                    type: 'object',
+                    additionalProperties: false,
+                    properties: {
+                      feature: { type: 'string', enum: GARMENT_IDENTITY_FEATURES },
+                      currentVisibility: { type: 'string', enum: ['visible', 'partial', 'not_visible'] },
+                      referenceVisibility: { type: 'string', enum: ['visible', 'partial', 'not_visible'] },
+                      relation: { type: 'string', enum: ['same', 'different', 'unknown'] },
+                      discriminativeStrength: { type: 'string', enum: ['weak', 'medium', 'strong'] },
+                      note: { type: 'string' },
+                    },
+                    required: ['feature', 'currentVisibility', 'referenceVisibility', 'relation', 'discriminativeStrength', 'note'],
+                  },
+                },
+                occlusions: { type: 'array', items: { type: 'string' } },
+                jointlyVisibleEvidence: { type: 'array', items: { type: 'string' } },
+              },
+              required: ['verdict', 'confidence', 'featureComparisons', 'occlusions', 'jointlyVisibleEvidence'],
             },
-            required: ['result', 'matchedClosetItemId', 'confidence', 'evidence', 'mismatches'],
           },
         },
-      },
-    });
-    const parsed = parseOutputJson(response) as GarmentVisualVerification & { matchedClosetItemId?: string | null };
-    if (!['same', 'different', 'uncertain'].includes(parsed.result) || !Number.isFinite(parsed.confidence)) {
-      return uncertainGarmentVerification('VISUAL_VERIFIER_INVALID_OUTPUT');
+      });
+      return parsePairwiseVerification(parseOutputJson(response), this.options.model);
+    } catch {
+      return uncertainGarmentVerification('VISUAL_VERIFIER_INVALID_OUTPUT', this.options.model);
     }
-    if (parsed.matchedClosetItemId && !allowedIds.includes(parsed.matchedClosetItemId)) {
-      return uncertainGarmentVerification('VISUAL_VERIFIER_RETURNED_NON_ALLOWLIST_ID');
-    }
-    if (parsed.result === 'same' && !parsed.matchedClosetItemId) {
-      return uncertainGarmentVerification('VISUAL_VERIFIER_MATCH_WITHOUT_ID');
-    }
-    return {
-      result: parsed.result,
-      matchedClosetItemId: parsed.matchedClosetItemId ?? undefined,
-      confidence: clamp(parsed.confidence),
-      evidence: safeStrings(parsed.evidence),
-      mismatches: safeStrings(parsed.mismatches),
-    };
   }
 
   private async create(request: unknown): Promise<unknown> {
@@ -208,10 +219,10 @@ export class OpenAIProductImageVerifier implements ProductImageVerifier {
   }
 }
 
-export class DisabledGarmentVisualVerifier implements GarmentVisualVerifier {
+export class DisabledGarmentVisualVerifier implements GarmentPairwiseVerifier {
   readonly ready = false;
-  async verify(): Promise<GarmentVisualVerification> {
-    return uncertainGarmentVerification('VISUAL_VERIFIER_DISABLED');
+  async verifyPair(): Promise<PairwiseGarmentVerification> {
+    return uncertainGarmentVerification('VISUAL_VERIFIER_DISABLED', 'disabled');
   }
 }
 
@@ -223,7 +234,8 @@ export class DisabledProductImageVerifier implements ProductImageVerifier {
 }
 
 async function assetDataUrl(asset: GarmentImageAsset): Promise<string> {
-  if (!asset.storagePath) throw new Error(`Asset ${asset.assetId} has no readable storage path.`);
+  if (!asset.storagePath && /^https?:\/\//i.test(asset.imageUrl)) return asset.imageUrl;
+  if (!asset.storagePath) throw new Error(`Asset ${asset.assetId} has no readable source.`);
   const bytes = await fs.readFile(asset.storagePath);
   return `data:${asset.mimeType};base64,${bytes.toString('base64')}`;
 }
@@ -235,8 +247,73 @@ function parseOutputJson(response: unknown): unknown {
   return JSON.parse(text);
 }
 
-function uncertainGarmentVerification(reason: string): GarmentVisualVerification {
-  return { result: 'uncertain', confidence: 0, evidence: [], mismatches: [reason] };
+const GARMENT_IDENTITY_FEATURES = [
+  'color',
+  'pattern',
+  'neckline',
+  'sleeve',
+  'closure',
+  'button',
+  'zipper',
+  'pocket',
+  'drawstring',
+  'logo',
+  'decoration',
+  'stitching',
+  'hem',
+  'waistband',
+  'texture',
+  'length',
+  'silhouette',
+  'fit',
+] as const satisfies readonly GarmentIdentityFeature[];
+
+function parsePairwiseVerification(value: unknown, model: string): PairwiseGarmentVerification {
+  if (!value || typeof value !== 'object') throw new Error('Pairwise verifier returned a non-object.');
+  const record = value as Record<string, unknown>;
+  if (!['same', 'different', 'uncertain'].includes(String(record.verdict))) {
+    throw new Error('Pairwise verifier returned an invalid verdict.');
+  }
+  if (!Array.isArray(record.featureComparisons)) {
+    throw new Error('Pairwise verifier omitted feature comparisons.');
+  }
+  const featureComparisons = record.featureComparisons.map((entry) => {
+    if (!entry || typeof entry !== 'object') throw new Error('Invalid feature comparison.');
+    const comparison = entry as Record<string, unknown>;
+    if (!GARMENT_IDENTITY_FEATURES.includes(comparison.feature as GarmentIdentityFeature)) {
+      throw new Error('Unknown garment identity feature.');
+    }
+    if (!['visible', 'partial', 'not_visible'].includes(String(comparison.currentVisibility)) ||
+        !['visible', 'partial', 'not_visible'].includes(String(comparison.referenceVisibility)) ||
+        !['same', 'different', 'unknown'].includes(String(comparison.relation)) ||
+        !['weak', 'medium', 'strong'].includes(String(comparison.discriminativeStrength)) ||
+        typeof comparison.note !== 'string') {
+      throw new Error('Invalid garment feature evidence.');
+    }
+    return {
+      feature: comparison.feature as GarmentIdentityFeature,
+      currentVisibility: comparison.currentVisibility as 'visible' | 'partial' | 'not_visible',
+      referenceVisibility: comparison.referenceVisibility as 'visible' | 'partial' | 'not_visible',
+      relation: comparison.relation as 'same' | 'different' | 'unknown',
+      discriminativeStrength: comparison.discriminativeStrength as 'weak' | 'medium' | 'strong',
+      note: comparison.note,
+    };
+  });
+  return {
+    verdict: record.verdict as PairwiseGarmentVerification['verdict'],
+    confidence: clamp(Number(record.confidence)),
+    featureComparisons,
+    occlusions: safeStrings(record.occlusions),
+    jointlyVisibleEvidence: safeStrings(record.jointlyVisibleEvidence),
+    model,
+  };
+}
+
+function uncertainGarmentVerification(reason: string, model: string): PairwiseGarmentVerification {
+  return {
+    verdict: 'uncertain', confidence: 0, featureComparisons: [],
+    occlusions: [reason], jointlyVisibleEvidence: [], model,
+  };
 }
 
 function uncertainProductVerification(reason: string): ProductImageVerification {
