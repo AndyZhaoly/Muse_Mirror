@@ -47,12 +47,24 @@ export interface ClosetItem {
   formality: string;
   styleTags: string[];
   imageUrl: string;
+  primaryImageAssetId?: string;
+  appearanceAssetIds?: string[];
+  imageStatus?: ClosetItemImageStatus;
+  source?: 'demo_fixture' | 'mirror_auto_capture' | 'manual';
+  identityStatus?: ClosetItemIdentityStatus;
+  ownershipStatus?: ClosetItemOwnershipStatus;
   marketedFor?: 'womens' | 'mens' | 'unisex';
   presentationMetadata?: PresentationMetadata;
   cutProfile?: CutProfile;
   garmentMeasurements?: GarmentMeasurements;
   fitCompatibilityTags?: string[];
 }
+
+export type ClosetItemIdentityStatus = 'provisional' | 'confirmed' | 'merged';
+
+export type ClosetItemOwnershipStatus = 'unverified' | 'confirmed';
+
+export type ClosetItemImageStatus = 'processing' | 'ready' | 'needs_review' | 'failed';
 
 export interface ProductItem {
   id: string;

@@ -25,6 +25,51 @@ A successful login sets a signed HttpOnly, SameSite=Lax session cookie. It is Se
 
 When the access code is not configured, the gate is disabled for local development.
 
+## Ambient outfit capture
+
+Ambient capture is an authenticated background capability outside the Muse Agent tool loop. Its user scope
+comes only from a signed, HttpOnly browser-identity cookie bound to the team session. Client `userId` values
+in a query or body are ignored for ambient storage and private assets.
+
+- `GET /api/ambient-capture/state` returns grant state, image-job state, safe diagnostics, the current episode, and the pending completion event.
+- `POST /api/ambient-capture/grant` with `{ enabled }` creates or revokes the one-time grant.
+- `POST /api/ambient-capture/frame` accepts a real camera still, frame metadata, local stability evidence, and active-task status.
+- `POST /api/ambient-capture/episode/end` ends the current session episode when the user leaves or pauses the mirror.
+- `POST /api/ambient-capture/debug/reset` deletes only the requesting user's ambient overlay and capture records.
+- `POST /api/fashion/outfit-capture/acknowledge` explicitly clears only the current presentation event. The
+  normal Mirror UI does not auto-acknowledge a Wardrobe Moment on a timer.
+- `POST /api/dev/outfit-capture/retry-product-image` retries one current-browser item in `needs_review`/`failed` state.
+- `GET /api/fashion/wardrobe-assets/:assetId` serves an owned asset after cookie and path validation.
+
+`GET /api/fashion/status` exposes non-secret empty-scene guard configuration under
+`ambientCapture.emptyScene`: `threshold`, `confirmations`, and `forceProbeMs`. A frame result with
+`NO_PERSON_PRESENT` includes a 10-second retry backoff. Client suppression requires two similar server
+confirmations and must not be inferred from camera status alone.
+
+The frame endpoint may return `disabled`, `observing`, `deferred`, `privacy_paused`,
+`insufficient_evidence`, `ambiguous`, `committed`, `recognized`, `mixed`, `already_committed`,
+`episode_ended`, or `unavailable`, plus the two-stage image states documented in `src/domain/ambientCapture.ts`.
+Only committed/recognized/ready outcomes may carry an
+`OutfitCaptureCompletedEvent`; the UI must never synthesize that event from a model answer, image-pipeline
+status, closet inventory, or optimistic client state. `updatedAt` changes when pending identity or item-image
+state refreshes while `eventId` and `captureId` preserve the same Wardrobe Moment identity. Stage A atomically
+stores the evidence, independent garment appearances, provisional items,
+wear events, and capture. Stage B edits each new appearance into a product image and promotes it only after
+visual verification. Private evidence, appearances, and generated product images are never served by the
+public `/generated` route.
+
+Worn-garment observation fields use canonical color, pattern, and fit values. `unknown` is a valid color and
+fit result when the frame does not support a reliable label. The server canonicalizes historical and current
+descriptors during comparison; clients must not treat a neighboring color bucket or an unknown value as an
+exact garment identity match.
+
+Ambient closet state exposes three independent semantics. `identityStatus` is `provisional` until a future
+explicit identity-confirmation workflow; `ownershipStatus` is `unverified` until explicit user confirmation;
+and `imageStatus` reports only catalog-image processing. A product-image pass updates `imageStatus`,
+`primaryImageAssetId`, and `imageUrl` but never identity or ownership. The outer ambient record status is
+`active | archived` and must not be interpreted as identity confidence. Provisional active items remain valid
+merged-closet records and may be queried or used as explicit must-use recommendation inputs.
+
 ## Start a turn
 
 ```ts

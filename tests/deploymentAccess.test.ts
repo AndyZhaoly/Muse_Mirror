@@ -55,6 +55,30 @@ test('configured access gate requires a session secret', () => {
   );
 });
 
+test('signed browser identity is unique, tamper resistant, and bound to its team session', () => {
+  const access = createDemoAccessControl({
+    accessCode: 'team-code',
+    sessionSecret: 'browser-identity-test-secret',
+  });
+  const cookiesA = access.createLoginCookies(new Date('2026-08-05T00:00:00.000Z'));
+  const cookiesB = access.createLoginCookies(new Date('2026-08-05T00:00:01.000Z'));
+  const request = (cookies: string[]) => ({
+    headers: { cookie: cookies.map((cookie) => cookie.split(';')[0]).join('; ') },
+  } as http.IncomingMessage);
+
+  const userA = access.browserUserId(request(cookiesA), new Date('2026-08-05T00:00:02.000Z'));
+  const userB = access.browserUserId(request(cookiesB), new Date('2026-08-05T00:00:02.000Z'));
+  assert.match(userA ?? '', /^browser_[a-f0-9]{24}$/);
+  assert.match(userB ?? '', /^browser_[a-f0-9]{24}$/);
+  assert.notEqual(userA, userB);
+
+  const crossBound = request([cookiesA[0]!, cookiesB[1]!]);
+  assert.equal(access.browserUserId(crossBound, new Date('2026-08-05T00:00:02.000Z')), undefined);
+
+  const tamperedIdentity = cookiesA[1]!.replace(/=([^;]+)/, (_match, token: string) => `=${token.slice(0, -1)}x`);
+  assert.equal(access.browserUserId(request([cookiesA[0]!, tamperedIdentity]), new Date('2026-08-05T00:00:02.000Z')), undefined);
+});
+
 test('login sets a signed cookie and rejects wrong or tampered credentials', async (t) => {
   const access = createDemoAccessControl({
     accessCode: 'correct-team-code',

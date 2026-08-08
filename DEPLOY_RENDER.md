@@ -86,6 +86,8 @@ Never post OpenAI, Volcengine, access-code, session-cookie, image base64, or use
 
 - The service can spin down while idle, so the first request after inactivity can be slow.
 - The filesystem is ephemeral. Container replacement, restart, redeploy, or free-service lifecycle events can remove conversations, memories, captured frames, and generated files under `/app/out`.
+- Ambient catalog-image generation is disabled unless `FASHION_AGENT_PRODUCT_IMAGE_PROVIDER=openai` is set. Enabling it uses the configured OpenAI image and vision models and adds API cost. Keep it disabled for deployments that only need capture/identity diagnostics.
+- Private evidence, appearance crops, and verified product images are served through the signed browser asset route. They are not public `/generated` files, but Render Free filesystem loss still removes them on replacement or redeploy.
 - WebSocket connections can close during instance replacement or network interruption.
 - A single Free instance has limited CPU and memory; concurrent vision, image generation, and voice sessions can increase latency.
 - This configuration is for team evaluation only and must not be described as production-ready.

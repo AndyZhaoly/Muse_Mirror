@@ -10,6 +10,7 @@ This repository is a standalone snapshot of the investor demo. It includes the d
 - OpenAI Responses API streaming and native function-calling loop.
 - Optional Volcengine streaming ASR and TTS in a semi-duplex voice loop.
 - Live local camera preview with low-frequency still-frame observation.
+- Opt-in ambient outfit capture with real worn-garment vision, repeat recognition, and a durable per-browser closet overlay.
 - A grounded 37-item demo wardrobe with canonical item images.
 - Wardrobe recommendation, real item cards, weather, and optional product tools.
 - AI concept items, item collections, outfit heroes, Look Boards, and try-on previews.
@@ -46,6 +47,58 @@ Muse main agent (OpenAI Responses API)
         v
 Runtime policy + tool ledger + grounding + UI artifacts
 ```
+
+The opt-in ambient path runs beside, not inside, the Muse Agent:
+
+```text
+stable real camera still -> situation policy -> worn-outfit vision
+  -> independent garment crops -> metadata recall + visual ReID
+  -> atomic wardrobe overlay -> verified catalog image jobs -> Mirror Screen event
+```
+
+It never adds a hidden intent router or Agent tool. New garments immediately enter the merged closet as
+usable `provisional` records with `unverified` ownership while their image status is `processing`; their real
+appearance crops are edited into clean catalog images and compared back to the source. Only verified images
+become closet-card primary images. Product-image verification changes image state only: it never confirms
+garment identity or ownership. Repeat recognition uses historical real appearances, tolerates metadata label
+drift, preserves provisional/unverified status, and does not generate another product image. Observation,
+tracking, and recall share a canonical appearance vocabulary for color, pattern, and fit. Free-form English
+and Chinese labels are normalized only at comparison time, while visually uncertain color, fit, sleeve,
+neckline, length, and material stay
+`unknown` and contribute no identity similarity.
+
+Identity resolution keeps recall broad, then compares a small set of visually stable core tags: physical category,
+color palette, stable pattern family, sleeve length, coarse garment length, and neckline family. An obvious core-tag
+contradiction removes that candidate without spending a visual-model call. A candidate worn in the immediately
+previous capture can be reused when at least three visible core tags agree and none contradict. Remaining plausible
+candidates are compared one ClosetItem at a time by the pairwise visual verifier. A confident pairwise `same` reuses
+the item; a new item is created only when every remaining candidate is confidently `different`; uncertainty never
+becomes `new`. Multiple valid matches remain ambiguous. This deliberately avoids dynamic prior vetoes and special
+catalog-only identity gates. Ambiguous evidence writes no
+ClosetItem for that garment, but it no longer blocks resolved garments in the same outfit. The capture records a
+durable `pending_identity` reference beside ordinary closet-item references, so later evidence or a future
+confirmation adapter can resolve only that slot. The latest 200 sanitized decision traces remain available to the
+signed browser identity for diagnostics.
+Physical closet-record IDs are generated independently from reusable appearance fingerprints. Pending resolution
+and capture reconciliation run atomically, preserving one logical capture and at most one WearEvent per garment in
+a continuous episode. Pending records expire from live reconnect at their deadline, and their bounded candidate
+history remains diagnostic-only. Mirror completion state explicitly marks mixed outfits as partially resolved.
+Duplicate overlay items can be repaired through a dry-run-first, atomic repository merge; the duplicate is
+archived as an alias and is excluded from recommendation without deleting its historical appearances or wear.
+
+The first reliable frame now retains ephemeral garment-track crops; the second reliable frame supplies a second
+view to the same pairwise identity check. Occlusion-driven ambiguity waits for a meaningfully changed crop and may recheck once;
+otherwise it becomes `ready_to_ask` without PR8 initiating a conversation. Episode departure defers bounded
+garment-crop evidence; privacy pause discards it. Safe cross-episode reconnect additionally requires compatible
+descriptors and candidate overlap, and never arbitrarily chooses among multiple pending records. Local,
+photo-containing replay cases belong under the gitignored `.local/identity-eval/` directory;
+`npm run identity:eval` reports false-existing, false-new, precision, and automation coverage without committing media.
+
+After two similar frames are independently confirmed by the server as `NO_PERSON_PRESENT`, the browser keeps
+a low-resolution empty-scene reference and suppresses ordinary high-resolution ambient uploads. A changed
+scene clears suppression and starts a fresh three-sample stability window; a configurable forced probe still
+runs every 90 seconds by default so one bad observation cannot silence capture permanently. This guard is
+client-local and stores no additional camera image on the server.
 
 More detail is available in [ARCHITECTURE.md](ARCHITECTURE.md), [API_CONTRACT.md](API_CONTRACT.md), and [SKILL_TOOL_POLICY_MATRIX.md](SKILL_TOOL_POLICY_MATRIX.md).
 
@@ -152,6 +205,27 @@ FASHION_AGENT_CLOSET_DATA=./data/demo2-wardrobe/wardrobe.json
 FASHION_AGENT_DEMO2_PRODUCT_IMAGE_DIR=./data/demo2-product-images
 FASHION_AGENT_OUTPUT_DIR=./out
 FASHION_AGENT_MEMORY_DATA=./out/muse-memory-v1.json
+FASHION_AGENT_AMBIENT_WARDROBE_DATA=./out/ambient-wardrobe-v1.json
+FASHION_AGENT_AMBIENT_IGNORE_BASE_CLOSET=false
+FASHION_AGENT_AMBIENT_RESET_USER_DATA_ON_START=false
+FASHION_AGENT_EMPTY_SCENE_THRESHOLD=0.03
+FASHION_AGENT_EMPTY_SCENE_CONFIRMATIONS=2
+FASHION_AGENT_EMPTY_SCENE_FORCE_PROBE_MS=90000
+FASHION_AGENT_PRODUCT_IMAGE_PROVIDER=openai
+OPENAI_PRODUCT_IMAGE_MODEL=gpt-image-2
+OPENAI_PRODUCT_IMAGE_QUALITY=medium
+OPENAI_PRODUCT_IMAGE_SIZE=1024x1024
+FASHION_AGENT_PRODUCT_IMAGE_VERIFY_CONFIDENCE=0.84
+FASHION_AGENT_IDENTITY_TOP_K=4
+FASHION_AGENT_IDENTITY_PAIR_MATCH_CONFIDENCE=0.88
+FASHION_AGENT_IDENTITY_MAX_VISUAL_CANDIDATES=3
+FASHION_AGENT_IDENTITY_BASE_NEW_CONFIDENCE=0.78
+FASHION_AGENT_IDENTITY_NEW_CONFIDENCE_CEILING=0.9
+FASHION_AGENT_IDENTITY_TRACE_LIMIT=200
+FASHION_AGENT_IDENTITY_STRONG_CONTINUITY_WINDOW_MS=3600000
+FASHION_AGENT_IDENTITY_WEAK_CONTINUITY_WINDOW_MS=43200000
+FASHION_AGENT_IDENTITY_STRONG_CONTINUITY_WEIGHT=0.08
+FASHION_AGENT_IDENTITY_WEAK_CONTINUITY_WEIGHT=0.02
 
 FASHION_AGENT_ASR_PROVIDER=disabled
 FASHION_AGENT_TTS_PROVIDER=disabled
@@ -161,9 +235,31 @@ MUSE_TEAM_DEMO_ACCESS_CODE=
 MUSE_TEAM_DEMO_SESSION_SECRET=
 ```
 
+For an isolated investor-demo wardrobe-learning run, set
+`FASHION_AGENT_AMBIENT_IGNORE_BASE_CLOSET=true`. This removes preloaded Base Closet items only from ambient
+garment identity candidate retrieval. The seed wardrobe, its product images, ordinary closet browsing, and
+recommendation remain unchanged. Ambient-captured user items and their real appearance evidence still participate,
+and switching the value back to `false` immediately restores normal Base + Ambient identity retrieval without a
+data migration. Product-image generation for newly recorded garments remains enabled independently.
+
+For repeatable local investor-demo runs, `FASHION_AGENT_AMBIENT_RESET_USER_DATA_ON_START=true` clears ambient
+user overlays and their stored garment assets whenever the server starts. Active capture grants are retained so
+the same browser can resume testing immediately. Base Closet seed records and product images are stored separately
+and are never deleted or rewritten by this reset. Keep this flag disabled in shared or production environments.
+
 `FASHION_AGENT_VISUAL_QC=false` reproduces the time-constrained demo behavior in which image QC does not block a generated result. Set it to `true` when you want failed visual checks to block artifacts.
 
 Real product search is disabled by default. The application will not fabricate product prices, brands, purchase links, or availability when no product provider is configured.
+
+Ambient catalog-image generation is a separate capability. The demo configuration enables it with
+`FASHION_AGENT_PRODUCT_IMAGE_PROVIDER=openai`: OpenAI edits the stored real garment crop into an isolated
+catalog view, then an OpenAI vision comparison must pass before the image is promoted. The UI labels these as
+AI-organized closet images rather than merchant product photos. A real semantic capture creates a persistent,
+user-scoped Wardrobe Moment: cards appear immediately as quiet placeholders, reveal independently as product
+images finish, and remain available behind higher-priority conversation or visual tasks. Failed presentation
+images may fall back to the protected garment-only crop without changing the successful wardrobe-capture
+status. This adds image-generation and verification cost and never uses text-only generation for closet
+primary images.
 
 ## Validation
 
@@ -191,6 +287,9 @@ The production server reads Render's `PORT`, binds `0.0.0.0`, and serves React, 
 ## Data and privacy boundaries
 
 - Continuous live video stays in the browser. While the mirror is active, the app can upload low-frequency still frames to the configured vision provider to maintain a current observation.
+- Ambient outfit capture is off until the user accepts its one-time grant. It analyzes only stable single-person worn-outfit frames; it does not record continuous video or treat held/background garments as owned.
+- A successful ambient capture stores the selected still as private evidence plus separate real garment crops, provisional closet items, outfit captures, and wear events. Generated catalog images remain `processing`/`needs_review` until source-image verification passes. Revoking the grant stops future capture; the developer reset deletes the current browser user's overlay.
+- For local reproducibility, `FASHION_AGENT_TRACE=true` also retains each stable ambient identity attempt as a private diagnostic bundle under `out/diagnostics/ambient-captures/<browser-hash>/`. Each bundle contains the normalized still, garment crops, and a redacted `manifest.json`. Set `FASHION_AGENT_AMBIENT_CAPTURE_RETAIN_DIAGNOSTICS=false` to disable it or `FASHION_AGENT_AMBIENT_CAPTURE_DIAGNOSTIC_LIMIT` to change the per-browser rolling limit. These diagnostic copies intentionally survive the developer wardrobe reset and must not be enabled casually on shared production hosts.
 - The camera does not record audio. Microphone access begins only after voice mode is enabled.
 - Raw ASR audio and streamed TTS audio are kept in memory only and are not written to disk by Muse Mirror.
 - Speech credentials remain on the backend and are never included in `/api/voice/status`.
@@ -198,7 +297,7 @@ The production server reads Render's `PORT`, binds `0.0.0.0`, and serves React, 
 - Try-on requires photo-use permission. Synthetic full-body extension has a separate confirmation path.
 - Generated images, captured frames, memory data, and conversation data are written under ignored local directories and are not committed.
 - Team-demo access uses a signed HttpOnly cookie when `MUSE_TEAM_DEMO_ACCESS_CODE` is configured. The access code is never stored in browser localStorage.
-- Each browser stores a random `team_demo_<uuid>` identifier locally so text and voice share one history without sharing another tester's default identity. This UUID is an isolation key, not authentication.
+- Ambient data and private garment assets use a server-signed, HttpOnly browser identity tied to the team session. The client UUID still groups text/voice history, but it cannot select another ambient owner.
 - AI concept items are labeled and are never presented as real products or closet items.
 - Try-on output is a styling preview, not a sizing, tailoring, or body-measurement guarantee.
 - Never commit `.env.local`. Rotate any API key that has appeared in chat, logs, screenshots, or terminal output.
@@ -206,6 +305,7 @@ The production server reads Render's `PORT`, binds `0.0.0.0`, and serves React, 
 ## Persistence and demo limitations
 
 - Conversation history and explicit memories use a local JSON store under `out/`.
+- Ambient closet overlays and capture history use `FASHION_AGENT_AMBIENT_WARDROBE_DATA` under `out/` by default.
 - Render Free storage is ephemeral; restarts, redeploys, and spin-down lifecycle events can remove `out/` data.
 - Live session, pending visual requests, approvals, and visual-version pointers are in memory and reset when the server restarts.
 - Weather is mocked by default.

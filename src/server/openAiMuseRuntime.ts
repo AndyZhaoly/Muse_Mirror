@@ -222,6 +222,20 @@ type MuseToolName =
   | 'generate_try_on_preview'
   | 'edit_try_on_preview';
 
+const WARDROBE_OVERLAY_TOOL_NAMES = new Set<MuseToolName>([
+  'recommend_from_closet',
+  'get_item_images',
+  'commit_outfit',
+  'commit_outfit_selection',
+  'create_style_visual',
+  'update_style_visual',
+  'edit_style_visual',
+  'restore_visual_version',
+  'generate_outfit_visual',
+  'generate_try_on_preview',
+  'edit_try_on_preview',
+]);
+
 interface ToolRuntimeMetadata {
   readOnly: boolean;
   parallelSafe: boolean;
@@ -424,6 +438,7 @@ export class OpenAIMuseRuntime {
   private readonly mirrorFrameJobs = new Map<string, Promise<void>>();
   private readonly turnTelemetry = new Map<string, TurnTelemetryState>();
   private readonly responseCreate?: (args: any) => Promise<any>;
+  private readonly wardrobeOverlays = new Map<string, ClosetItem[]>();
 
   constructor(options?: {
     config?: AppConfig;
@@ -1152,6 +1167,9 @@ ${JSON.stringify(context.personalization ?? { persistentMemories: [], contextOve
       inputStylingOverride?: FashionTurnInput['stylingProfileOverride'];
     },
   ): Promise<unknown> {
+    if (WARDROBE_OVERLAY_TOOL_NAMES.has(call.name)) {
+      await this.refreshWardrobeOverlay(args.context.userId);
+    }
     switch (call.name) {
       case 'get_perception_status':
         return this.getPerceptionStatusTool(args.context);
@@ -1160,7 +1178,7 @@ ${JSON.stringify(context.personalization ?? { persistentMemories: [], contextOve
       case 'recommend_from_closet':
         return this.recommendFromCloset(call.arguments, args);
       case 'get_item_images':
-        return this.getItemImages(call.arguments);
+        return this.getItemImages(call.arguments, args.context);
       case 'get_weather':
         return this.getWeather(call.arguments, args.emit, args.ledger);
       case 'commit_outfit':
@@ -1304,7 +1322,7 @@ ${JSON.stringify(context.personalization ?? { persistentMemories: [], contextOve
 	    );
 	  }
 
-	  private recommendFromCloset(
+  private async recommendFromCloset(
     rawArgs: Record<string, unknown>,
     args: {
       input: FashionTurnInput;
@@ -1313,7 +1331,7 @@ ${JSON.stringify(context.personalization ?? { persistentMemories: [], contextOve
       ledger: ToolLedger;
       inputStylingOverride?: FashionTurnInput['stylingProfileOverride'];
     },
-  ): unknown {
+  ): Promise<unknown> {
     const activityId = makeId('activity');
     args.emit(activityItem('tool', 'pending', '正在找衣柜里的合适单品', '只会使用你的真实衣柜。', activityId));
     const query = typeof rawArgs.query === 'string' && rawArgs.query.trim()
@@ -1338,6 +1356,7 @@ ${JSON.stringify(context.personalization ?? { persistentMemories: [], contextOve
       closetQuery as any,
       args.inputStylingOverride,
     );
+    const ambientItems = this.wardrobeOverlays.get(args.context.userId) ?? [];
     const recommendation = this.services.closet.recommend({
       query: closetQuery.query,
       categories: closetQuery.categories,
@@ -1349,7 +1368,7 @@ ${JSON.stringify(context.personalization ?? { persistentMemories: [], contextOve
         ...closetQuery.mustUseItemIds,
         ...closetQuery.keepItemIds,
       ]),
-    });
+    }, ambientItems);
     args.context.state.activeClosetRecommendation = recommendation.result;
 	    args.ledger.recommendations.set(recommendation.result.recommendationId, {
 	      result: recommendation.result,
@@ -1382,9 +1401,9 @@ ${JSON.stringify(context.personalization ?? { persistentMemories: [], contextOve
     return compactRecommendation(recommendation);
   }
 
-  private getItemImages(rawArgs: Record<string, unknown>): unknown {
+  private getItemImages(rawArgs: Record<string, unknown>, context: FashionAgentContext): unknown {
     const ids = stringArray(rawArgs.itemIds).slice(0, 12);
-    const items = this.services.closet.getByIds(ids);
+    const items = this.closetItems(context, ids);
     const requestedSpec = conceptSpecFromRaw(rawArgs.requestedItem);
     if (!items.length) {
       return {
@@ -1490,7 +1509,7 @@ ${JSON.stringify(context.personalization ?? { persistentMemories: [], contextOve
     if (!recommendation) throw new Error('Unknown recommendationId.');
     const candidate = recommendation.result.candidates.find((item) => item.id === candidateId);
     if (!candidate) throw new Error('Unknown candidateId.');
-    let items = this.services.closet.getByIds(candidate.itemIds);
+    let items = this.closetItems(args.context, candidate.itemIds);
     items = filterItemsAllowedByRecommendation(items, recommendation.result);
     const suggestedOutfit = recommendation.result.suggestedComplements?.length
       ? {
@@ -1672,7 +1691,7 @@ ${JSON.stringify(context.personalization ?? { persistentMemories: [], contextOve
     const activityId = makeId('activity');
     args.emit(activityItem('tool', 'pending', '正在整理单品描述', input.goal, activityId));
     if (input.itemRef.source === 'closet') {
-      const item = this.services.closet.getByIds([input.itemRef.closetItemId])[0];
+      const item = this.closetItems(args.context, [input.itemRef.closetItemId])[0];
       if (!item?.imageUrl) {
         return {
           status: 'not_found',
@@ -1918,7 +1937,7 @@ ${JSON.stringify(context.personalization ?? { persistentMemories: [], contextOve
 	      operation: version.operation === 'edit' ? 'edit' : image.kind === 'ai_try_on' ? 'try_on' : 'outfit_visual',
 	      referenceItems:
 	        args.context.state.committedOutfit?.id === version.outfitSnapshotId
-	        ? this.visualReferenceItems(args.context.state.committedOutfit)
+	        ? this.visualReferenceItems(args.context.state.committedOutfit, undefined, args.context.userId)
 	        : undefined,
 	    };
     args.context.state.visualSession ??= {};
@@ -2333,7 +2352,7 @@ ${JSON.stringify(context.personalization ?? { persistentMemories: [], contextOve
       },
       parentVersionId: version.parentVersionId,
       operation: 'try_on',
-      referenceItems: this.visualReferenceItems(committed, outfit),
+      referenceItems: this.visualReferenceItems(committed, outfit, args.context.userId),
     };
     const session = this.recordTryOnSession(args.context, {
       artifact,
@@ -2460,9 +2479,9 @@ ${JSON.stringify(context.personalization ?? { persistentMemories: [], contextOve
       parentVersionId: version.parentVersionId,
       operation: 'edit',
       referenceItems: args.context.state.committedOutfit
-        ? this.visualReferenceItems(args.context.state.committedOutfit)
+        ? this.visualReferenceItems(args.context.state.committedOutfit, undefined, args.context.userId)
         : resolved
-          ? this.visualReferenceItems(resolved.committed, resolved.outfit)
+          ? this.visualReferenceItems(resolved.committed, resolved.outfit, args.context.userId)
           : undefined,
     };
     args.ledger.artifacts.push(artifact);
@@ -2504,7 +2523,7 @@ ${JSON.stringify(context.personalization ?? { persistentMemories: [], contextOve
       context.state.visualSession ??= {};
       context.state.visualSession.activeOutfitSnapshotId = snapshot.snapshotId;
       const items = committed.type === 'closet_candidate'
-        ? this.services.closet.getByIds(committed.itemIds)
+        ? this.closetItems(context, committed.itemIds)
         : [];
       return {
         committed,
@@ -2524,7 +2543,7 @@ ${JSON.stringify(context.personalization ?? { persistentMemories: [], contextOve
     context.state.activeOutfitSnapshotId = activeSnapshot.snapshotId;
     const items =
       committed.type === 'closet_candidate'
-        ? this.services.closet.getByIds(committed.itemIds)
+        ? this.closetItems(context, committed.itemIds)
         : [];
     return {
       committed,
@@ -2556,7 +2575,7 @@ ${JSON.stringify(context.personalization ?? { persistentMemories: [], contextOve
       (recommendation.candidates.length === 1 ? recommendation.candidates[0] : undefined);
     if (!candidate) return undefined;
     const items = filterItemsAllowedByRecommendation(
-      this.services.closet.getByIds(candidate.itemIds),
+      this.closetItems(context, candidate.itemIds),
       recommendation,
     );
     const outfit = buildActiveOutfit(
@@ -2848,7 +2867,11 @@ ${JSON.stringify(context.personalization ?? { persistentMemories: [], contextOve
   }
 
 	  private closetItemReferenceImage(context: FashionAgentContext, item: ClosetItem): StoredImage | undefined {
-	    const localPath = resolveLocalReferenceImage(item.imageUrl, this.config.closetDataPath);
+	    const localPath = resolveLocalReferenceImage(
+      item.imageUrl,
+      this.config.closetDataPath,
+      this.config.outputDir,
+    );
 	    if (!localPath) return undefined;
 	    return {
 	      id: `closet_ref_${item.id}`,
@@ -2867,9 +2890,13 @@ ${JSON.stringify(context.personalization ?? { persistentMemories: [], contextOve
   private visualReferenceItems(
     committed: CommittedOutfit,
     outfit: OutfitCandidate = committed.outfit,
+    userId?: string,
   ): VisualReferenceItem[] {
     if (committed.type === 'closet_candidate') {
-      return this.services.closet.getByIds(committed.itemIds).map((item) => ({
+      return this.services.closet.getByIds(
+        committed.itemIds,
+        userId ? this.wardrobeOverlays.get(userId) : undefined,
+      ).map((item) => ({
         id: item.id,
         name: item.name,
         category: item.category,
@@ -2962,7 +2989,7 @@ ${JSON.stringify(context.personalization ?? { persistentMemories: [], contextOve
     const optionalFailures: string[] = [];
     const closetItemsById = new Map<string, ClosetItem>();
     if (committed.type === 'closet_candidate') {
-      for (const item of this.services.closet.getByIds(committed.itemIds)) {
+      for (const item of this.closetItems(args.context, committed.itemIds)) {
         closetItemsById.set(item.id, item);
       }
     }
@@ -3709,11 +3736,27 @@ ${JSON.stringify(context.personalization ?? { persistentMemories: [], contextOve
       const recommendation = ledger.recommendations.get(recommendationId);
       const candidate = recommendation?.result.candidates.find((item) => item.id === candidateId);
       if (recommendation && candidate) {
-        const items = this.services.closet.getByIds(candidate.itemIds);
+        const items = this.closetItems(context, candidate.itemIds);
         return buildActiveOutfit({ outfitName: candidate.title } as any, items, undefined, recommendation.result);
       }
     }
     return ledger.committed?.outfit ?? context.state.activeOutfit;
+  }
+
+  private closetItems(context: FashionAgentContext, ids: string[]): ClosetItem[] {
+    return this.services.closet.getByIds(ids, this.wardrobeOverlays.get(context.userId));
+  }
+
+  private async refreshWardrobeOverlay(userId: string): Promise<void> {
+    const repository = this.services.wardrobeRepository;
+    if (!repository) {
+      this.wardrobeOverlays.delete(userId);
+      return;
+    }
+    const state = await repository.getState(userId);
+    this.wardrobeOverlays.set(userId, state.closetItems
+      .filter((entry) => entry.status === 'active' && entry.item.identityStatus !== 'merged')
+      .map((entry) => entry.item));
   }
 
   private pushNotice(
@@ -5251,7 +5294,15 @@ function isResumeTokenForApproval(token: string, approvalId: string): boolean {
   }
 }
 
-function resolveLocalReferenceImage(imageUrl: string, closetDataPath: string): string | undefined {
+function resolveLocalReferenceImage(
+  imageUrl: string,
+  closetDataPath: string,
+  outputDir?: string,
+): string | undefined {
+  if (outputDir && imageUrl.startsWith('/generated/')) {
+    const generatedPath = path.resolve(outputDir, path.basename(imageUrl));
+    if (fs.existsSync(generatedPath)) return generatedPath;
+  }
   if (!imageUrl || /^https?:\/\//i.test(imageUrl) || imageUrl.startsWith('data:')) return undefined;
   const candidates = [
     path.resolve(process.cwd(), imageUrl),

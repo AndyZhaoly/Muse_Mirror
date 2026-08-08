@@ -65,14 +65,52 @@ export interface AppConfig {
   inputDir: string;
   outputDir: string;
   memoryDataPath: string;
+  ambientWardrobeDataPath: string;
+  emptySceneThreshold: number;
+  emptySceneConfirmations: number;
+  emptySceneForceProbeMs: number;
+  productImageProvider: 'openai' | 'disabled';
+  openaiProductImageModel: string;
+  openaiProductImageQuality: 'low' | 'medium' | 'high';
+  openaiProductImageSize: string;
+  productImageVerifyConfidence: number;
+  identityTopK: number;
+  identityPairMatchConfidence: number;
+  identityMaxVisualCandidates: number;
+  identityBaseNewConfidence: number;
+  identityNewConfidenceCeiling: number;
+  identityTraceLimit: number;
+  identityStrongContinuityWindowMs: number;
+  identityWeakContinuityWindowMs: number;
+  identityStrongContinuityWeight: number;
+  identityWeakContinuityWeight: number;
+  ambientIgnoreBaseCloset: boolean;
+  ambientResetUserDataOnStart: boolean;
+  ambientCaptureRetainDiagnostics: boolean;
+  ambientCaptureDiagnosticLimit: number;
   skillsDir: string;
   trace: boolean;
   visualQcEnabled: boolean;
   voice: VoiceConfig;
 }
 
+export interface EmptySceneConfig {
+  threshold: number;
+  confirmations: number;
+  forceProbeMs: number;
+}
+
+export interface AmbientIdentityConfig {
+  ignoreBaseCloset: boolean;
+  resetUserDataOnStart: boolean;
+}
+
 function boolEnv(name: string, fallback: boolean): boolean {
-  const value = process.env[name];
+  return boolFromEnv(process.env, name, fallback);
+}
+
+function boolFromEnv(env: NodeJS.ProcessEnv, name: string, fallback: boolean): boolean {
+  const value = env[name];
   if (value === undefined) return fallback;
   return ['1', 'true', 'yes', 'on'].includes(value.toLowerCase());
 }
@@ -89,6 +127,21 @@ function optionalNumberEnv(name: string): number | undefined {
   if (value === undefined || value.trim() === '') return undefined;
   const parsed = Number(value);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
+}
+
+export function loadEmptySceneConfig(env: NodeJS.ProcessEnv = process.env): EmptySceneConfig {
+  return {
+    threshold: Math.min(1, Math.max(0.001, numberFromEnv(env, 'FASHION_AGENT_EMPTY_SCENE_THRESHOLD', 0.03))),
+    confirmations: Math.max(2, Math.round(numberFromEnv(env, 'FASHION_AGENT_EMPTY_SCENE_CONFIRMATIONS', 2))),
+    forceProbeMs: Math.max(10_000, Math.round(numberFromEnv(env, 'FASHION_AGENT_EMPTY_SCENE_FORCE_PROBE_MS', 90_000))),
+  };
+}
+
+export function loadAmbientIdentityConfig(env: NodeJS.ProcessEnv = process.env): AmbientIdentityConfig {
+  return {
+    ignoreBaseCloset: boolFromEnv(env, 'FASHION_AGENT_AMBIENT_IGNORE_BASE_CLOSET', false),
+    resetUserDataOnStart: boolFromEnv(env, 'FASHION_AGENT_AMBIENT_RESET_USER_DATA_ON_START', false),
+  };
 }
 
 function portFromEndpoint(endpoint: string): number | undefined {
@@ -273,6 +326,9 @@ export function loadConfig(): AppConfig {
         path.resolve('./data/mock-presentation-metadata.json'),
       ]),
   );
+  const emptyScene = loadEmptySceneConfig();
+  const ambientIdentity = loadAmbientIdentityConfig();
+  const trace = boolEnv('FASHION_AGENT_TRACE', false);
 
   return {
     runtimeProvider: runtimeProviderEnv(process.env.FASHION_AGENT_RUNTIME),
@@ -335,8 +391,38 @@ export function loadConfig(): AppConfig {
     inputDir: path.resolve(process.env.FASHION_AGENT_INPUT_DIR ?? './examples'),
     outputDir: path.resolve(process.env.FASHION_AGENT_OUTPUT_DIR ?? './out'),
     memoryDataPath: path.resolve(process.env.FASHION_AGENT_MEMORY_DATA ?? './out/muse-memory-v1.json'),
+    ambientWardrobeDataPath: path.resolve(
+      process.env.FASHION_AGENT_AMBIENT_WARDROBE_DATA ?? './out/ambient-wardrobe-v1.json',
+    ),
+    emptySceneThreshold: emptyScene.threshold,
+    emptySceneConfirmations: emptyScene.confirmations,
+    emptySceneForceProbeMs: emptyScene.forceProbeMs,
+    productImageProvider: process.env.FASHION_AGENT_PRODUCT_IMAGE_PROVIDER === 'openai' ? 'openai' : 'disabled',
+    openaiProductImageModel: process.env.OPENAI_PRODUCT_IMAGE_MODEL ?? 'gpt-image-2',
+    openaiProductImageQuality: ['low', 'medium', 'high'].includes(process.env.OPENAI_PRODUCT_IMAGE_QUALITY ?? '')
+      ? process.env.OPENAI_PRODUCT_IMAGE_QUALITY as 'low' | 'medium' | 'high'
+      : 'medium',
+    openaiProductImageSize: process.env.OPENAI_PRODUCT_IMAGE_SIZE ?? '1024x1024',
+    productImageVerifyConfidence: numberEnv('FASHION_AGENT_PRODUCT_IMAGE_VERIFY_CONFIDENCE', 0.84),
+    identityTopK: Math.max(1, Math.round(numberEnv('FASHION_AGENT_IDENTITY_TOP_K', 4))),
+    identityPairMatchConfidence: numberEnv('FASHION_AGENT_IDENTITY_PAIR_MATCH_CONFIDENCE', 0.88),
+    identityMaxVisualCandidates: Math.max(1, Math.round(numberEnv('FASHION_AGENT_IDENTITY_MAX_VISUAL_CANDIDATES', 3))),
+    identityBaseNewConfidence: numberEnv('FASHION_AGENT_IDENTITY_BASE_NEW_CONFIDENCE', 0.78),
+    identityNewConfidenceCeiling: Math.min(
+      0.99,
+      Math.max(0, numberEnv('FASHION_AGENT_IDENTITY_NEW_CONFIDENCE_CEILING', 0.9)),
+    ),
+    identityTraceLimit: Math.max(1, Math.round(numberEnv('FASHION_AGENT_IDENTITY_TRACE_LIMIT', 200))),
+    identityStrongContinuityWindowMs: numberEnv('FASHION_AGENT_IDENTITY_STRONG_CONTINUITY_WINDOW_MS', 60 * 60 * 1000),
+    identityWeakContinuityWindowMs: numberEnv('FASHION_AGENT_IDENTITY_WEAK_CONTINUITY_WINDOW_MS', 12 * 60 * 60 * 1000),
+    identityStrongContinuityWeight: numberEnv('FASHION_AGENT_IDENTITY_STRONG_CONTINUITY_WEIGHT', 0.08),
+    identityWeakContinuityWeight: numberEnv('FASHION_AGENT_IDENTITY_WEAK_CONTINUITY_WEIGHT', 0.02),
+    ambientIgnoreBaseCloset: ambientIdentity.ignoreBaseCloset,
+    ambientResetUserDataOnStart: ambientIdentity.resetUserDataOnStart,
+    ambientCaptureRetainDiagnostics: boolEnv('FASHION_AGENT_AMBIENT_CAPTURE_RETAIN_DIAGNOSTICS', trace),
+    ambientCaptureDiagnosticLimit: Math.max(1, Math.round(numberEnv('FASHION_AGENT_AMBIENT_CAPTURE_DIAGNOSTIC_LIMIT', 100))),
     skillsDir: path.resolve(process.env.FASHION_AGENT_SKILLS_DIR ?? './skills'),
-    trace: boolEnv('FASHION_AGENT_TRACE', false),
+    trace,
     visualQcEnabled: boolEnv('FASHION_AGENT_VISUAL_QC', true),
     voice: loadVoiceConfig(),
   };

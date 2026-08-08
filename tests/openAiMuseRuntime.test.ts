@@ -1579,6 +1579,79 @@ test('get_item_images reports concept fallback without generating AI images', as
   assert.equal(visualCalls, 0);
 });
 
+test('get_item_images refreshes persisted ambient wardrobe items before direct lookup', async () => {
+  const config = openAIConfig();
+  const services = createServiceContainer(config);
+  const ambientItem = {
+    ...services.closet.allItems()[0]!,
+    id: 'ambient_direct_lookup_item',
+    name: '刚记录的海军蓝上衣',
+    imageUrl: '/generated/ambient_direct_lookup.jpg',
+  };
+  services.wardrobeRepository = {
+    async getState(requestedUserId: string) {
+      assert.equal(requestedUserId, 'ambient-user');
+      return {
+        schemaVersion: 1 as const,
+        userId: requestedUserId,
+        version: 1,
+        closetItems: [{
+          item: ambientItem,
+          status: 'active' as const,
+          source: 'ambient_capture' as const,
+          appearanceFingerprint: 'ambient-fingerprint',
+          createdAt: '2026-08-05T00:00:00.000Z',
+          updatedAt: '2026-08-05T00:00:00.000Z',
+        }],
+        appearances: [],
+        captures: [],
+        wearEvents: [],
+        episodes: [],
+        committedIdempotencyKeys: [],
+        updatedAt: '2026-08-05T00:00:00.000Z',
+      };
+    },
+  } as any;
+  const runtime = new OpenAIMuseRuntime({
+    config,
+    services,
+    stateStore: new InMemorySessionStateStore(),
+    responseCreate: async (request) => {
+      if (!request.input.some((item: any) => item?.type === 'function_call_output')) {
+        return {
+          id: 'resp_ambient_direct_lookup',
+          status: 'completed',
+          output_text: '',
+          output: [
+            functionCall('call_ambient_direct_lookup', 'get_item_images', {
+              itemIds: [ambientItem.id],
+              requestedItem: null,
+            }),
+          ],
+        };
+      }
+      const found = outputForCall(request, 'call_ambient_direct_lookup');
+      assert.equal(found.status, 'found');
+      assert.equal(found.items[0]?.id, ambientItem.id);
+      assert.equal(found.items[0]?.imageUrl, ambientItem.imageUrl);
+      return {
+        id: 'resp_ambient_direct_lookup_final',
+        status: 'completed',
+        output_text: '这是刚记录的上衣图片。',
+        output: [finalMessage('这是刚记录的上衣图片。')],
+      };
+    },
+  });
+
+  const result = await runtime.runTurn(input({
+    userId: 'ambient-user',
+    message: '看看刚记下来的上衣图',
+  }));
+
+  assert.equal(result.status, 'completed');
+  assert.match(result.text, /刚记录/);
+});
+
 test('target item_collection shows completed generated concept items without new image calls', async () => {
   const config = openAIImageConfig();
   const services = createServiceContainer(config);

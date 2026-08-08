@@ -9,6 +9,7 @@ import type {
   MirrorScreenState,
   MirrorVoicePresentation,
 } from './mirrorScreenTypes.js';
+import { deriveWardrobeMoment } from './wardrobeMoment.js';
 
 const IDLE_FALLBACK = '你好。需要时，我可以看镜子、查衣柜或生成视觉参考。';
 
@@ -210,7 +211,31 @@ export function deriveMirrorScreenState(input: MirrorScreenControllerInput): Mir
       (message) => message.id === input.activeAssistantId && message.role === 'assistant',
     )
     : undefined;
-  const completedAssistant = latestCompletedAssistant(input.messages);
+  const foregroundSituation = input.situationDecision?.presentation.visibility === 'foreground';
+  const explicitScreenTask = Boolean(
+    activeAssistant ||
+    input.responding ||
+    input.generating ||
+    input.hasPendingApproval ||
+    input.foregroundVisualTask ||
+    input.voice.state === 'requesting_permission' ||
+    input.voice.state === 'recognizing' ||
+    input.voice.state === 'thinking' ||
+    input.voice.state === 'speaking' ||
+    input.voice.partialTranscript?.trim() ||
+    foregroundSituation,
+  );
+  const canShowWardrobeMoment = !explicitScreenTask &&
+    !input.responding &&
+    !input.generating &&
+    (input.voice.state === 'disabled' || input.voice.state === 'idle' || input.voice.state === 'listening');
+  const wardrobeMoment = canShowWardrobeMoment
+    ? deriveWardrobeMoment(input.ambientCaptureEvent)
+    : undefined;
+  const ambientCaptureOwnsCanvas = Boolean(wardrobeMoment);
+  const ambientCaptureEvent = ambientCaptureOwnsCanvas ? input.ambientCaptureEvent : undefined;
+  const ambientCaptureStatus = ambientCaptureOwnsCanvas ? input.ambientCaptureStatus : undefined;
+  const completedAssistant = ambientCaptureOwnsCanvas ? undefined : latestCompletedAssistant(input.messages);
   const ownerMessage = activeAssistant ?? completedAssistant;
   const activeText = activeAssistant?.text?.trim() || undefined;
   const activeCommentary = activeAssistant?.commentary?.trim() || undefined;
@@ -247,6 +272,7 @@ export function deriveMirrorScreenState(input: MirrorScreenControllerInput): Mir
   } else if (
     phase === 'idle' &&
     !input.hasPendingApproval &&
+    !ambientCaptureOwnsCanvas &&
     input.voice.state !== 'error'
   ) {
     museText = IDLE_FALLBACK;
@@ -288,27 +314,36 @@ export function deriveMirrorScreenState(input: MirrorScreenControllerInput): Mir
     ? input.voice.partialTranscript?.trim() || undefined
     : undefined;
 
+  const screenOwner = input.hasPendingApproval || foregroundSituation
+    ? 'blocking_interaction'
+    : explicitScreenTask || completedAssistant
+      ? 'explicit_task'
+      : wardrobeMoment
+        ? 'wardrobe_moment'
+        : 'idle';
+
   return {
-    phase,
-    contentKind: primaryArtifact?.contentKind ?? (
+    screenOwner,
+    phase: ambientCaptureOwnsCanvas && phase === 'idle' ? 'showing_result' : phase,
+    contentKind: ambientCaptureOwnsCanvas ? 'garment_ingestion' : primaryArtifact?.contentKind ?? (
       input.situationDecision?.presentation.visibility === 'foreground'
         ? input.situationDecision.presentation.contentKind
         : 'conversation'
     ),
-    priority,
+    priority: ambientCaptureOwnsCanvas && phase === 'idle' ? 30 : priority,
     ownerMessageId: ownerMessage?.id,
     ambient: {
       agentStatusLabel: input.agentStatusLabel,
       perceptionLabel: input.perceptionLabel,
     },
     caption: {
-      latestUserText: toCanvasPlainText(recognizingText ?? latestUserText(input.messages)),
+      latestUserText: ambientCaptureOwnsCanvas ? undefined : toCanvasPlainText(recognizingText ?? latestUserText(input.messages)),
       museText: toCanvasPlainText(museText),
       museTextSource,
       activityLabel,
       showTyping: Boolean(
         activeAssistant && !activeText && !activeCommentary ||
-        !activeAssistant && phase === 'thinking' && !museText,
+        !activeAssistant && phase === 'thinking' && !museText && !ambientCaptureOwnsCanvas,
       ),
     },
     voice,
@@ -316,5 +351,11 @@ export function deriveMirrorScreenState(input: MirrorScreenControllerInput): Mir
     showApproval: input.hasPendingApproval,
     isActiveTurn: Boolean(activeAssistant),
     situationDecision: input.situationDecision,
+    wardrobeMoment,
+    ambientCaptureEvent,
+    ambientCaptureStatus,
+    ambientClosetItems: input.ambientClosetItems ?? [],
+    ambientProductImageProviderReady: Boolean(input.ambientProductImageProviderReady),
+    ambientProductImageBackfillPending: Boolean(input.ambientProductImageBackfillPending),
   };
 }

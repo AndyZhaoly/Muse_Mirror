@@ -51,6 +51,120 @@ For the development UI smoke, run `npm run server` and `npm run web:dev`, then s
 `DEVELOPER ONLY` situation panel. Verify that the policy result appears without camera capture, Agent
 Activity, TTS, a network request, or closet mutation. The panel must not exist in the production build.
 
+Ambient capture tests use real-provider-shaped structured observations, real Sharp image fixtures, fake
+image-edit/visual-verifier providers, and a durable temporary JSON repository. They cover independent crops,
+the three required rounds (new outfit, repeated outfit after repository reload, and mixed new/existing
+items), Stage A/Stage B state, provider-disabled failure, explicit grant gating, stale packets, garment-track
+stability, ambiguous identity rollback, signed-browser isolation, protected asset routes, overlay recommendation
+retrieval, and local pixel stability. The dedicated image-pipeline test deliberately changes Round 2 color,
+pattern, fit, silhouette, placement, and brightness labels while requiring the verifier to receive Round 1's
+real appearance crops. It also asserts that product-image pass/fail and repeat matching never promote
+provisional identity or unverified ownership:
+
+```bash
+node --import tsx --test \
+  tests/ambientCapture.test.ts \
+  tests/ambientCaptureImagePipeline.test.ts \
+  tests/garmentIdentityProvider.test.ts \
+  tests/identityDecisionTrace.test.ts \
+  tests/closetItemMerge.test.ts \
+  tests/ambientFrameStability.test.ts \
+  tests/ambientCaptureUi.test.ts
+```
+
+The layered identity suite additionally verifies canonical English/Chinese sleeve, neckline, length, and
+material values; obvious core-tag contradictions; dominant/secondary palette overlap; tolerance for texture-label
+drift; locked-current descriptor sentinels; recent-wear core-tag reuse; pairwise visual fallback; fixed match/new
+thresholds; always-ambiguous multiple safe matches; and the rule that uncertainty never creates a garment. It also
+verifies that a `barely` visible slot is dropped while another clear garment completes capture. The confidence
+thresholds are deterministic routing controls, not calibrated probabilities:
+
+```bash
+node --import tsx --test \
+  tests/garmentVocabulary.test.ts \
+  tests/garmentIdentityEvidence.test.ts \
+  tests/garmentIdentityProvider.test.ts \
+  tests/ambientCapture.test.ts
+```
+
+`tests/garmentVocabulary.test.ts` separately verifies English/Chinese appearance normalization, longest-phrase
+matching without substring errors, observable `unknown` values, graded color similarity, consistent jumpsuit
+slotting, and the rule that neighboring color evidence alone cannot preserve a garment track.
+
+`tests/ambientFrameStability.test.ts` verifies the empty-scene state machine: one false no-person result does
+not suppress uploads, two matching confirmations do, changed scenes cancel candidates, small light flicker
+stays below the configured threshold, forced probes resume at the TTL, and a person result clears suppression.
+`tests/emptySceneConfig.test.ts` covers defaults and environment bounds. `tests/ambientCaptureUi.test.ts` keeps
+camera/feature/stream cleanup, hidden-tab handling, timer cleanup, and safe diagnostics wired into the client.
+
+Physical empty-scene threshold calibration remains required before declaring production readiness. With a
+real camera, observe an empty room for 3-5 minutes, verify ordinary request suppression after two server
+confirmations, then enter the frame and record the time to resumed capture eligibility. Repeat under material
+lighting changes; do not report `0.03` as calibrated from deterministic fixtures alone.
+
+For a real local smoke, configure a real vision provider, open the camera, accept the one-time automatic
+recording grant, set `FASHION_AGENT_PRODUCT_IMAGE_PROVIDER=openai`, and use a clearly distinct top and bottom
+under good lighting. Verify Round 1 produces two different real crops and two verified product images. Leave
+the frame or pause the camera, return in the same outfit for Round 2, then change only the top for Round 3.
+Confirm counts are `2 new`, `0 new/2 matched`, then `1 new/1 matched`, and that product-image generation
+counts are `2`, `0`, then `1`. Use `?ambientDebug=1` for safe diagnostics. Do not claim this live acceptance
+unless all three physical-camera rounds were actually executed.
+
+For the 37-item identity-funnel acceptance, inspect each identity trace as well as final item counts. Round 1
+should hard-exclude most incompatible candidates and issue no more than three pairwise verifier calls per
+garment. Round 2 should reuse each Round 1 item, normally with one pairwise call. A real run may still return
+`ambiguous` when evidence is genuinely insufficient; the safety requirement is zero silent duplicate creation
+and zero false merge, not a fabricated zero-ambiguity claim.
+
+For a reproducible local camera run, start the server with `FASHION_AGENT_TRACE=true`. After each stable frame
+that enters identity resolution, inspect `out/diagnostics/ambient-captures/<browser-hash>/<capture>/manifest.json`.
+The same directory must contain one normalized full-frame image and one image per successfully cropped garment,
+including when the final identity result is `ambiguous`. Deleting transient business assets or using the developer
+wardrobe reset must not remove these diagnostic copies. Keep the default rolling limit bounded and disable this
+mode on shared production deployments unless the photo-retention policy explicitly allows it.
+
+Identity safety fixtures verify that an obvious category/color/pattern/sleeve/length/neckline contradiction can
+establish a new garment without a visual call, recent continuity plus three agreeing core tags can reuse the prior
+item, uncertain pairwise evidence cannot create a garment, multiple safe candidates remain ambiguous, and a fallback
+candidate cannot auto-match. Multi-frame fixtures verify first-frame ephemeral retention, two-frame
+pairwise input, cross-frame consistency/mixed evidence, perceptual/bounding-box/coverage-gated recheck, the
+one-recheck limit, cross-episode deferral, and cleanup on episode end/privacy pause. Progressive-commit fixtures
+also require that one ambiguous garment does not block resolved garments, that an OutfitCapture persists the
+pending item reference, and that later resolution migrates that reference and creates at most one WearEvent.
+They additionally cover unique physical item IDs for equal fingerprints, atomic pending/capture reconciliation,
+same-slot garment replacement, recheck-budget preservation after episode departure, pending expiry, bounded live
+candidate windows, one-to-one track assignment, and truthful partial-completion UI copy. State-consistency
+regressions additionally assert that same-slot/same-category tracks receive their exact observation crops, a
+delayed catalog-image job cannot overwrite a newer resolved capture or `lastOutcome`, resolved/expired pending
+records release cross-episode raw identity evidence, and `NEW + PENDING` remains partial in repository events and
+runtime diagnostics after catalog-image success. Demo-isolation fixtures verify that Base Closet candidates and
+catalog assets are absent only while the explicit flag is enabled, ambient-captured appearances still recognize on
+repeat wear without another product-image call, disabling the flag restores Base Closet participation, and the
+preloaded wardrobe object remains unchanged.
+
+Private real-camera cases can be summarized without committing photos:
+
+```bash
+npm run identity:eval
+# or: npm run identity:eval -- /absolute/path/to/private/cases
+```
+
+Each JSON case contains `caseId`, `expected` (`same`, `different`, or `ambiguous`) and either `actual` or a
+sanitized identity `trace.finalDecision`. Keep associated images in `.local/identity-eval/`, which is gitignored.
+The report includes `falseExisting`, `falseNew`, `autoMatchPrecision`, `autoNewPrecision`, and automation coverage.
+Do not quote precision when no automated decisions exist or when the physical sample is too small.
+
+Before merge, repeat five physical checks: a new generic basic against similar Base Closet items; a true Base
+Closet item; a user item with a historical appearance; two visually similar but physically distinct basics; and
+the same trousers with waistband occlusion. Ambiguous is acceptable when instance evidence is insufficient.
+False-existing and silent duplicate creation are not. Record these as unexecuted unless a real camera run actually
+occurred in the current validation session.
+
+If items were recorded while the product-image provider was disabled, use the visible “生成衣橱单品图” action.
+The browser-scoped backfill processes only that user's active mirror-captured items, keeps failed verification
+results hidden, and exposes each verified result as soon as it is ready. Confirm the card says “AI 整理图” and
+does not present the generated asset as a merchant product photo.
+
 Run the focused streaming suite with:
 
 ```bash

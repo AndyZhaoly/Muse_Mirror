@@ -6,6 +6,8 @@ import {
   deleteMemory,
   dismissMemoryCandidate,
   getPerceptionStatus,
+  getAmbientCaptureState,
+  backfillAmbientProductImages,
   getAgentStatus,
   getConversationMessages,
   listConversations,
@@ -15,6 +17,10 @@ import {
   resumeAgentTurn,
   runAgentTurnStream,
   sendMirrorFrame,
+  sendAmbientCaptureFrame,
+  setAmbientCaptureGrant,
+  endAmbientCaptureEpisode,
+  resetAmbientCapture,
   type AgentActivity,
   type AgentArtifact,
   type AgentTurnResult,
@@ -33,7 +39,20 @@ import {
 	  type StylingProfile,
 	  type TurnRequest,
   type UserMemory,
+	  type AmbientCaptureCompletedEvent,
+	  type AmbientCaptureOutcome,
+	  type AmbientCaptureClosetEntry,
 	} from './agentClient';
+import {
+  evaluateEmptySceneGuard,
+  frameStabilityScore,
+  nextStableSampleCount,
+  resolveEmptySceneObservation,
+  sampleVideoFrame,
+  type EmptySceneGuardConfig,
+  type EmptySceneGuardState,
+  type FrameStabilitySample,
+} from './ambientCapture';
 import { useVoiceSession } from './voice/useVoiceSession';
 import {
   attachMuseServerTelemetry,
@@ -52,6 +71,7 @@ import {
   summarizeMirrorActivity,
 } from './components/mirror/mirrorScreenController';
 import { MirrorWorkspace } from './components/mirror/MirrorWorkspace';
+import { wardrobeMomentPollIntervalMs } from './components/mirror/wardrobeMoment';
 import {
   MIRROR_SITUATION_SCENARIOS,
   getMirrorSituationScenario,
@@ -65,6 +85,17 @@ type VisualMode =
   | 'agent-look-board'
   | 'agent-items';
 type MessageRole = 'assistant' | 'user';
+
+function ambientOutcomeFromState(state: Awaited<ReturnType<typeof getAmbientCaptureState>>): AmbientCaptureOutcome | undefined {
+  if (state.diagnostics.processingImageCount > 0) {
+    return { status: 'committed_processing_images', reasonCodes: ['CATALOG_IMAGES_PROCESSING'] };
+  }
+  if (state.diagnostics.needsReviewImageCount > 0) {
+    return { status: 'image_needs_review', reasonCodes: ['CATALOG_IMAGE_NEEDS_REVIEW'] };
+  }
+  return state.diagnostics.lastOutcome;
+}
+
 type IconName =
   | 'camera'
   | 'pause'
@@ -93,6 +124,22 @@ type Message = {
   memoryUsage?: MemoryUsageDisclosure[];
   pendingMemoryCandidates?: ExplicitPreferenceEvent[];
 };
+
+const defaultEmptySceneGuardConfig: EmptySceneGuardConfig = {
+  threshold: 0.03,
+  confirmations: 2,
+  forceProbeMs: 90_000,
+};
+
+interface AmbientEmptySceneDiagnostics {
+  status: EmptySceneGuardState['status'];
+  candidateCount: number;
+  confirmedAt?: number;
+  skippedUploadCount: number;
+  forcedProbeCount: number;
+  sceneDifference?: number;
+  reentryLatencyMs?: number;
+}
 
 const defaultStylingProfile: StylingProfile = {
   presentationPreference: 'unknown',
@@ -1241,12 +1288,54 @@ function App() {
     status: 'no_camera',
     failureReason: 'no_frame',
   });
+  const [ambientCaptureEnabled, setAmbientCaptureEnabled] = useState(false);
+  const [showAmbientGrantPrompt, setShowAmbientGrantPrompt] = useState(false);
+  const [ambientCaptureEvent, setAmbientCaptureEvent] = useState<AmbientCaptureCompletedEvent>();
+  const [ambientCaptureOutcome, setAmbientCaptureOutcome] = useState<AmbientCaptureOutcome>();
+  const [ambientCaptureCounts, setAmbientCaptureCounts] = useState({ closet: 0, captures: 0 });
+  const [ambientClosetItems, setAmbientClosetItems] = useState<AmbientCaptureClosetEntry[]>([]);
+  const [ambientProductImageProviderReady, setAmbientProductImageProviderReady] = useState(false);
+  const [ambientProductImageBackfillPending, setAmbientProductImageBackfillPending] = useState(false);
+  const [emptySceneGuardConfig, setEmptySceneGuardConfig] = useState(defaultEmptySceneGuardConfig);
+  const [ambientEmptySceneDiagnostics, setAmbientEmptySceneDiagnostics] = useState<AmbientEmptySceneDiagnostics>({
+    status: 'inactive',
+    candidateCount: 0,
+    skippedUploadCount: 0,
+    forcedProbeCount: 0,
+  });
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const mirrorFrameInFlight = useRef(false);
+  const ambientFrameInFlight = useRef(false);
+  const ambientPreviousSample = useRef<FrameStabilitySample | undefined>(undefined);
+  const ambientStableSamples = useRef(0);
+  const ambientNextCaptureAt = useRef(0);
+  const ambientEmptySceneGuard = useRef<EmptySceneGuardState>({ status: 'inactive' });
+  const ambientEmptySceneStreamId = useRef<string | undefined>(undefined);
+  const ambientSceneReentryDetectedAt = useRef<number | undefined>(undefined);
+  const ambientSkippedUploadCount = useRef(0);
+  const ambientForcedProbeCount = useRef(0);
+  const ambientDiagnosticsPublishedAt = useRef(0);
   const messageEndRef = useRef<HTMLDivElement>(null);
   const typingTimerRef = useRef<number | undefined>(undefined);
   const idRef = useRef(1);
+
+  const resetAmbientEmptySceneGuard = useCallback((resetCounters = false) => {
+    ambientEmptySceneGuard.current = { status: 'inactive' };
+    ambientEmptySceneStreamId.current = undefined;
+    ambientSceneReentryDetectedAt.current = undefined;
+    if (resetCounters) {
+      ambientSkippedUploadCount.current = 0;
+      ambientForcedProbeCount.current = 0;
+      ambientDiagnosticsPublishedAt.current = 0;
+    }
+    setAmbientEmptySceneDiagnostics(() => ({
+      status: 'inactive',
+      candidateCount: 0,
+      skippedUploadCount: resetCounters ? 0 : ambientSkippedUploadCount.current,
+      forcedProbeCount: resetCounters ? 0 : ambientForcedProbeCount.current,
+    }));
+  }, []);
 
   const bindVideoRef = useCallback((element: HTMLVideoElement | null) => {
     videoRef.current = element;
@@ -1287,6 +1376,78 @@ function App() {
 
   useEffect(() => {
     let cancelled = false;
+    setAmbientCaptureEvent(undefined);
+    setAmbientCaptureOutcome(undefined);
+    setAmbientClosetItems([]);
+    void getAmbientCaptureState(userId)
+      .then((state) => {
+        if (cancelled) return;
+        setAmbientCaptureEnabled(state.diagnostics.grantActive);
+        setAmbientCaptureOutcome(ambientOutcomeFromState(state));
+        setAmbientCaptureEvent(state.pendingCompletionEvent);
+        setAmbientCaptureCounts({
+          closet: state.diagnostics.closetItemCount,
+          captures: state.diagnostics.captureCount,
+        });
+        setAmbientClosetItems(state.closetItems);
+        setAmbientProductImageProviderReady(
+          state.diagnostics.productImageProviderReady && state.diagnostics.productImageVerifierReady,
+        );
+      })
+      .catch(() => undefined);
+    return () => { cancelled = true; };
+  }, [userId]);
+
+  const wardrobeMomentPollMs = wardrobeMomentPollIntervalMs(ambientCaptureEvent);
+
+  useEffect(() => {
+    if (!wardrobeMomentPollMs) return undefined;
+    let cancelled = false;
+    const refreshWardrobeMoment = () => {
+      void getAmbientCaptureState().then((state) => {
+        if (cancelled) return;
+        setAmbientCaptureOutcome(ambientOutcomeFromState(state));
+        setAmbientCaptureEvent(state.pendingCompletionEvent);
+        setAmbientClosetItems(state.closetItems);
+      }).catch(() => undefined);
+    };
+    refreshWardrobeMoment();
+    const poll = window.setInterval(refreshWardrobeMoment, wardrobeMomentPollMs);
+    return () => { cancelled = true; window.clearInterval(poll); };
+  }, [ambientCaptureEvent?.eventId, wardrobeMomentPollMs]);
+
+  useEffect(() => {
+    if (!ambientProductImageBackfillPending) return undefined;
+    let cancelled = false;
+    const poll = window.setInterval(() => {
+      void getAmbientCaptureState().then((state) => {
+        if (cancelled) return;
+        setAmbientClosetItems(state.closetItems);
+        setAmbientCaptureOutcome(ambientOutcomeFromState(state));
+        setAmbientCaptureEvent(state.pendingCompletionEvent);
+      }).catch(() => undefined);
+    }, 1_500);
+    return () => { cancelled = true; window.clearInterval(poll); };
+  }, [ambientProductImageBackfillPending]);
+
+  const backfillAmbientProductImagesFromUi = useCallback(async () => {
+    if (ambientProductImageBackfillPending) return;
+    setAmbientProductImageBackfillPending(true);
+    try {
+      await backfillAmbientProductImages();
+      const state = await getAmbientCaptureState();
+      setAmbientClosetItems(state.closetItems);
+      setAmbientCaptureOutcome(ambientOutcomeFromState(state));
+      setAmbientCaptureEvent(state.pendingCompletionEvent);
+    } catch {
+      setAmbientCaptureOutcome({ status: 'image_needs_review', reasonCodes: ['PRODUCT_IMAGE_BACKFILL_FAILED'] });
+    } finally {
+      setAmbientProductImageBackfillPending(false);
+    }
+  }, [ambientProductImageBackfillPending]);
+
+  useEffect(() => {
+    let cancelled = false;
     getAgentStatus()
       .then((status) => {
         if (cancelled) return;
@@ -1307,6 +1468,9 @@ function App() {
 	          );
           if (typeof status.mirrorFrameIntervalMs === 'number') {
             setMirrorFrameIntervalMs(status.mirrorFrameIntervalMs);
+          }
+          if (status.ambientCapture?.emptyScene) {
+            setEmptySceneGuardConfig(status.ambientCapture.emptyScene);
           }
         } else {
           setTransport('mock');
@@ -1484,6 +1648,9 @@ function App() {
       cameraActive: nextEnabled,
       status: nextEnabled ? (current.status === 'no_camera' ? 'preview_only' : current.status) : current.status,
     }));
+    if (!nextEnabled && ambientCaptureEnabled) {
+      void endAmbientCaptureEpisode({ userId, sessionId }).catch(() => undefined);
+    }
   };
 
   const takeSnapshot = (maxWidth = 960, quality = 0.82): string | null => {
@@ -1574,6 +1741,224 @@ function App() {
       window.clearInterval(timer);
     };
   }, [cameraState, mirrorFrameIntervalMs, sessionId]);
+
+  useEffect(() => {
+    if (!ambientCaptureEnabled || cameraState !== 'active' || !streamRef.current) {
+      ambientPreviousSample.current = undefined;
+      ambientStableSamples.current = 0;
+      ambientNextCaptureAt.current = 0;
+      resetAmbientEmptySceneGuard();
+      return undefined;
+    }
+    let cancelled = false;
+    const sampleIntervalMs = 600;
+    const inspect = async () => {
+      const video = videoRef.current;
+      if (!video || cancelled || document.hidden || ambientFrameInFlight.current) return;
+      const streamId = streamRef.current?.id;
+      if (!streamId) return;
+      if (ambientEmptySceneStreamId.current !== streamId) {
+        ambientPreviousSample.current = undefined;
+        ambientStableSamples.current = 0;
+        ambientNextCaptureAt.current = 0;
+        resetAmbientEmptySceneGuard();
+        ambientEmptySceneStreamId.current = streamId;
+      }
+      const sample = sampleVideoFrame(video, mirror);
+      if (!sample) return;
+      const score = frameStabilityScore(ambientPreviousSample.current, sample);
+      ambientPreviousSample.current = sample;
+      ambientStableSamples.current = nextStableSampleCount(ambientStableSamples.current, score);
+      const now = Date.now();
+      const guardEvaluation = evaluateEmptySceneGuard(
+        ambientEmptySceneGuard.current,
+        sample,
+        now,
+        emptySceneGuardConfig,
+      );
+      ambientEmptySceneGuard.current = guardEvaluation.state;
+      if (guardEvaluation.sceneChanged) {
+        ambientStableSamples.current = 0;
+        ambientNextCaptureAt.current = 0;
+        ambientSceneReentryDetectedAt.current = now;
+        setAmbientEmptySceneDiagnostics((current) => ({
+          ...current,
+          status: 'inactive',
+          candidateCount: 0,
+          confirmedAt: undefined,
+          sceneDifference: guardEvaluation.difference,
+        }));
+        return;
+      }
+      if (guardEvaluation.skippedUpload) {
+        ambientSkippedUploadCount.current += 1;
+        if (now - ambientDiagnosticsPublishedAt.current >= 5_000) {
+          ambientDiagnosticsPublishedAt.current = now;
+          setAmbientEmptySceneDiagnostics((current) => ({
+            ...current,
+            status: guardEvaluation.state.status,
+            skippedUploadCount: ambientSkippedUploadCount.current,
+            forcedProbeCount: ambientForcedProbeCount.current,
+            sceneDifference: guardEvaluation.difference,
+          }));
+        }
+        return;
+      }
+      if (ambientStableSamples.current < 3) return;
+      if (!guardEvaluation.forcedProbe && now < ambientNextCaptureAt.current) return;
+      const capturedImageDataUrl = takeSnapshot(1280, 0.9);
+      if (!capturedImageDataUrl) return;
+      ambientFrameInFlight.current = true;
+      ambientStableSamples.current = 0;
+      if (guardEvaluation.forcedProbe) {
+        ambientForcedProbeCount.current += 1;
+        setAmbientEmptySceneDiagnostics((current) => ({
+          ...current,
+          skippedUploadCount: ambientSkippedUploadCount.current,
+          forcedProbeCount: ambientForcedProbeCount.current,
+          sceneDifference: guardEvaluation.difference,
+        }));
+      }
+      try {
+        const response = await sendAmbientCaptureFrame({
+          userId,
+          sessionId,
+          frameId: `ambient_${Date.now().toString(36)}`,
+          capturedAt: new Date().toISOString(),
+          capturedImageDataUrl,
+          activeTask: responding || generating || Boolean(pendingApproval),
+          stability: {
+            score,
+            stableSamples: 3,
+            sampleIntervalMs,
+            sourceWidth: sample.sourceWidth,
+            sourceHeight: sample.sourceHeight,
+          },
+        });
+        if (cancelled) return;
+        setAmbientCaptureOutcome(response.outcome);
+        if (response.outcome.completedEvent) {
+          setAmbientCaptureEvent(response.outcome.completedEvent);
+          setAmbientCaptureCounts((current) => ({
+            closet: current.closet + response.outcome.completedEvent!.newItemIds.length,
+            captures: current.captures + (response.outcome.status === 'already_committed' ? 0 : 1),
+          }));
+        }
+        const completedAt = Date.now();
+        const noPerson = response.outcome.reasonCodes.includes('NO_PERSON_PRESENT');
+        if (noPerson) {
+          ambientEmptySceneGuard.current = resolveEmptySceneObservation(
+            ambientEmptySceneGuard.current,
+            sample,
+            completedAt,
+            emptySceneGuardConfig,
+            true,
+          );
+        } else if (response.outcome.observationId) {
+          ambientEmptySceneGuard.current = resolveEmptySceneObservation(
+            ambientEmptySceneGuard.current,
+            sample,
+            completedAt,
+            emptySceneGuardConfig,
+            false,
+          );
+        }
+        let guardState = ambientEmptySceneGuard.current;
+        if (
+          guardEvaluation.forcedProbe
+          && !noPerson
+          && !response.outcome.observationId
+          && guardState.status === 'confirmed'
+        ) {
+          guardState = {
+            ...guardState,
+            nextForcedProbeAt: completedAt + (response.outcome.retryAfterMs ?? 10_000),
+          };
+          ambientEmptySceneGuard.current = guardState;
+        }
+        const reentryLatencyMs = ambientSceneReentryDetectedAt.current === undefined
+          ? undefined
+          : completedAt - ambientSceneReentryDetectedAt.current;
+        if (reentryLatencyMs !== undefined) ambientSceneReentryDetectedAt.current = undefined;
+        setAmbientEmptySceneDiagnostics((current) => ({
+          ...current,
+          status: guardState.status,
+          candidateCount: guardState.status === 'candidate' ? guardState.confirmationCount : 0,
+          confirmedAt: guardState.status === 'confirmed' ? guardState.confirmedAt : undefined,
+          skippedUploadCount: ambientSkippedUploadCount.current,
+          forcedProbeCount: ambientForcedProbeCount.current,
+          reentryLatencyMs: reentryLatencyMs ?? current.reentryLatencyMs,
+        }));
+        ambientNextCaptureAt.current = completedAt + (response.outcome.retryAfterMs ?? 5_000);
+      } catch {
+        const retryAt = Date.now() + 10_000;
+        ambientNextCaptureAt.current = retryAt;
+        if (ambientEmptySceneGuard.current.status === 'confirmed') {
+          ambientEmptySceneGuard.current = {
+            ...ambientEmptySceneGuard.current,
+            nextForcedProbeAt: retryAt,
+          };
+        }
+        // Ambient capture is deliberately non-blocking. Chat and the local
+        // mirror continue even when its real vision provider is unavailable.
+      } finally {
+        ambientFrameInFlight.current = false;
+      }
+    };
+    const timer = window.setInterval(() => { void inspect(); }, sampleIntervalMs);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [
+    ambientCaptureEnabled,
+    cameraState,
+    emptySceneGuardConfig,
+    generating,
+    mirror,
+    pendingApproval,
+    resetAmbientEmptySceneGuard,
+    responding,
+    sessionId,
+    userId,
+  ]);
+
+  const enableAmbientCapture = async () => {
+    await setAmbientCaptureGrant({ userId, enabled: true });
+    setAmbientCaptureEnabled(true);
+    setShowAmbientGrantPrompt(false);
+    ambientPreviousSample.current = undefined;
+    ambientStableSamples.current = 0;
+    ambientNextCaptureAt.current = 0;
+    resetAmbientEmptySceneGuard(true);
+  };
+
+  const disableAmbientCapture = async () => {
+    await setAmbientCaptureGrant({ userId, enabled: false });
+    setAmbientCaptureEnabled(false);
+    setShowAmbientGrantPrompt(false);
+    ambientPreviousSample.current = undefined;
+    ambientStableSamples.current = 0;
+    ambientNextCaptureAt.current = 0;
+    resetAmbientEmptySceneGuard(true);
+    await endAmbientCaptureEpisode({ userId, sessionId }).catch(() => undefined);
+  };
+
+  const toggleAmbientCapture = () => {
+    if (ambientCaptureEnabled) {
+      void disableAmbientCapture();
+      return;
+    }
+    setShowAmbientGrantPrompt(true);
+  };
+
+  const resetAmbientCaptureFromUi = async () => {
+    await resetAmbientCapture(userId);
+    setAmbientCaptureEnabled(false);
+    setAmbientCaptureEvent(undefined);
+    setAmbientCaptureOutcome(undefined);
+    setAmbientCaptureCounts({ closet: 0, captures: 0 });
+  };
 
   const updateStageFromArtifacts = (artifacts: AgentArtifact[]) => {
     const lookBoard = [...artifacts].reverse().find((artifact): artifact is Extract<AgentArtifact, { type: 'look_board' }> => artifact.type === 'look_board');
@@ -2063,6 +2448,12 @@ function App() {
       agentStatusLabel,
       perceptionLabel: perceptionLabel(cameraState, perception),
       situationDecision: developmentSituationResult?.decision,
+      ambientCaptureEvent,
+      ambientCaptureStatus: ambientCaptureOutcome?.status,
+      ambientClosetItems,
+      ambientProductImageProviderReady,
+      ambientProductImageBackfillPending,
+      foregroundVisualTask: visualMode !== 'live' && Boolean(stageArtifact),
     }),
     [
       agentStatusLabel,
@@ -2079,6 +2470,13 @@ function App() {
       voice.partialTranscript,
       voice.state,
       developmentSituationResult,
+      ambientCaptureEvent,
+      ambientCaptureOutcome?.status,
+      ambientClosetItems,
+      ambientProductImageProviderReady,
+      ambientProductImageBackfillPending,
+      stageArtifact,
+      visualMode,
     ],
   );
 
@@ -2176,9 +2574,56 @@ function App() {
                 <button className="round-control" onClick={() => setMirror((value) => !value)} aria-label="切换镜像">
                   <Icon name="flip" />
                 </button>
+                <button
+                  className={`ambient-capture-toggle ${ambientCaptureEnabled ? 'is-active' : ''}`}
+                  type="button"
+                  aria-pressed={ambientCaptureEnabled}
+                  onClick={toggleAmbientCapture}
+                  title="自动记录单人稳定画面中穿着的衣物"
+                >
+                  <i />
+                  {ambientCaptureEnabled ? '自动记录已开启' : '开启自动记录'}
+                </button>
               </div>
               <p><Icon name="check" size={14} />本地镜子和小助手视觉状态分开显示</p>
             </div>
+            {showAmbientGrantPrompt && !ambientCaptureEnabled && (
+              <section className="ambient-capture-consent" role="dialog" aria-labelledby="ambient-capture-consent-title">
+                <div>
+                  <span>一次性授权</span>
+                  <strong id="ambient-capture-consent-title">自动记录我穿着的衣物</strong>
+                  <p>
+                    仅在单人、稳定且能看清整套穿着时分析。Muse 会保存用于复认的选定画面证据，
+                    不保存连续视频；手持衣物、多人画面和不可靠结果不会写入衣橱。
+                  </p>
+                </div>
+                <div className="ambient-capture-consent-actions">
+                  <button type="button" className="primary-action" onClick={() => { void enableAmbientCapture(); }}>同意并开启</button>
+                  <button type="button" onClick={() => setShowAmbientGrantPrompt(false)}>暂不开启</button>
+                </div>
+              </section>
+            )}
+            {(import.meta.env.DEV || new URLSearchParams(window.location.search).has('ambientDebug')) && (
+              <details className="ambient-capture-debug">
+                <summary>Ambient capture diagnostics</summary>
+                <code>
+                  grant={String(ambientCaptureEnabled)} · items={ambientCaptureCounts.closet} · captures={ambientCaptureCounts.captures} · outcome={ambientCaptureOutcome?.status ?? 'none'}
+                </code>
+                <code>
+                  empty={ambientEmptySceneDiagnostics.status} · candidate={ambientEmptySceneDiagnostics.candidateCount} · confirmedAt={ambientEmptySceneDiagnostics.confirmedAt ?? 'none'} · skipped={ambientEmptySceneDiagnostics.skippedUploadCount} · forced={ambientEmptySceneDiagnostics.forcedProbeCount} · diff={ambientEmptySceneDiagnostics.sceneDifference?.toFixed(4) ?? 'none'} · threshold={emptySceneGuardConfig.threshold} · reentryMs={ambientEmptySceneDiagnostics.reentryLatencyMs ?? 'none'}
+                </code>
+                <button type="button" onClick={() => { void resetAmbientCaptureFromUi(); }}>Reset my ambient wardrobe</button>
+                {ambientProductImageProviderReady && ambientCaptureOutcome?.status === 'image_needs_review' && (
+                  <button
+                    type="button"
+                    disabled={ambientProductImageBackfillPending}
+                    onClick={() => { void backfillAmbientProductImagesFromUi(); }}
+                  >
+                    {ambientProductImageBackfillPending ? 'Retrying product images…' : 'Retry product images'}
+                  </button>
+                )}
+              </details>
+            )}
           </section>
         )}
         canvas={(
