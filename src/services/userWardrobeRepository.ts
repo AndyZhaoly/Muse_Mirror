@@ -57,6 +57,7 @@ export interface WardrobeRepository {
     occurredAt?: string;
   }): Promise<void>;
   expirePendingIdentityResolutions(userId: string, occurredAt?: string): Promise<number>;
+  pruneOrphanTrackIdentityEvidence(userId: string, occurredAt?: string): Promise<GarmentImageAsset[]>;
 }
 
 export class JsonUserWardrobeRepository implements WardrobeRepository {
@@ -318,6 +319,22 @@ export class JsonUserWardrobeRepository implements WardrobeRepository {
       for (const episodeId of affectedEpisodes) reconcileEpisodeCaptures(state, episodeId);
       bump(state, occurredAt);
       await this.writeFile(file);
+    });
+  }
+
+  async pruneOrphanTrackIdentityEvidence(
+    userId: string,
+    occurredAt = new Date().toISOString(),
+  ): Promise<GarmentImageAsset[]> {
+    return this.exclusive(async () => {
+      const file = await this.readFile();
+      const state = ensureUser(file, userId);
+      const removed = pruneOrphanTrackIdentityEvidenceFromState(state);
+      if (removed.length > 0) {
+        bump(state, occurredAt);
+        await this.writeFile(file);
+      }
+      return structuredClone(removed);
     });
   }
 
@@ -703,6 +720,31 @@ export class JsonUserWardrobeRepository implements WardrobeRepository {
     });
   }
 
+  async refreshPendingCompletionEventImages(
+    userId: string,
+    captureId: string,
+    occurredAt = new Date().toISOString(),
+  ): Promise<UserWardrobeState['pendingCompletionEvent']> {
+    return this.exclusive(async () => {
+      const file = await this.readFile();
+      const state = ensureUser(file, userId);
+      const completionEvent = state.pendingCompletionEvent;
+      if (!completionEvent || completionEvent.captureId !== captureId) return undefined;
+      completionEvent.itemSummaries = completionEvent.itemSummaries.map((summary) => {
+        const ambient = state.closetItems.find((entry) => entry.item.id === summary.closetItemId)?.item;
+        if (!ambient) return summary;
+        return {
+          ...summary,
+          imageUrl: ambient.imageStatus === 'ready' ? ambient.imageUrl : summary.imageUrl,
+          imageStatus: ambient.imageStatus,
+        };
+      });
+      bump(state, occurredAt);
+      await this.writeFile(file);
+      return structuredClone(completionEvent);
+    });
+  }
+
   async acknowledgeCompletion(userId: string, occurredAt = new Date().toISOString()): Promise<boolean> {
     return this.exclusive(async () => {
       const file = await this.readFile();
@@ -862,6 +904,42 @@ function isLivePendingResolution(resolution: PendingIdentityResolution): boolean
     resolution.state === 'deferred';
 }
 
+function pruneOrphanTrackIdentityEvidenceFromState(state: UserWardrobeState): GarmentImageAsset[] {
+  const liveAssetIds = new Set<string>();
+  for (const episode of state.episodes) {
+    if (episode.status === 'ended') continue;
+    for (const track of episode.garmentTracks ?? []) {
+      for (const evidence of track.identityEvidence) liveAssetIds.add(evidence.assetId);
+    }
+  }
+  for (const resolution of state.pendingIdentityResolutions) {
+    if (!isLivePendingResolution(resolution)) continue;
+    for (const assetId of resolution.currentEvidenceAssetIds) liveAssetIds.add(assetId);
+  }
+
+  const removed = state.assets.filter((asset) =>
+    asset.role === 'track_identity_evidence' && !liveAssetIds.has(asset.assetId));
+  if (!removed.length) return [];
+
+  const removedIds = new Set(removed.map((asset) => asset.assetId));
+  state.assets = state.assets.filter((asset) => !removedIds.has(asset.assetId));
+  for (const episode of state.episodes) {
+    if (!episode.garmentTracks) continue;
+    episode.garmentTracks = episode.garmentTracks.map((track) => ({
+      ...track,
+      identityEvidence: track.identityEvidence.filter((evidence) => !removedIds.has(evidence.assetId)),
+    }));
+  }
+  state.pendingIdentityResolutions = state.pendingIdentityResolutions.map((resolution) =>
+    isLivePendingResolution(resolution)
+      ? resolution
+      : {
+          ...resolution,
+          currentEvidenceAssetIds: resolution.currentEvidenceAssetIds.filter((assetId) => !removedIds.has(assetId)),
+        });
+  return removed;
+}
+
 function applyPendingIdentityResolution(
   state: UserWardrobeState,
   input: {
@@ -877,6 +955,34 @@ function applyPendingIdentityResolution(
   const occurredAt = input.occurredAt ?? new Date().toISOString();
   resolution.state = input.state;
   resolution.updatedAt = occurredAt;
+  const pendingCompletionEvent = state.pendingCompletionEvent;
+  const pendingSummary = pendingCompletionEvent?.pendingItems.find((item) => item.resolutionId === input.resolutionId);
+  if (pendingCompletionEvent && pendingSummary) {
+    pendingCompletionEvent.pendingItems = pendingCompletionEvent.pendingItems.filter((item) =>
+      item.resolutionId !== input.resolutionId);
+    if (input.state === 'resolved_new') {
+      pendingCompletionEvent.newItemIds = unique([...pendingCompletionEvent.newItemIds, input.closetItemId]);
+    } else {
+      pendingCompletionEvent.recognizedItemIds = unique([
+        ...pendingCompletionEvent.recognizedItemIds,
+        input.closetItemId,
+      ]);
+    }
+    if (!pendingCompletionEvent.itemSummaries.some((summary) => summary.closetItemId === input.closetItemId)) {
+      const ambient = state.closetItems.find((entry) => entry.item.id === input.closetItemId)?.item;
+      pendingCompletionEvent.itemSummaries.push({
+        closetItemId: input.closetItemId,
+        slot: pendingSummary.slot,
+        label: ambient?.name ?? pendingSummary.label,
+        status: input.state === 'resolved_new' ? 'new' : 'recognized',
+        imageUrl: ambient?.imageStatus === 'ready' ? ambient.imageUrl : undefined,
+        imageStatus: ambient?.imageStatus ?? (input.state === 'resolved_new' ? 'processing' : 'ready'),
+      });
+    }
+    pendingCompletionEvent.completionStatus = pendingCompletionEvent.pendingItems.length > 0
+      ? 'partially_resolved'
+      : pendingCompletionEvent.newItemIds.length > 0 ? 'fully_resolved' : 'fully_recognized';
+  }
   const affectedEpisodes = new Set<string>();
   for (const capture of state.captures) {
     if (!capture.items.some((item) => item.type === 'pending_identity' && item.resolutionId === input.resolutionId)) continue;

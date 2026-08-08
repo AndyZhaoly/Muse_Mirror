@@ -232,6 +232,9 @@ The first reliable observation creates one ephemeral crop per garment track. The
 adds a second crop and identity resolution sends both current frames, but still compares them with exactly one
 ClosetItem at a time. Track buffers retain at most two assets. Catalog-only matches with two current frames must
 show consistent instance-specific support across both; mixed strong evidence can never be averaged into a match.
+Each crop is bound through the track's exact `latestObservationItemId`. Slot/category lookup is never used as a
+fallback because two garments may legitimately share both values; if the exact observation item is absent, the
+runtime skips that crop instead of attaching another garment's evidence.
 
 An ambiguous result creates a persisted `PendingIdentityResolution` without blocking other garments in the same
 capture. `OutfitCapture.items` may mix durable `closet_item` references with `pending_identity` references. Clear
@@ -288,7 +291,11 @@ appearance, capture, wear, evidence, and audit records with an idempotency key. 
 are independent. A Stage B verification pass may set only `imageStatus=ready`, `primaryImageAssetId`, and
 `imageUrl`; failure sets `imageStatus=needs_review`. Neither outcome confirms identity or ownership, and a
 later automatic `matched_existing` observation preserves the record's prior identity/ownership state. Stage B keeps
-independent product-image jobs so a restart or developer retry cannot duplicate the wardrobe transaction.
+independent product-image jobs so a restart or developer retry cannot duplicate the wardrobe transaction. The
+Stage A capture is the authority for garment identity and completion state. A delayed Stage B job may refresh image
+fields only when the current completion event still owns that capture; it never rebuilds identity from its old
+proposal. Monotonic runtime outcome revisions also prevent an older image job from replacing a newer observation's
+diagnostic outcome.
 The recommendation runtime reads the same signed-browser overlay as ambient capture. A new-item completion
 card displays product images only after all required jobs are verified; repeat recognition reuses existing
 primary images without another generation call.
@@ -296,6 +303,15 @@ primary images without another generation call.
 Completion events explicitly distinguish `fully_resolved`, `fully_recognized`, and `partially_resolved` results.
 Partial events include their unresolved garment references, allowing the Mirror Canvas to acknowledge recorded
 items while saying that another garment still needs evidence instead of claiming the whole outfit is finalized.
+Runtime diagnostics derive the same truth from the persisted completion event: successful image generation cannot
+turn `NEW + PENDING` into an all-ready outcome.
+
+`track_identity_evidence` is governed by repository-wide live-root garbage collection rather than cleanup of only
+the current episode. Active track buffers and non-terminal pending resolutions are the only long-lived roots.
+Resolution, expiration, privacy cleanup, or any other terminal transition removes dead references and returns the
+orphan assets for physical deletion. Structured signatures and sanitized decision traces remain available for
+audit, while raw crops do not outlive their identity purpose. Separately retained diagnostic reproduction bundles
+follow their own explicit retention policy and are not business-state identity evidence.
 
 Duplicate repair is an explicit repository transaction, never a direct JSON edit. `previewClosetItemMerge()`
 reports every affected reference before mutation. `mergeClosetItems()` is per-user, atomic, and idempotent;

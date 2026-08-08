@@ -37,6 +37,7 @@ import type { ProductImageVerifier } from '../services/garmentVisualVerifier.js'
 
 export class AmbientCaptureCoordinator {
   private readonly lastOutcomes = new Map<string, AmbientCaptureOutcome>();
+  private readonly lastOutcomeRevisions = new Map<string, number>();
   private readonly operations = new Map<string, Promise<void>>();
 
   constructor(
@@ -70,6 +71,7 @@ export class AmbientCaptureCoordinator {
       return this.remember(packet.userId, { status: 'insufficient_evidence', reasonCodes: ['CAPTURE_PACKET_STALE'] });
     }
     await this.options.repository.expirePendingIdentityResolutions(packet.userId, packet.capturedAt);
+    await this.pruneOrphanIdentityEvidence(packet.userId, packet.capturedAt);
     state = await this.options.repository.getState(packet.userId);
 
     let episode = currentEpisode(state.episodes, packet.sessionId) ?? newEpisode(packet);
@@ -415,30 +417,46 @@ export class AmbientCaptureCoordinator {
       await this.options.assetService.deleteAssets([evidenceAsset]);
     }
     await this.cleanupEpisodeEvidence(packet.userId, episode, observation.analyzedAt, 'preserve_pending');
+    const completedEvent = committed.status === 'committed'
+      ? completedEventFromCommit(
+          proposal,
+          committed,
+          observation,
+          await this.options.repository.getState(packet.userId),
+          this.options.baseClosetItems(),
+        )
+      : undefined;
+    if (completedEvent) await this.options.repository.setPendingCompletionEvent(packet.userId, completedEvent);
     if (committed.status === 'committed' && committed.createdClosetItemIds.length) {
       const processing: AmbientCaptureOutcome = {
         status: 'committed_processing_images',
-        reasonCodes: [...observationGateReasonCodes, 'CAPTURE_COMMITTED', 'CATALOG_IMAGES_PROCESSING'],
+        reasonCodes: [
+          ...observationGateReasonCodes,
+          'CAPTURE_COMMITTED',
+          'CATALOG_IMAGES_PROCESSING',
+          ...(completedEvent?.completionStatus === 'partially_resolved' ? ['PENDING_IDENTITY_RECORDED'] : []),
+        ],
         episodeId: episode.episodeId,
         observationId: observation.observationId,
+        completedEvent,
         retryAfterMs: 4_000,
       };
       this.remember(packet.userId, processing);
-      void this.processCatalogImages(proposal, committed, observation).catch((error) => {
-        this.remember(packet.userId, {
-          status: 'image_needs_review',
-          reasonCodes: ['CATALOG_IMAGE_STAGE_FAILED', safeErrorCode(error)],
-          episodeId: episode.episodeId,
-          observationId: observation.observationId,
-          retryAfterMs: 15_000,
+      const outcomeRevision = this.lastOutcomeRevisions.get(packet.userId) ?? 0;
+      void this.processCatalogImages(proposal, committed, outcomeRevision).catch((error) => {
+        void this.exclusive(packet.userId, async () => {
+          if ((this.lastOutcomeRevisions.get(packet.userId) ?? 0) !== outcomeRevision) return;
+          this.remember(packet.userId, {
+            status: 'image_needs_review',
+            reasonCodes: ['CATALOG_IMAGE_STAGE_FAILED', safeErrorCode(error)],
+            episodeId: episode.episodeId,
+            observationId: observation.observationId,
+            retryAfterMs: 15_000,
+          });
         });
       });
       return processing;
     }
-    const completedEvent = committed.status === 'committed'
-      ? completedEventFromCommit(proposal, committed, observation, await this.options.repository.getState(packet.userId), this.options.baseClosetItems())
-      : undefined;
-    if (completedEvent) await this.options.repository.setPendingCompletionEvent(packet.userId, completedEvent);
     const status: AmbientCaptureOutcome['status'] = committed.status === 'already_committed'
       ? 'already_committed'
       : pendingStates.length ? 'mixed' : 'recognized';
@@ -630,8 +648,9 @@ export class AmbientCaptureCoordinator {
       result.status === 'fulfilled' ? [[result.value.garment.observationItemId, result.value.asset] as const] : []));
     const evictedIds = new Set<string>();
     const updatedTracks = tracks.map((track) => {
-      const garment = observation.garments.find((entry) =>
-        entry.slot === track.slot && entry.category === track.category);
+      const garment = track.latestObservationItemId
+        ? observation.garments.find((entry) => entry.observationItemId === track.latestObservationItemId)
+        : undefined;
       const asset = garment ? byObservationItem.get(garment.observationItemId) : undefined;
       if (!garment || !asset) return track;
       const evidence = [
@@ -651,9 +670,13 @@ export class AmbientCaptureCoordinator {
       for (const evicted of evidence.slice(0, Math.max(0, evidence.length - maxEvidenceCount))) evictedIds.add(evicted.assetId);
       return { ...track, identityEvidence: evidence.slice(-maxEvidenceCount), maxEvidenceCount };
     });
+    const usedAssetIds = new Set(updatedTracks.flatMap((track) =>
+      track.identityEvidence.map((evidence) => evidence.assetId)));
+    const unusedAssets = capturedAssets.filter((asset) => !usedAssetIds.has(asset.assetId));
+    if (unusedAssets.length) await this.options.assetService.deleteAssets(unusedAssets);
     return {
       tracks: updatedTracks,
-      capturedAssets,
+      capturedAssets: capturedAssets.filter((asset) => usedAssetIds.has(asset.assetId)),
       evictedAssets: existingAssets.filter((asset) => evictedIds.has(asset.assetId)),
     };
   }
@@ -773,12 +796,18 @@ export class AmbientCaptureCoordinator {
       mode,
     );
     await this.options.assetService.deleteAssets(assets);
+    await this.pruneOrphanIdentityEvidence(userId, occurredAt);
+  }
+
+  private async pruneOrphanIdentityEvidence(userId: string, occurredAt: string): Promise<void> {
+    const assets = await this.options.repository.pruneOrphanTrackIdentityEvidence(userId, occurredAt);
+    await this.options.assetService.deleteAssets(assets);
   }
 
   private async processCatalogImages(
     proposal: OutfitCaptureProposal,
     committed: Awaited<ReturnType<JsonUserWardrobeRepository['commitCapture']>>,
-    observation: WornOutfitObservation,
+    outcomeRevision: number,
   ): Promise<void> {
     let failed = false;
     for (const closetItemId of committed.createdClosetItemIds) {
@@ -824,28 +853,37 @@ export class AmbientCaptureCoordinator {
         await this.options.repository.failProductImageJob(proposal.userId, job.jobId, safeErrorCode(error));
       }
     }
-    const state = await this.options.repository.getState(proposal.userId);
-    const completedEvent = completedEventFromCommit(proposal, committed, observation, state, this.options.baseClosetItems());
-    if (failed) {
-      await this.options.repository.setPendingCompletionEvent(proposal.userId, completedEvent);
+    await this.exclusive(proposal.userId, async () => {
+      const completedEvent = await this.options.repository.refreshPendingCompletionEventImages(
+        proposal.userId,
+        committed.capture.captureId,
+      );
+      if (!completedEvent || (this.lastOutcomeRevisions.get(proposal.userId) ?? 0) !== outcomeRevision) return;
+      if (failed) {
+        this.remember(proposal.userId, {
+          status: 'image_needs_review',
+          reasonCodes: [
+            'CAPTURE_RECORDED',
+            'CATALOG_IMAGE_NEEDS_REVIEW',
+            ...(completedEvent.completionStatus === 'partially_resolved' ? ['PENDING_IDENTITY_RECORDED'] : []),
+          ],
+          episodeId: completedEvent.episodeId,
+          completedEvent,
+          retryAfterMs: 15_000,
+        });
+        return;
+      }
+      const partial = completedEvent.completionStatus === 'partially_resolved';
+      const mixed = completedEvent.newItemIds.length > 0 && completedEvent.recognizedItemIds.length > 0;
       this.remember(proposal.userId, {
-        status: 'image_needs_review',
-        reasonCodes: ['CAPTURE_RECORDED', 'CATALOG_IMAGE_NEEDS_REVIEW'],
-        episodeId: proposal.episodeId,
-        observationId: proposal.observation.observationId,
+        status: partial ? 'mixed' : mixed ? 'mixed_ready' : 'ready',
+        reasonCodes: partial
+          ? ['CATALOG_IMAGES_VERIFIED', 'PENDING_IDENTITY_RECORDED']
+          : ['CATALOG_IMAGES_VERIFIED', mixed ? 'MIXED_OUTFIT_READY' : 'ALL_NEW_OUTFIT_READY'],
+        episodeId: completedEvent.episodeId,
         completedEvent,
-        retryAfterMs: 15_000,
+        retryAfterMs: partial ? 2_500 : 12_000,
       });
-      return;
-    }
-    await this.options.repository.setPendingCompletionEvent(proposal.userId, completedEvent);
-    this.remember(proposal.userId, {
-      status: committed.recognizedClosetItemIds.length ? 'mixed_ready' : 'ready',
-      reasonCodes: ['CATALOG_IMAGES_VERIFIED', committed.recognizedClosetItemIds.length ? 'MIXED_OUTFIT_READY' : 'ALL_NEW_OUTFIT_READY'],
-      episodeId: proposal.episodeId,
-      observationId: proposal.observation.observationId,
-      completedEvent,
-      retryAfterMs: 12_000,
     });
   }
 
@@ -900,6 +938,7 @@ export class AmbientCaptureCoordinator {
   }
 
   private remember(userId: string, outcome: AmbientCaptureOutcome): AmbientCaptureOutcome {
+    this.lastOutcomeRevisions.set(userId, (this.lastOutcomeRevisions.get(userId) ?? 0) + 1);
     this.lastOutcomes.set(userId, outcome);
     return outcome;
   }

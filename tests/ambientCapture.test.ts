@@ -465,6 +465,7 @@ test('one ambiguous garment does not block new and existing items in the same ca
     garment('pending-bottom', 'bottom', 'gray', 'gray shorts'),
     shoes,
   ]);
+  const productCalls: ProductImageGenerationInput[] = [];
   const runtime = new AmbientCaptureCoordinator({
     observationProvider: queuedProvider([observed, observed]),
     identityProvider: {
@@ -493,7 +494,7 @@ test('one ambiguous garment does not block new and existing items in the same ca
     },
     repository: fixture.repository,
     baseClosetItems: () => [], assetService: fixture.assetService,
-    productImageProvider: new DisabledFakeProductProvider(),
+    productImageProvider: new EditingFakeProductProvider(fixture.assetService, productCalls),
     productImageVerifier: new PassingProductVerifier(),
   });
 
@@ -516,6 +517,120 @@ test('one ambiguous garment does not block new and existing items in the same ca
   assert.deepEqual(settled.pendingCompletionEvent?.pendingItems.map((item) => item.label), ['gray shorts']);
   assert.equal(settled.pendingCompletionEvent?.newItemIds.length, 1);
   assert.equal(settled.pendingCompletionEvent?.recognizedItemIds.length, 1);
+  const diagnostics = await runtime.diagnostics(userId);
+  assert.equal(productCalls.length, 1);
+  assert.equal(diagnostics.lastOutcome?.status, 'mixed');
+  assert.ok(diagnostics.lastOutcome?.reasonCodes.includes('PENDING_IDENTITY_RECORDED'));
+  assert.ok(!diagnostics.lastOutcome?.reasonCodes.includes('ALL_NEW_OUTFIT_READY'));
+  assert.equal(diagnostics.lastOutcome?.completedEvent?.completionStatus, 'partially_resolved');
+});
+
+test('a delayed catalog image job cannot overwrite a newer resolved outfit state', async () => {
+  const fixture = await createFixture('stale-catalog-completion');
+  await fixture.repository.setGrant(userId, true);
+  const frameA = await writeFrame(path.join(fixture.directory, 'frame-a.jpg'), '#2d5d85', '#9ca3af');
+  const frameB = await writeFrame(path.join(fixture.directory, 'frame-b.jpg'), '#2d5d85', '#737b86');
+  const topA = garment('frame-a-top', 'top', 'blue', 'blue overshirt');
+  const bottomA = garment('frame-a-bottom', 'bottom', 'gray', 'gray shorts');
+  const topB = garment('frame-b-top', 'top', 'blue', 'blue overshirt');
+  const bottomB = {
+    ...garment('frame-b-bottom', 'bottom', 'gray', 'gray shorts'),
+    boundingBox: { x: 0.2, y: 0.44, width: 0.58, height: 0.5 },
+    distinctiveFeatures: ['gray shorts', 'visible waistband'],
+  };
+  const observedA = outfit([topA, bottomA]);
+  const observedB = outfit([topB, bottomB]);
+  let releaseImage!: () => void;
+  let markImageStarted!: () => void;
+  const imageStarted = new Promise<void>((resolve) => { markImageStarted = resolve; });
+  const imageRelease = new Promise<void>((resolve) => { releaseImage = resolve; });
+  const delayedProductProvider: ProductImageProvider = {
+    ready: true,
+    async createCanonicalProductImage(input) {
+      markImageStarted();
+      await imageRelease;
+      const bytes = await sharp(input.sourceAppearance.storagePath!)
+        .resize(512, 512, { fit: 'contain', background: '#f7f7f3' })
+        .webp({ quality: 90 })
+        .toBuffer();
+      return {
+        asset: await fixture.assetService.storeProductImage({
+          userId: input.userId,
+          closetItemId: input.closetItemId,
+          sourceAsset: input.sourceAppearance,
+          bytes,
+          mimeType: 'image/webp',
+        }),
+        provider: 'deferred-fixture',
+        model: 'deferred-fixture',
+      };
+    },
+  };
+  const existingBottom: ClosetItem = {
+    id: 'existing-bottom', name: 'Existing gray shorts', category: 'bottom', color: 'gray', fit: 'straight',
+    styleTags: ['gray shorts'], formality: 'casual', imageUrl: '/agent-assets/existing-bottom.jpg', marketedFor: 'unisex',
+  };
+  const identityProvider = {
+    ready: true,
+    async resolve(input: GarmentIdentityInput): Promise<GarmentIdentityHypothesis> {
+      if (input.garment.observationItemId === 'frame-a-bottom') {
+        const pending = ambiguousIdentity(input, true);
+        pending.candidateItemIds = ['existing-bottom'];
+        return pending;
+      }
+      if (input.garment.slot === 'bottom') {
+        return {
+          observationItemId: input.garment.observationItemId,
+          status: 'matched_existing', matchedClosetItemId: 'existing-bottom',
+          appearanceFingerprint: 'existing-bottom', confidence: 0.95,
+          candidateItemIds: ['existing-bottom'], reasonCodes: ['FIXTURE_MATCH'],
+        };
+      }
+      const existingTop = input.userClosetItems.find((entry) => entry.item.category === 'top');
+      return existingTop ? {
+        observationItemId: input.garment.observationItemId,
+        status: 'matched_existing', matchedClosetItemId: existingTop.item.id,
+        appearanceFingerprint: 'blue-top', confidence: 0.95,
+        candidateItemIds: [existingTop.item.id], reasonCodes: ['FIXTURE_MATCH'],
+      } : {
+        observationItemId: input.garment.observationItemId,
+        status: 'new_to_closet', appearanceFingerprint: 'blue-top', confidence: 0.92,
+        candidateItemIds: [], reasonCodes: ['FIXTURE_NEW'],
+      };
+    },
+  };
+  const runtime = new AmbientCaptureCoordinator({
+    observationProvider: queuedProvider([observedA, observedA, observedB]),
+    identityProvider,
+    repository: fixture.repository,
+    baseClosetItems: () => [existingBottom],
+    assetService: fixture.assetService,
+    productImageProvider: delayedProductProvider,
+    productImageVerifier: new PassingProductVerifier(),
+  });
+
+  assert.equal((await runtime.process(packet(frameA, 'stale-race', 'race-a1'))).status, 'observing');
+  const frameAOutcome = await runtime.process(packet(frameA, 'stale-race', 'race-a2'));
+  assert.equal(frameAOutcome.status, 'committed_processing_images');
+  assert.equal(frameAOutcome.completedEvent?.completionStatus, 'partially_resolved');
+  await imageStarted;
+
+  const frameBOutcome = await runtime.process(packet(frameB, 'stale-race', 'race-b1'));
+  assert.equal(frameBOutcome.status, 'recognized');
+  assert.equal(frameBOutcome.completedEvent?.completionStatus, 'fully_recognized');
+  assert.equal(frameBOutcome.completedEvent?.pendingItems.length, 0);
+  releaseImage();
+  const settled = await waitForState(fixture.repository, userId, (state) =>
+    state.productImageJobs.length === 1 && state.productImageJobs[0]?.status === 'ready');
+  const diagnostics = await runtime.diagnostics(userId);
+
+  assert.equal(settled.pendingCompletionEvent?.completionStatus, 'fully_recognized');
+  assert.equal(settled.pendingCompletionEvent?.pendingItems.length, 0);
+  assert.ok(settled.pendingCompletionEvent?.recognizedItemIds.includes('existing-bottom'));
+  assert.equal(settled.pendingCompletionEvent?.itemSummaries.length, 2);
+  assert.equal(diagnostics.lastOutcome?.status, 'recognized');
+  assert.equal(diagnostics.lastOutcome?.observationId, observedB.observationId);
+  assert.ok(!diagnostics.lastOutcome?.reasonCodes.includes('ALL_NEW_OUTFIT_READY'));
 });
 
 test('different physical garments with the same appearance fingerprint receive unique closet item IDs', async () => {
@@ -905,6 +1020,190 @@ test('garment track assignment consumes each prior track at most once', () => {
   const tracks = updateGarmentTracks(previousTracks, outfit([accessory('watch', 0.2), accessory('bracelet', 0.65)]));
   assert.deepEqual(new Set(tracks.map((track) => track.trackId)), new Set(['track-a', 'track-b']));
   assert.equal(new Set(tracks.map((track) => track.latestObservationItemId)).size, 2);
+});
+
+test('same-slot garment tracks retain the crop for their exact observation item', async () => {
+  const fixture = await createFixture('same-slot-evidence-binding');
+  const framePath = path.join(fixture.directory, 'same-slot.jpg');
+  await sharp({ create: { width: 1280, height: 960, channels: 3, background: '#f4f0e8' } })
+    .composite([
+      { input: await sharp({ create: { width: 260, height: 260, channels: 3, background: '#b91c1c' } }).png().toBuffer(), left: 180, top: 320 },
+      { input: await sharp({ create: { width: 260, height: 260, channels: 3, background: '#1d4ed8' } }).png().toBuffer(), left: 840, top: 320 },
+    ])
+    .jpeg({ quality: 94 })
+    .toFile(framePath);
+  await fixture.repository.setGrant(userId, true);
+  const accessory = (observationItemId: string, x: number, color: string): WornGarmentObservation => ({
+    ...garment(observationItemId, 'top', color, `${color} accessory`),
+    observationItemId,
+    slot: 'accessory',
+    category: 'accessory',
+    boundingBox: { x, y: 0.32, width: 0.22, height: 0.3 },
+  });
+  const observed = outfit([
+    accessory('left-red-accessory', 0.13, 'red'),
+    accessory('right-blue-accessory', 0.65, 'blue'),
+  ]);
+  const runtime = new AmbientCaptureCoordinator({
+    observationProvider: queuedProvider([observed]),
+    identityProvider: new VisualGarmentIdentityProvider({ verifier: new PixelGarmentVerifier() }),
+    repository: fixture.repository,
+    baseClosetItems: () => [],
+    assetService: fixture.assetService,
+    productImageProvider: new DisabledFakeProductProvider(),
+    productImageVerifier: new PassingProductVerifier(),
+  });
+
+  assert.equal((await runtime.process(packet(framePath, 'same-slot', 'same-slot-1'))).status, 'observing');
+  const state = await fixture.repository.getState(userId);
+  const tracks = state.episodes[0]?.garmentTracks ?? [];
+  assert.equal(tracks.length, 2);
+  const evidenceAssets = tracks.map((track) => {
+    const assetId = track.identityEvidence.at(-1)?.assetId;
+    return {
+      track,
+      asset: state.assets.find((asset) => asset.assetId === assetId),
+    };
+  });
+  assert.deepEqual(
+    evidenceAssets.map(({ track, asset }) => [track.latestObservationItemId, asset?.observationItemId]),
+    [
+      ['left-red-accessory', 'left-red-accessory'],
+      ['right-blue-accessory', 'right-blue-accessory'],
+    ],
+  );
+  assert.notEqual(evidenceAssets[0]?.asset?.contentHash, evidenceAssets[1]?.asset?.contentHash);
+});
+
+test('terminal cross-episode pending identity evidence is garbage-collected', async () => {
+  const fixture = await createFixture('cross-episode-evidence-gc');
+  const old = (await fixture.assetService.cropGarment({
+    userId,
+    sourceFramePath: fixture.framePath,
+    sourceFrameId: 'old-frame',
+    observationItemId: 'old-bottom',
+    boundingBox: garment('old-bottom', 'bottom', 'gray', 'gray shorts').boundingBox,
+    slot: 'bottom',
+    role: 'track_identity_evidence',
+  })).asset;
+  const current = (await fixture.assetService.cropGarment({
+    userId,
+    sourceFramePath: fixture.framePath,
+    sourceFrameId: 'current-frame',
+    observationItemId: 'current-bottom',
+    boundingBox: garment('current-bottom', 'bottom', 'gray', 'gray shorts').boundingBox,
+    slot: 'bottom',
+    role: 'track_identity_evidence',
+  })).asset;
+  const descriptor = {
+    slot: 'bottom' as const,
+    category: 'bottom' as const,
+    dominantColor: 'gray',
+    secondaryColors: [],
+    pattern: 'solid',
+    silhouette: 'gray shorts',
+    fit: 'straight',
+    distinctiveFeatures: ['gray shorts'],
+  };
+  await fixture.repository.persistTrackEvidence(userId, {
+    episodeId: 'old-episode', sessionId: 'old-session', status: 'ended',
+    startedAt: '2026-08-08T10:00:00.000Z', endedAt: '2026-08-08T10:02:00.000Z',
+    consecutiveReliableObservations: 2,
+    garmentTracks: [{
+      trackId: 'old-track', latestObservationItemId: 'old-bottom', slot: 'bottom', category: 'bottom',
+      appearanceFingerprint: 'gray-shorts', descriptor, firstObservationId: 'old-observation',
+      latestObservationId: 'old-observation', consecutiveMatches: 2,
+      identityEvidence: [{
+        observationId: 'old-observation', frameId: 'old-frame', assetId: old.assetId,
+        capturedAt: '2026-08-08T10:01:00.000Z', descriptor,
+        boundingBox: garment('old-bottom', 'bottom', 'gray', 'gray shorts').boundingBox,
+        coverage: 'full_body',
+      }], maxEvidenceCount: 2,
+    }],
+  }, [old]);
+  await fixture.repository.persistTrackEvidence(userId, {
+    episodeId: 'current-episode', sessionId: 'current-session', status: 'ended',
+    startedAt: '2026-08-08T10:03:00.000Z', endedAt: '2026-08-08T10:05:00.000Z',
+    consecutiveReliableObservations: 2,
+    garmentTracks: [{
+      trackId: 'current-track', latestObservationItemId: 'current-bottom', slot: 'bottom', category: 'bottom',
+      appearanceFingerprint: 'gray-shorts', descriptor, firstObservationId: 'current-observation',
+      latestObservationId: 'current-observation', consecutiveMatches: 2,
+      identityEvidence: [{
+        observationId: 'current-observation', frameId: 'current-frame', assetId: current.assetId,
+        capturedAt: '2026-08-08T10:04:00.000Z', descriptor,
+        boundingBox: garment('current-bottom', 'bottom', 'gray', 'gray shorts').boundingBox,
+        coverage: 'full_body',
+      }], maxEvidenceCount: 2,
+    }],
+  }, [current]);
+  await fixture.repository.upsertPendingIdentityResolution(userId, {
+    resolutionId: 'cross-episode-pending', userId, episodeId: 'old-episode', trackId: 'old-track',
+    observationItemId: 'old-bottom', slot: 'bottom', category: 'bottom', lockedDescriptor: descriptor,
+    currentEvidenceAssetIds: [old.assetId, current.assetId], evidenceSignatures: [],
+    candidateClosetItemIds: ['gray-shorts'], candidateHistoryClosetItemIds: ['gray-shorts'],
+    candidateSummaries: [], ambiguityReasonCodes: ['INSUFFICIENT_INSTANCE_EVIDENCE'], occludedFeatures: [],
+    automaticRecheckCount: 1, state: 'ready_to_ask', createdAt: '2026-08-08T10:01:00.000Z',
+    updatedAt: '2026-08-08T10:04:00.000Z', deadlineAt: '2026-08-08T10:10:00.000Z',
+  });
+  await fixture.repository.resolvePendingIdentity({
+    userId, resolutionId: 'cross-episode-pending', closetItemId: 'gray-shorts', state: 'resolved_existing',
+    occurredAt: '2026-08-08T10:06:00.000Z',
+  });
+  const removed = await fixture.repository.pruneOrphanTrackIdentityEvidence(userId, '2026-08-08T10:06:01.000Z');
+  await fixture.assetService.deleteAssets(removed);
+
+  const state = await fixture.repository.getState(userId);
+  assert.deepEqual(new Set(removed.map((asset) => asset.assetId)), new Set([old.assetId, current.assetId]));
+  assert.equal(state.assets.some((asset) => asset.role === 'track_identity_evidence'), false);
+  assert.equal(state.pendingIdentityResolutions[0]?.currentEvidenceAssetIds.length, 0);
+  assert.equal(state.pendingIdentityResolutions[0]?.state, 'resolved_existing');
+  await assert.rejects(() => fs.access(old.storagePath!));
+  await assert.rejects(() => fs.access(current.storagePath!));
+});
+
+test('expired pending identity evidence is garbage-collected while structured history remains', async () => {
+  const fixture = await createFixture('expired-evidence-gc');
+  const evidence = (await fixture.assetService.cropGarment({
+    userId,
+    sourceFramePath: fixture.framePath,
+    sourceFrameId: 'expired-frame',
+    observationItemId: 'expired-bottom',
+    boundingBox: garment('expired-bottom', 'bottom', 'gray', 'gray shorts').boundingBox,
+    slot: 'bottom',
+    role: 'track_identity_evidence',
+  })).asset;
+  const descriptor = {
+    slot: 'bottom' as const, category: 'bottom' as const, dominantColor: 'gray', secondaryColors: [],
+    pattern: 'solid', silhouette: 'gray shorts', fit: 'straight', distinctiveFeatures: ['gray shorts'],
+  };
+  await fixture.repository.persistTrackEvidence(userId, {
+    episodeId: 'expired-episode', sessionId: 'expired-session', status: 'ended',
+    startedAt: '2026-08-08T10:00:00.000Z', endedAt: '2026-08-08T10:01:00.000Z',
+    consecutiveReliableObservations: 2, garmentTracks: [],
+  }, [evidence]);
+  await fixture.repository.upsertPendingIdentityResolution(userId, {
+    resolutionId: 'expiring-pending', userId, episodeId: 'expired-episode', trackId: 'expired-track',
+    observationItemId: 'expired-bottom', slot: 'bottom', category: 'bottom', lockedDescriptor: descriptor,
+    currentEvidenceAssetIds: [evidence.assetId], evidenceSignatures: [{
+      assetId: evidence.assetId, perceptualHash: evidence.perceptualHash,
+      boundingBox: garment('expired-bottom', 'bottom', 'gray', 'gray shorts').boundingBox,
+      descriptor, coverage: 'full_body',
+    }], candidateClosetItemIds: ['gray-shorts'], candidateHistoryClosetItemIds: ['gray-shorts'],
+    candidateSummaries: [], ambiguityReasonCodes: ['INSUFFICIENT_INSTANCE_EVIDENCE'], occludedFeatures: [],
+    automaticRecheckCount: 0, state: 'deferred', createdAt: '2026-08-08T10:00:00.000Z',
+    updatedAt: '2026-08-08T10:00:00.000Z', deadlineAt: '2026-08-08T10:05:00.000Z',
+  });
+  assert.equal(await fixture.repository.expirePendingIdentityResolutions(userId, '2026-08-08T10:06:00.000Z'), 1);
+  const removed = await fixture.repository.pruneOrphanTrackIdentityEvidence(userId, '2026-08-08T10:06:01.000Z');
+  await fixture.assetService.deleteAssets(removed);
+
+  const state = await fixture.repository.getState(userId);
+  assert.equal(state.pendingIdentityResolutions[0]?.state, 'expired');
+  assert.equal(state.pendingIdentityResolutions[0]?.currentEvidenceAssetIds.length, 0);
+  assert.equal(state.pendingIdentityResolutions[0]?.evidenceSignatures.length, 1);
+  assert.equal(state.assets.some((asset) => asset.assetId === evidence.assetId), false);
+  await assert.rejects(() => fs.access(evidence.storagePath!));
 });
 
 test('episode end and privacy pause remove orphan track evidence', async () => {

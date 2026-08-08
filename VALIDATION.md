@@ -133,7 +133,11 @@ also require that one ambiguous garment does not block resolved garments, that a
 pending item reference, and that later resolution migrates that reference and creates at most one WearEvent.
 They additionally cover unique physical item IDs for equal fingerprints, atomic pending/capture reconciliation,
 same-slot garment replacement, recheck-budget preservation after episode departure, pending expiry, bounded live
-candidate windows, one-to-one track assignment, and truthful partial-completion UI copy.
+candidate windows, one-to-one track assignment, and truthful partial-completion UI copy. State-consistency
+regressions additionally assert that same-slot/same-category tracks receive their exact observation crops, a
+delayed catalog-image job cannot overwrite a newer resolved capture or `lastOutcome`, resolved/expired pending
+records release cross-episode raw identity evidence, and `NEW + PENDING` remains partial in repository events and
+runtime diagnostics after catalog-image success.
 
 Private real-camera cases can be summarized without committing photos:
 
