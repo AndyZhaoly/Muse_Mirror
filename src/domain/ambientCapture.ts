@@ -190,23 +190,34 @@ export interface GarmentIdentityHypothesis {
 
 export type GarmentIdentityFeature =
   | 'color'
-  | 'pattern'
-  | 'neckline'
-  | 'sleeve'
-  | 'closure'
-  | 'button'
-  | 'zipper'
-  | 'pocket'
-  | 'drawstring'
-  | 'logo'
-  | 'decoration'
-  | 'stitching'
-  | 'hem'
-  | 'waistband'
-  | 'texture'
+  | 'pattern_family'
+  | 'category'
+  | 'sleeve_length'
+  | 'neckline_family'
+  | 'texture_family'
   | 'length'
   | 'silhouette'
-  | 'fit';
+  | 'fit'
+  | 'general_shape'
+  | 'pattern_placement'
+  | 'print_placement'
+  | 'logo_placement'
+  | 'pocket_geometry'
+  | 'drawstring_construction'
+  | 'closure_layout'
+  | 'button_layout'
+  | 'zipper_details'
+  | 'unique_decoration'
+  | 'stitching_layout'
+  | 'waistband_construction'
+  | 'hem_construction'
+  | 'cuff_construction'
+  | 'unique_texture_detail'
+  | 'distinctive_hardware';
+
+export type IdentityEvidenceClass = 'class_level' | 'supporting_identity' | 'instance_specific';
+export type ReferenceEvidenceType = 'historical_appearance' | 'catalog_only';
+export type TemporalEvidenceConsistency = 'consistent' | 'mixed' | 'insufficient';
 
 export interface GarmentFeatureComparison {
   feature: GarmentIdentityFeature;
@@ -226,6 +237,7 @@ export interface PairwiseGarmentVerification {
   featureComparisons: GarmentFeatureComparison[];
   occlusions: string[];
   jointlyVisibleEvidence: string[];
+  temporalEvidenceConsistency?: TemporalEvidenceConsistency;
   model: string;
 }
 
@@ -247,7 +259,9 @@ export interface GarmentIdentityDecisionTrace {
       effectivePrior: number;
       tier: IdentityCandidateTier;
       categoryCompatibility: IdentityCategoryCompatibility;
+      referenceEvidenceType: ReferenceEvidenceType;
       referenceAssetIds: string[];
+      softContradictions: string[];
     }>;
   };
   pairwiseVerifications: Array<{
@@ -259,6 +273,14 @@ export interface GarmentIdentityDecisionTrace {
     serverDowngradeReasons: string[];
     requiredDifferentConfidence: number;
     autoCreateVeto: boolean;
+    referenceEvidenceType: ReferenceEvidenceType;
+    evidenceTaxonomyVersion: number;
+    classLevelSameFeatures: GarmentIdentityFeature[];
+    instanceSpecificSameFeatures: GarmentIdentityFeature[];
+    safeSameGateResult: boolean;
+    safeSameRejectReasons: string[];
+    multiFrameEvidenceCount: number;
+    temporalEvidenceConsistency: TemporalEvidenceConsistency;
     model: string;
     latencyMs: number;
   }>;
@@ -266,9 +288,7 @@ export interface GarmentIdentityDecisionTrace {
     matchConfidence: number;
     baseNewConfidence: number;
     strongPriorVeto: number;
-    safeSameMinPrior?: number;
     vetoMinPrior?: number;
-    multipleSafeMatchMargin?: number;
   };
   finalDecision: GarmentIdentityStatus;
   matchedClosetItemId?: string;

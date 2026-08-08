@@ -2,58 +2,37 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { GarmentAppearanceDescriptor, PairwiseGarmentVerification } from '../src/domain/ambientCapture.js';
 import {
+  attributeCompatibility,
   hardAttributeExclusion,
+  identityEvidenceClass,
   normalizePairwiseVerification,
 } from '../src/services/garmentIdentityEvidence.js';
 
-test('hard attribute exclusion catches only explicit color and pattern contradictions', () => {
+test('color pattern sleeve neckline and length contradictions are soft evidence', () => {
   assert.equal(hardAttributeExclusion(
     descriptor({ dominantColor: 'black', pattern: 'solid' }),
     descriptor({ dominantColor: 'white', pattern: 'solid' }),
-  ), 'COLOR_FAMILY_CONTRADICTION');
-  assert.equal(hardAttributeExclusion(
+  ), undefined);
+  const result = attributeCompatibility(
     descriptor({ dominantColor: 'black', pattern: 'stripe' }),
     descriptor({ dominantColor: 'white', pattern: 'check' }),
-  ), 'COLOR_AND_PATTERN_CONTRADICTION');
-  assert.equal(hardAttributeExclusion(
-    descriptor({ dominantColor: 'unknown', pattern: 'solid' }),
-    descriptor({ dominantColor: 'white', pattern: 'solid' }),
-  ), undefined);
-  assert.equal(hardAttributeExclusion(
-    descriptor({ dominantColor: 'black', pattern: 'other' }),
-    descriptor({ dominantColor: 'white', pattern: 'check' }),
-  ), undefined);
+  );
+  assert.ok(result.softContradictions.includes('COLOR_FAMILY_CONTRADICTION'));
+  assert.ok(result.softContradictions.includes('PATTERN_FAMILY_CONTRADICTION'));
 });
 
-test('hard attribute exclusion handles sleeve, neckline, and length conservatively', () => {
+test('only physically incompatible slot or category is hard excluded', () => {
   assert.equal(hardAttributeExclusion(
-    descriptor({ sleeve: 'sleeveless' }),
-    descriptor({ sleeve: 'long' }),
-  ), 'SLEEVE_CLASS_CONTRADICTION');
-  assert.equal(hardAttributeExclusion(
-    descriptor({ sleeve: 'short' }),
-    descriptor({ sleeve: 'three_quarter' }),
-  ), undefined);
-  assert.equal(hardAttributeExclusion(
-    descriptor({ neckline: 'turtleneck' }),
-    descriptor({ neckline: 'v' }),
-  ), 'NECKLINE_FAMILY_CONTRADICTION');
-  assert.equal(hardAttributeExclusion(
-    descriptor({ neckline: 'crew' }),
-    descriptor({ neckline: 'v' }),
-  ), undefined);
-  assert.equal(hardAttributeExclusion(
-    descriptor({ lengthClass: 'short' }),
-    descriptor({ lengthClass: 'long' }),
-  ), 'LENGTH_CLASS_CONTRADICTION');
-  assert.equal(hardAttributeExclusion(
-    descriptor({ lengthClass: 'medium' }),
-    descriptor({ lengthClass: 'long' }),
-  ), undefined);
-  assert.equal(hardAttributeExclusion(
-    descriptor({ sleeve: 'unknown', neckline: 'unknown', lengthClass: 'unknown' }),
-    descriptor({ sleeve: 'long', neckline: 'hooded', lengthClass: 'long' }),
-  ), undefined);
+    descriptor({ slot: 'top', category: 'top' }),
+    descriptor({ slot: 'bottom', category: 'bottom' }),
+  ), 'PHYSICAL_CATEGORY_OR_SLOT_CONTRADICTION');
+});
+
+test('evidence taxonomy is server controlled', () => {
+  assert.equal(identityEvidenceClass('color'), 'class_level');
+  assert.equal(identityEvidenceClass('pattern_family'), 'class_level');
+  assert.equal(identityEvidenceClass('pocket_geometry'), 'instance_specific');
+  assert.equal(identityEvidenceClass('stitching_layout'), 'instance_specific');
 });
 
 test('verifier current-garment reading cannot contradict the locked observation', () => {
@@ -78,7 +57,7 @@ function verification(overrides: Partial<PairwiseGarmentVerification> = {}): Pai
   return {
     verdict: 'same', confidence: 0.95, currentColor: 'gray', currentSleeve: 'short', currentNeckline: 'crew',
     featureComparisons: [{
-      feature: 'pocket', currentVisibility: 'visible', referenceVisibility: 'visible', relation: 'same',
+      feature: 'pocket_geometry', currentVisibility: 'visible', referenceVisibility: 'visible', relation: 'same',
       discriminativeStrength: 'strong', note: 'fixture',
     }],
     occlusions: [], jointlyVisibleEvidence: ['pocket'], model: 'fixture', ...overrides,

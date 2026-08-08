@@ -1,7 +1,10 @@
 import type {
   GarmentAppearanceDescriptor,
   GarmentFeatureComparison,
+  GarmentIdentityFeature,
+  IdentityEvidenceClass,
   PairwiseGarmentVerification,
+  TemporalEvidenceConsistency,
 } from '../domain/ambientCapture.js';
 import type { GarmentIdentityCandidate } from './garmentIdentityProvider.js';
 import {
@@ -13,9 +16,19 @@ import {
   sleeveClassDistance,
 } from './garmentVocabulary.js';
 
-const WEAK_ONLY_FEATURES = new Set(['length', 'fit', 'silhouette']);
-const GENERIC_SAME_FEATURES = new Set(['color', 'length', 'fit', 'silhouette']);
-const NON_DECISIVE_DIFFERENT_FEATURES = new Set(['color', 'length', 'fit', 'silhouette']);
+export const IDENTITY_EVIDENCE_TAXONOMY_VERSION = 1;
+
+const CLASS_LEVEL_FEATURES = new Set<GarmentIdentityFeature>([
+  'color', 'pattern_family', 'category', 'sleeve_length', 'neckline_family', 'texture_family',
+  'fit', 'silhouette', 'length', 'general_shape',
+]);
+const INSTANCE_SPECIFIC_FEATURES = new Set<GarmentIdentityFeature>([
+  'pattern_placement', 'print_placement', 'logo_placement', 'pocket_geometry',
+  'drawstring_construction', 'closure_layout', 'button_layout', 'zipper_details',
+  'unique_decoration', 'stitching_layout', 'waistband_construction', 'hem_construction',
+  'cuff_construction', 'unique_texture_detail', 'distinctive_hardware',
+]);
+const WEAK_ONLY_FEATURES = new Set<GarmentIdentityFeature>(['color', 'length', 'fit', 'silhouette', 'general_shape']);
 
 export interface NormalizedPairwiseVerification {
   verification: PairwiseGarmentVerification;
@@ -25,15 +38,36 @@ export interface NormalizedPairwiseVerification {
 export interface IdentityEvidenceThresholds {
   matchConfidence: number;
   baseNewConfidence: number;
-  safeSameMinPrior: number;
 }
 
-export type HardAttributeExclusionReason =
-  | 'COLOR_FAMILY_CONTRADICTION'
-  | 'COLOR_AND_PATTERN_CONTRADICTION'
-  | 'SLEEVE_CLASS_CONTRADICTION'
-  | 'NECKLINE_FAMILY_CONTRADICTION'
-  | 'LENGTH_CLASS_CONTRADICTION';
+export interface SafeSameAssessment {
+  safe: boolean;
+  rejectReasons: string[];
+  classLevelSameFeatures: GarmentIdentityFeature[];
+  instanceSpecificSameFeatures: GarmentIdentityFeature[];
+  temporalEvidenceConsistency: TemporalEvidenceConsistency;
+}
+
+export type HardAttributeExclusionReason = 'PHYSICAL_CATEGORY_OR_SLOT_CONTRADICTION';
+
+export interface AttributeCompatibilityResult {
+  hardExclusion?: HardAttributeExclusionReason;
+  softContradictions: string[];
+}
+
+export function identityEvidenceClass(feature: GarmentIdentityFeature): IdentityEvidenceClass {
+  if (INSTANCE_SPECIFIC_FEATURES.has(feature)) return 'instance_specific';
+  if (CLASS_LEVEL_FEATURES.has(feature)) return 'class_level';
+  return 'supporting_identity';
+}
+
+export function isInstanceSpecificFeature(feature: GarmentIdentityFeature): boolean {
+  return identityEvidenceClass(feature) === 'instance_specific';
+}
+
+export function isClassLevelFeature(feature: GarmentIdentityFeature): boolean {
+  return identityEvidenceClass(feature) === 'class_level';
+}
 
 export function requiredDifferentConfidence(
   effectivePrior: number,
@@ -76,27 +110,70 @@ export function normalizePairwiseVerification(
       verdict,
       confidence: clamp(raw.confidence),
       featureComparisons,
+      temporalEvidenceConsistency: raw.temporalEvidenceConsistency ?? 'insufficient',
     },
     downgradeReasons: [...new Set(downgradeReasons)],
+  };
+}
+
+export function assessSafeSame(
+  candidate: GarmentIdentityCandidate,
+  verification: PairwiseGarmentVerification,
+  thresholds: Pick<IdentityEvidenceThresholds, 'matchConfidence'>,
+  currentEvidenceCount = 1,
+): SafeSameAssessment {
+  const rejectReasons: string[] = [];
+  const jointlyVisibleEvidence = verification.featureComparisons.filter(jointlyVisible);
+  const same = jointlyVisibleEvidence.filter((comparison) => comparison.relation === 'same');
+  const classLevelSameFeatures = uniqueFeatures(same.filter((comparison) =>
+    isClassLevelFeature(comparison.feature)));
+  const instanceSpecific = same.filter((comparison) => isInstanceSpecificFeature(comparison.feature));
+  const instanceSpecificSameFeatures = uniqueFeatures(instanceSpecific);
+  const strongInstanceFeatures = uniqueFeatures(instanceSpecific.filter((comparison) =>
+    comparison.discriminativeStrength === 'strong'));
+  const mediumOrStrongInstanceFeatures = uniqueFeatures(instanceSpecific.filter((comparison) =>
+    comparison.discriminativeStrength === 'medium' || comparison.discriminativeStrength === 'strong'));
+  const hasStrongContradiction = jointlyVisibleEvidence.some((comparison) =>
+    comparison.relation === 'different' &&
+    comparison.discriminativeStrength === 'strong' &&
+    isInstanceSpecificFeature(comparison.feature));
+  const temporalEvidenceConsistency = verification.temporalEvidenceConsistency ?? 'insufficient';
+
+  if (candidate.tier === 'fallback') rejectReasons.push('FALLBACK_CANDIDATE_NOT_MATCH_ELIGIBLE');
+  if (verification.verdict !== 'same') rejectReasons.push('VERDICT_NOT_SAME');
+  if (verification.confidence < thresholds.matchConfidence) rejectReasons.push('MATCH_CONFIDENCE_BELOW_THRESHOLD');
+  if (hasStrongContradiction) rejectReasons.push('STRONG_INSTANCE_CONTRADICTION');
+
+  if (candidate.referenceEvidenceType === 'historical_appearance') {
+    if (strongInstanceFeatures.length < 1 && mediumOrStrongInstanceFeatures.length < 2) {
+      rejectReasons.push('INSUFFICIENT_HISTORICAL_INSTANCE_EVIDENCE');
+    }
+  } else {
+    if (strongInstanceFeatures.length < 1 || mediumOrStrongInstanceFeatures.length < 2) {
+      rejectReasons.push('INSUFFICIENT_CATALOG_INSTANCE_EVIDENCE');
+    }
+    if (currentEvidenceCount >= 2 && temporalEvidenceConsistency !== 'consistent') {
+      rejectReasons.push('CATALOG_MATCH_REQUIRES_CROSS_FRAME_CONSISTENCY');
+    }
+  }
+  if (temporalEvidenceConsistency === 'mixed') rejectReasons.push('MIXED_TEMPORAL_EVIDENCE');
+
+  return {
+    safe: rejectReasons.length === 0,
+    rejectReasons: [...new Set(rejectReasons)],
+    classLevelSameFeatures,
+    instanceSpecificSameFeatures,
+    temporalEvidenceConsistency,
   };
 }
 
 export function isSafeSame(
   candidate: GarmentIdentityCandidate,
   verification: PairwiseGarmentVerification,
-  thresholds: Pick<IdentityEvidenceThresholds, 'matchConfidence' | 'safeSameMinPrior'>,
+  thresholds: Pick<IdentityEvidenceThresholds, 'matchConfidence'>,
+  currentEvidenceCount = 1,
 ): boolean {
-  if (candidate.tier === 'fallback' || verification.verdict !== 'same' ||
-      verification.confidence < thresholds.matchConfidence ||
-      candidate.effectivePrior < thresholds.safeSameMinPrior) return false;
-  const evidence = verification.featureComparisons.filter(jointlyVisible);
-  const hasDiscriminativeMatch = evidence.some((comparison) =>
-    comparison.relation === 'same' &&
-    comparison.discriminativeStrength !== 'weak' &&
-    !GENERIC_SAME_FEATURES.has(comparison.feature));
-  const hasStrongContradiction = evidence.some((comparison) =>
-    comparison.relation === 'different' && comparison.discriminativeStrength === 'strong');
-  return hasDiscriminativeMatch && !hasStrongContradiction;
+  return assessSafeSame(candidate, verification, thresholds, currentEvidenceCount).safe;
 }
 
 export function isSafeDifferent(
@@ -113,40 +190,49 @@ export function isSafeDifferent(
     jointlyVisible(comparison) &&
     comparison.relation === 'different' &&
     comparison.discriminativeStrength !== 'weak' &&
-    !NON_DECISIVE_DIFFERENT_FEATURES.has(comparison.feature));
+    isInstanceSpecificFeature(comparison.feature));
+}
+
+export function attributeCompatibility(
+  current: GarmentAppearanceDescriptor,
+  candidate: GarmentAppearanceDescriptor,
+): AttributeCompatibilityResult {
+  const softContradictions: string[] = [];
+  if (current.slot !== candidate.slot || !samePhysicalCategory(current.category, candidate.category)) {
+    return { hardExclusion: 'PHYSICAL_CATEGORY_OR_SLOT_CONTRADICTION', softContradictions };
+  }
+  const currentColor = canonicalizeColor(current.dominantColor);
+  const candidateColor = canonicalizeColor(candidate.dominantColor);
+  if (currentColor !== 'unknown' && candidateColor !== 'unknown' &&
+      currentColor !== 'multicolor' && candidateColor !== 'multicolor' &&
+      colorSimilarity(currentColor, candidateColor) === 0) {
+    softContradictions.push('COLOR_FAMILY_CONTRADICTION');
+  }
+  const currentPattern = canonicalizePattern(current.pattern);
+  const candidatePattern = canonicalizePattern(candidate.pattern);
+  if (currentPattern !== 'other' && candidatePattern !== 'other' && currentPattern !== candidatePattern) {
+    softContradictions.push('PATTERN_FAMILY_CONTRADICTION');
+  }
+  if (sleeveClassDistance(current.sleeve, candidate.sleeve) === 2) {
+    softContradictions.push('SLEEVE_CLASS_CONTRADICTION');
+  }
+  if (necklineFamilyContradiction(current.neckline, candidate.neckline)) {
+    softContradictions.push('NECKLINE_FAMILY_CONTRADICTION');
+  }
+  const currentLength = canonicalizeLengthClass(current.lengthClass);
+  const candidateLength = canonicalizeLengthClass(candidate.lengthClass);
+  if ((currentLength === 'short' && candidateLength === 'long') ||
+      (currentLength === 'long' && candidateLength === 'short')) {
+    softContradictions.push('LENGTH_CLASS_CONTRADICTION');
+  }
+  return { softContradictions };
 }
 
 export function hardAttributeExclusion(
   current: GarmentAppearanceDescriptor,
   candidate: GarmentAppearanceDescriptor,
 ): HardAttributeExclusionReason | undefined {
-  const currentColor = canonicalizeColor(current.dominantColor);
-  const candidateColor = canonicalizeColor(candidate.dominantColor);
-  const colorsKnown = currentColor !== 'unknown' && candidateColor !== 'unknown' &&
-    currentColor !== 'multicolor' && candidateColor !== 'multicolor';
-  const currentPattern = canonicalizePattern(current.pattern);
-  const candidatePattern = canonicalizePattern(candidate.pattern);
-  const patternsKnown = currentPattern !== 'other' && candidatePattern !== 'other';
-  const colorsContradict = colorsKnown && colorSimilarity(currentColor, candidateColor) === 0;
-
-  if (colorsContradict && currentPattern === 'solid' && candidatePattern === 'solid') {
-    return 'COLOR_FAMILY_CONTRADICTION';
-  }
-  if (colorsContradict && patternsKnown && currentPattern !== candidatePattern) {
-    return 'COLOR_AND_PATTERN_CONTRADICTION';
-  }
-  const sleeveDistance = sleeveClassDistance(current.sleeve, candidate.sleeve);
-  if (sleeveDistance !== undefined && sleeveDistance >= 2) return 'SLEEVE_CLASS_CONTRADICTION';
-  if (necklineFamilyContradiction(current.neckline, candidate.neckline)) {
-    return 'NECKLINE_FAMILY_CONTRADICTION';
-  }
-  const currentLength = canonicalizeLengthClass(current.lengthClass);
-  const candidateLength = canonicalizeLengthClass(candidate.lengthClass);
-  if ((currentLength === 'short' && candidateLength === 'long') ||
-      (currentLength === 'long' && candidateLength === 'short')) {
-    return 'LENGTH_CLASS_CONTRADICTION';
-  }
-  return undefined;
+  return attributeCompatibility(current, candidate).hardExclusion;
 }
 
 export function necklineFamilyContradiction(left: string | undefined, right: string | undefined): boolean {
@@ -155,10 +241,13 @@ export function necklineFamilyContradiction(left: string | undefined, right: str
   if (a === 'unknown' || b === 'unknown' || a === b) return false;
   const pair = new Set([a, b]);
   if (pair.has('turtleneck') && (pair.has('v') || pair.has('square') || pair.has('boat'))) return true;
-  if (pair.has('hooded') && (pair.has('v') || pair.has('square') || pair.has('collar') || pair.has('turtleneck'))) {
-    return true;
-  }
-  return false;
+  return pair.has('hooded') && (pair.has('v') || pair.has('square') || pair.has('collar') || pair.has('turtleneck'));
+}
+
+function samePhysicalCategory(left: string, right: string): boolean {
+  if (left === right) return true;
+  const topFamily = new Set(['top', 'outerwear']);
+  return topFamily.has(left) && topFamily.has(right);
 }
 
 function verifierReadConflictsWithLockedDescriptor(
@@ -189,11 +278,19 @@ function normalizeComparison(
     discriminativeStrength = 'weak';
     downgradeReasons.push(`WEAK_ONLY_FEATURE:${comparison.feature}`);
   }
+  if (isClassLevelFeature(comparison.feature) && discriminativeStrength === 'strong') {
+    discriminativeStrength = 'medium';
+    downgradeReasons.push(`CLASS_LEVEL_FEATURE_CANNOT_BE_STRONG:${comparison.feature}`);
+  }
   return { ...comparison, relation, discriminativeStrength };
 }
 
 function jointlyVisible(comparison: GarmentFeatureComparison): boolean {
   return comparison.currentVisibility === 'visible' && comparison.referenceVisibility === 'visible';
+}
+
+function uniqueFeatures(comparisons: GarmentFeatureComparison[]): GarmentIdentityFeature[] {
+  return [...new Set(comparisons.map((comparison) => comparison.feature))];
 }
 
 function clamp(value: number): number {

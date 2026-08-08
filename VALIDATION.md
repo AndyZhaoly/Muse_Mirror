@@ -73,9 +73,10 @@ node --import tsx --test \
 ```
 
 The layered identity suite additionally verifies canonical English/Chinese sleeve, neckline, length, and
-material values; conservative hard exclusions; zero VLM calls for explicit contradictions; locked-current
-descriptor sentinels; the `0.55` safe-same prior floor; the `0.60` weighted creation-veto floor; decisive versus
-ambiguous multiple matches; and the `0.85` high-prior auto-create block. It also verifies that a `barely`
+material values; physical-only hard exclusions and soft color/length contradictions; locked-current descriptor
+sentinels; server-controlled class-level versus instance-specific evidence; strict historical and catalog-only
+Safe Same gates; the `0.60` weighted creation-veto floor; always-ambiguous multiple safe matches; and the `0.85`
+high-prior auto-create block. It also verifies that a `barely`
 visible slot is dropped while another clear garment completes capture. These thresholds are deterministic
 routing controls, not calibrated probabilities:
 

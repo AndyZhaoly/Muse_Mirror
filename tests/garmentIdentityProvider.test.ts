@@ -36,7 +36,7 @@ test('distractor skirts cannot change a strong shorts pairwise match', async () 
   const calls: string[] = [];
   const input = withAppearances(identityInput({ userClosetItems: [shorts, ...distractors] }), [shorts, ...distractors]);
   const result = await provider(verifier({
-    'old-shorts': verification('same', 0.95, [feature('pocket', 'same', 'medium')]),
+    'old-shorts': verification('same', 0.95, [feature('pocket_geometry', 'same', 'strong')]),
   }, calls)).resolve(input);
   assert.equal(result.status, 'matched_existing');
   assert.equal(result.matchedClosetItemId, 'old-shorts');
@@ -49,7 +49,7 @@ test('occluded drawstring and weak length differences are normalized to uncertai
   const shorts = ambientItem('old-shorts', 'Light gray knee shorts', 'light gray');
   const result = await provider(verifier({
     'old-shorts': verification('different', 0.96, [
-      feature('drawstring', 'different', 'strong', 'not_visible', 'visible'),
+      feature('drawstring_construction', 'different', 'strong', 'not_visible', 'visible'),
       feature('length', 'different', 'strong'),
       feature('silhouette', 'different', 'medium'),
     ]),
@@ -57,14 +57,14 @@ test('occluded drawstring and weak length differences are normalized to uncertai
   assert.equal(result.status, 'ambiguous');
   const pairwise = result.decisionTrace?.pairwiseVerifications[0];
   assert.equal(pairwise?.normalizedResult.verdict, 'uncertain');
-  assert.ok(pairwise?.serverDowngradeReasons.includes('NON_JOINT_VISIBILITY:drawstring'));
+  assert.ok(pairwise?.serverDowngradeReasons.includes('NON_JOINT_VISIBILITY:drawstring_construction'));
   assert.ok(pairwise?.serverDowngradeReasons.includes('WEAK_ONLY_FEATURE:length'));
 });
 
 test('strong prior veto blocks silent creation even with a safe visual difference', async () => {
   const shorts = ambientItem('old-shorts', 'Light gray knee shorts', 'light gray');
   const result = await provider(verifier({
-    'old-shorts': verification('different', 0.99, [feature('pocket', 'different', 'strong')]),
+    'old-shorts': verification('different', 0.99, [feature('pocket_geometry', 'different', 'strong')]),
   })).resolve(withAppearances(identityInput({ userClosetItems: [shorts] }), [shorts]));
   assert.equal(result.status, 'ambiguous');
   assert.ok(result.reasonCodes.includes('STRONG_PRIOR_AUTO_CREATE_VETO'));
@@ -78,9 +78,9 @@ test('all plausible candidates safely different may create a genuinely new garme
   }), [old]);
   const result = await provider(verifier({
     'old-bottom': verification('different', 0.94, [
-      feature('pocket', 'different', 'strong'),
-      feature('hem', 'different', 'medium'),
-      feature('pattern', 'different', 'strong'),
+      feature('pocket_geometry', 'different', 'strong'),
+      feature('hem_construction', 'different', 'medium'),
+      feature('pattern_placement', 'different', 'strong'),
     ]),
   })).resolve(input);
   assert.equal(result.status, 'new_to_closet');
@@ -98,18 +98,98 @@ test('generic color and silhouette similarity is not enough for a safe match', a
   assert.equal(result.status, 'ambiguous');
 });
 
+test('generic style similarity and VLM confidence alone can never establish physical identity', async () => {
+  const shirt = ambientItem('generic-black-tee', 'Black crew neck short sleeve T-shirt', 'black', 'top');
+  const previousCapture = capture('generic-black-tee', '2026-08-06T20:43:00.000Z');
+  const input = withAppearanceDescriptors(identityInput({
+    capturedAt: '2026-08-06T20:46:00.000Z',
+    garment: {
+      ...shortsObservation(), observationItemId: 'new-black-tee', slot: 'top', category: 'top',
+      description: 'black solid crew neck short sleeve tee', dominantColor: 'black', pattern: 'solid',
+      sleeve: 'short', neckline: 'crew', lengthClass: 'medium', silhouette: 'regular', fit: 'regular',
+    },
+    userClosetItems: [shirt], captures: [previousCapture], wearEvents: [wear('generic-black-tee', previousCapture)],
+  }), [{ item: shirt, descriptor: descriptorFixture({
+    slot: 'top', category: 'top', dominantColor: 'black', pattern: 'solid', sleeve: 'short', neckline: 'crew',
+    lengthClass: 'medium', silhouette: 'regular', fit: 'regular',
+  }) }]);
+  const result = await provider(verifier({
+    'generic-black-tee': verification('same', 0.99, [
+      feature('color', 'same', 'strong'),
+      feature('pattern_family', 'same', 'strong'),
+      feature('neckline_family', 'same', 'strong'),
+      feature('sleeve_length', 'same', 'strong'),
+      feature('fit', 'same', 'strong'),
+    ]),
+  })).resolve(input);
+  assert.equal(result.status, 'ambiguous');
+  const pairwise = result.decisionTrace?.pairwiseVerifications[0];
+  assert.equal(pairwise?.safeSameGateResult, false);
+  assert.ok(pairwise?.safeSameRejectReasons.includes('INSUFFICIENT_HISTORICAL_INSTANCE_EVIDENCE'));
+  assert.ok((result.decisionTrace?.recall.candidates[0]?.continuityPrior ?? 0) > 0);
+});
+
+test('historical appearance can match with one strong instance-specific detail', async () => {
+  const shorts = ambientItem('historical-shorts', 'Distinct pocket shorts', 'light gray');
+  const result = await provider(verifier({
+    'historical-shorts': verification('same', 0.94, [
+      feature('pocket_geometry', 'same', 'strong'),
+      feature('stitching_layout', 'same', 'medium'),
+    ]),
+  })).resolve(withAppearances(identityInput({ userClosetItems: [shorts] }), [shorts]));
+  assert.equal(result.status, 'matched_existing');
+  assert.equal(result.matchedClosetItemId, 'historical-shorts');
+});
+
+test('catalog-only generic similarity stays ambiguous even with high metadata prior', async () => {
+  const base = ambientItem('base-black-tee', 'Black crew neck short sleeve T-shirt', 'black', 'top').item;
+  const input = identityInput({
+    garment: {
+      ...shortsObservation(), observationItemId: 'new-black-tee', slot: 'top', category: 'top',
+      description: 'black solid crew neck short sleeve tee', dominantColor: 'black', pattern: 'solid',
+      sleeve: 'short', neckline: 'crew', lengthClass: 'medium', silhouette: 'regular', fit: 'regular',
+    },
+    baseClosetItems: [base],
+    baseCatalogAssets: new Map([[base.id, asset('base-black-tee-catalog')]]),
+  });
+  const result = await provider(verifier({
+    [base.id]: verification('same', 0.99, [
+      feature('color', 'same', 'strong'), feature('pattern_family', 'same', 'strong'),
+      feature('neckline_family', 'same', 'strong'), feature('sleeve_length', 'same', 'strong'),
+    ]),
+  })).resolve(input);
+  assert.equal(result.status, 'ambiguous');
+  assert.equal(result.decisionTrace?.pairwiseVerifications[0]?.referenceEvidenceType, 'catalog_only');
+});
+
+test('catalog-only item retains a strict match path with multiple instance-specific details', async () => {
+  const base = ambientItem('base-logo-shorts', 'Logo pocket shorts', 'light gray').item;
+  const input = identityInput({
+    baseClosetItems: [base],
+    baseCatalogAssets: new Map([[base.id, asset('base-logo-shorts-catalog')]]),
+  });
+  const result = await provider(verifier({
+    [base.id]: verification('same', 0.96, [
+      feature('logo_placement', 'same', 'strong'),
+      feature('pocket_geometry', 'same', 'medium'),
+    ]),
+  })).resolve(input);
+  assert.equal(result.status, 'matched_existing');
+  assert.equal(result.matchedClosetItemId, base.id);
+});
+
 test('multiple safe matches remain ambiguous instead of choosing top one', async () => {
   const first = ambientItem('shorts-a', 'Light gray knee shorts', 'light gray');
   const second = ambientItem('shorts-b', 'Light gray knee shorts', 'light gray');
   const result = await provider(verifier({
-    'shorts-a': verification('same', 0.95, [feature('pocket', 'same', 'strong')]),
-    'shorts-b': verification('same', 0.94, [feature('waistband', 'same', 'strong')]),
+    'shorts-a': verification('same', 0.95, [feature('pocket_geometry', 'same', 'strong')]),
+    'shorts-b': verification('same', 0.94, [feature('waistband_construction', 'same', 'strong')]),
   })).resolve(withAppearances(identityInput({ userClosetItems: [first, second] }), [first, second]));
   assert.equal(result.status, 'ambiguous');
   assert.ok(result.reasonCodes.includes('MULTIPLE_SAFE_MATCHES'));
 });
 
-test('multiple safe matches choose the prior leader only when the margin is decisive', async () => {
+test('multiple safe matches remain ambiguous regardless of prior margin', async () => {
   const uncertainLeader = ambientItem('leader-uncertain', 'Light gray knee shorts', 'light gray');
   const safeLeader = ambientItem('safe-leader', 'Light gray knee shorts', 'light gray');
   const safeRunnerUp = ambientItem('safe-runner-up', 'Generic shorts', 'light gray');
@@ -122,12 +202,12 @@ test('multiple safe matches choose the prior leader only when the margin is deci
   ]);
   const result = await provider(verifier({
     'leader-uncertain': verification('uncertain', 0.7, []),
-    'safe-leader': verification('same', 0.95, [feature('pocket', 'same', 'strong')]),
-    'safe-runner-up': verification('same', 0.94, [feature('waistband', 'same', 'strong')]),
+    'safe-leader': verification('same', 0.95, [feature('pocket_geometry', 'same', 'strong')]),
+    'safe-runner-up': verification('same', 0.94, [feature('waistband_construction', 'same', 'strong')]),
   })).resolve(input);
-  assert.equal(result.status, 'matched_existing');
-  assert.equal(result.matchedClosetItemId, 'safe-leader');
-  assert.ok(result.reasonCodes.includes('SAFE_MATCH_PRIOR_MARGIN'));
+  assert.equal(result.status, 'ambiguous');
+  assert.equal(result.matchedClosetItemId, undefined);
+  assert.ok(result.reasonCodes.includes('MULTIPLE_SAFE_MATCHES'));
 });
 
 test('immediately previous same-slot wear contributes continuity without deciding a match', async () => {
@@ -152,8 +232,8 @@ test('candidate input order does not change ranking or final result', async () =
   const first = ambientItem('a-shorts', 'Light gray knee shorts', 'light gray');
   const second = ambientItem('b-shorts', 'Navy knee shorts', 'navy');
   const responses = {
-    'a-shorts': verification('same', 0.95, [feature('pocket', 'same', 'strong')]),
-    'b-shorts': verification('different', 0.94, [feature('pattern', 'different', 'strong')]),
+    'a-shorts': verification('same', 0.95, [feature('pocket_geometry', 'same', 'strong')]),
+    'b-shorts': verification('different', 0.94, [feature('pattern_placement', 'different', 'strong')]),
   };
   const left = await provider(verifier(responses)).resolve(withAppearances(identityInput({ userClosetItems: [first, second] }), [first, second]));
   const right = await provider(verifier(responses)).resolve(withAppearances(identityInput({ userClosetItems: [second, first] }), [second, first]));
@@ -169,7 +249,7 @@ test('a compatible item without visual references is ambiguous', async () => {
   assert.ok(result.reasonCodes.includes('NO_VISUAL_REFERENCE_FOR_POTENTIAL_MATCH'));
 });
 
-test('hard color contradiction excludes a black sleeveless top from a white short-sleeve candidate without VLM', async () => {
+test('color and sleeve contradictions remain soft and do not skip visual verification', async () => {
   const candidate = ambientItem('white-tee', 'White short sleeve crew T-shirt', 'white', 'top');
   const input = withAppearanceDescriptors(identityInput({
     garment: {
@@ -186,22 +266,23 @@ test('hard color contradiction excludes a black sleeveless top from a white shor
   }]);
   const calls: string[] = [];
   const result = await provider(verifier({}, calls)).resolve(input);
-  assert.equal(result.status, 'new_to_closet');
-  assert.deepEqual(calls, []);
-  assert.equal(result.decisionTrace?.pairwiseVerifications[0]?.evaluation, 'excluded');
-  assert.equal(result.decisionTrace?.pairwiseVerifications[0]?.exclusionReason, 'COLOR_FAMILY_CONTRADICTION');
+  assert.notEqual(result.status, 'matched_existing');
+  assert.deepEqual(calls, ['white-tee']);
+  assert.equal(result.decisionTrace?.pairwiseVerifications[0]?.evaluation, 'verified');
+  const traceCandidate = result.decisionTrace?.recall.candidates.find((item) => item.closetItemId === 'white-tee');
+  assert.ok(traceCandidate?.softContradictions.includes('COLOR_FAMILY_CONTRADICTION'));
 });
 
-test('safe same requires the configured effective-prior floor', async () => {
+test('low metadata prior cannot block a match with strong instance evidence', async () => {
   const candidate = ambientItem('weak-gray-shorts', 'Generic shorts', 'unknown');
   const input = withAppearanceDescriptors(identityInput({ userClosetItems: [candidate] }), [{
     item: candidate,
     descriptor: descriptorFixture({ dominantColor: 'unknown', pattern: 'solid' }),
   }]);
   const result = await provider(verifier({
-    'weak-gray-shorts': verification('same', 0.95, [feature('pocket', 'same', 'strong')]),
+    'weak-gray-shorts': verification('same', 0.95, [feature('pocket_geometry', 'same', 'strong')]),
   })).resolve(input);
-  assert.notEqual(result.status, 'matched_existing');
+  assert.equal(result.status, 'matched_existing');
   assert.ok((result.decisionTrace?.recall.candidates[0]?.effectivePrior ?? 1) < 0.55);
 });
 
@@ -213,7 +294,7 @@ test('low-prior uncertain candidates do not veto a safely different material can
     { item: weak, descriptor: descriptorFixture({ dominantColor: 'unknown', pattern: 'solid' }) },
   ]);
   const result = await provider(verifier({
-    'material-candidate': verification('different', 0.94, [feature('pocket', 'different', 'strong')]),
+    'material-candidate': verification('different', 0.94, [feature('pocket_geometry', 'different', 'strong')]),
     'weak-candidate': verification('uncertain', 0.5, []),
   })).resolve(input);
   assert.equal(result.status, 'new_to_closet');
@@ -233,7 +314,7 @@ test('an uncertain material-prior candidate still blocks automatic creation', as
   assert.ok(result.reasonCodes.includes('INSUFFICIENT_SAFE_DIFFERENCE'));
 });
 
-test('gray knit shorts and white denim shorts do not consume a visual verification call', async () => {
+test('color length and material drift do not hard-exclude a candidate', async () => {
   const candidate = ambientItem('white-denim-shorts', 'White denim shorts', 'white');
   const input = withAppearanceDescriptors(identityInput({
     garment: { ...shortsObservation(), materialClass: 'knit', pattern: 'knit_texture' },
@@ -244,8 +325,9 @@ test('gray knit shorts and white denim shorts do not consume a visual verificati
   }]);
   const calls: string[] = [];
   const result = await provider(verifier({}, calls)).resolve(input);
-  assert.equal(result.status, 'new_to_closet');
-  assert.deepEqual(calls, []);
+  assert.notEqual(result.status, 'matched_existing');
+  assert.deepEqual(calls, ['white-denim-shorts']);
+  assert.equal(result.decisionTrace?.pairwiseVerifications[0]?.evaluation, 'verified');
 });
 
 function provider(pairVerifier: GarmentPairwiseVerifier): VisualGarmentIdentityProvider {

@@ -263,7 +263,7 @@ class PixelVerifier implements GarmentVisualVerifier {
       verdict,
       confidence: verdict === 'same' ? 0.97 : 0.95,
       featureComparisons: [{
-        feature: 'texture' as const,
+        feature: 'unique_texture_detail' as const,
         currentVisibility: 'visible' as const,
         referenceVisibility: 'visible' as const,
         relation: verdict,

@@ -38,7 +38,7 @@ function trace(index: number): GarmentIdentityDecisionTrace {
     verdict: 'same' as const,
     confidence: 0.95,
     featureComparisons: [{
-      feature: 'pocket' as const,
+      feature: 'pocket_geometry' as const,
       currentVisibility: 'visible' as const,
       referenceVisibility: 'visible' as const,
       relation: 'same' as const,
@@ -58,12 +58,17 @@ function trace(index: number): GarmentIdentityDecisionTrace {
       strategy: 'metadata',
       candidates: [{
         closetItemId: 'closet-item-1', source: 'user', metadataScore: 0.9, continuityPrior: 0.08,
-        effectivePrior: 0.98, tier: 'strong', categoryCompatibility: 'exact', referenceAssetIds: ['asset-reference'],
+        effectivePrior: 0.98, tier: 'strong', categoryCompatibility: 'exact',
+        referenceEvidenceType: 'historical_appearance', referenceAssetIds: ['asset-reference'], softContradictions: [],
       }],
     },
     pairwiseVerifications: [{
       candidateClosetItemId: 'closet-item-1', rawResult: pairwise, normalizedResult: pairwise,
       serverDowngradeReasons: [], requiredDifferentConfidence: 0.95, autoCreateVeto: true,
+      referenceEvidenceType: 'historical_appearance', evidenceTaxonomyVersion: 1,
+      classLevelSameFeatures: [], instanceSpecificSameFeatures: ['pocket_geometry'],
+      safeSameGateResult: true, safeSameRejectReasons: [], multiFrameEvidenceCount: 1,
+      temporalEvidenceConsistency: 'insufficient',
       model: 'fixture-model', latencyMs: 20,
     }],
     thresholds: { matchConfidence: 0.88, baseNewConfidence: 0.78, strongPriorVeto: 0.85 },

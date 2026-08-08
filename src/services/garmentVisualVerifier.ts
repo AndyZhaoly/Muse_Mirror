@@ -17,7 +17,7 @@ import {
   canonicalizeSleeve,
 } from './garmentVocabulary.js';
 
-export const GARMENT_PAIRWISE_PROMPT_VERSION = 'garment-pairwise-v2-locked-current';
+export const GARMENT_PAIRWISE_PROMPT_VERSION = 'garment-pairwise-v3-instance-taxonomy';
 
 export interface GarmentPairwiseVerificationInput {
   currentAppearance: GarmentImageAsset;
@@ -82,13 +82,14 @@ export class OpenAIGarmentVisualVerifier implements GarmentPairwiseVerifier {
           })}`,
           'Treat the locked current descriptor as the canonical reading of the current garment. Do not reinterpret the current image to resemble the reference.',
           'Repeat your own current-image color, sleeve, and neckline readings in the structured currentColor/currentSleeve/currentNeckline fields.',
-          'If the reference clearly contradicts the locked sleeve class, neckline family, or color family, return different.',
+          'Color, category family, sleeve length, neckline family, texture family, fit, silhouette, length, and general shape are class-level style evidence. They can never establish that two physical garments are the same item.',
           'Use only regions and features that are jointly visible in the current and reference images.',
           'A feature visible in one image but occluded, covered, or cropped out in the other is unknown, never different.',
           'For example, when a shirt covers a trouser waistband or drawstring, absence of that detail is not identity evidence.',
           'Length, fit, looseness, and silhouette are affected by crop, distance, wearer pose, and body position. They may be weak supporting evidence but can never alone decide different.',
           'Lighting and white balance can change apparent color. Slight color drift is not decisive.',
-          'Prefer jointly visible construction details: pocket structure, drawstring design and placement, fly, buttons, zippers, pattern/logo placement, distinctive stitching, hem construction, waistband construction, and fabric texture.',
+          'Physical identity requires jointly visible instance-specific construction details: pattern/print/logo placement, pocket geometry, drawstring construction, closure/button/zipper layout, unique decoration, stitching layout, waistband/hem/cuff construction, unique texture details, or distinctive hardware.',
+          'Use pattern_family only for the broad pattern type. Use pattern_placement or print_placement for location-specific evidence. Use pocket_geometry, button_layout, and the other construction-specific enum values rather than generic pocket or button labels.',
           'Ignore the wearer, face, body shape, pose, and background.',
           'Return uncertain whenever jointly visible discriminative evidence is insufficient.',
           'Use high confidence only when the structured evidence supports it.',
@@ -276,23 +277,30 @@ function parseOutputJson(response: unknown): unknown {
 
 const GARMENT_IDENTITY_FEATURES = [
   'color',
-  'pattern',
-  'neckline',
-  'sleeve',
-  'closure',
-  'button',
-  'zipper',
-  'pocket',
-  'drawstring',
-  'logo',
-  'decoration',
-  'stitching',
-  'hem',
-  'waistband',
-  'texture',
+  'pattern_family',
+  'category',
+  'sleeve_length',
+  'neckline_family',
+  'texture_family',
   'length',
   'silhouette',
   'fit',
+  'general_shape',
+  'pattern_placement',
+  'print_placement',
+  'logo_placement',
+  'pocket_geometry',
+  'drawstring_construction',
+  'closure_layout',
+  'button_layout',
+  'zipper_details',
+  'unique_decoration',
+  'stitching_layout',
+  'waistband_construction',
+  'hem_construction',
+  'cuff_construction',
+  'unique_texture_detail',
+  'distinctive_hardware',
 ] as const satisfies readonly GarmentIdentityFeature[];
 
 function parsePairwiseVerification(value: unknown, model: string): PairwiseGarmentVerification {

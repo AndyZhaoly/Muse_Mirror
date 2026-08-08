@@ -208,12 +208,16 @@ images are never the sole identity ground truth for a user item.
 The pairwise verifier receives the canonical current descriptor as locked input and repeats its own current
 color, sleeve, and neckline reading in strict structured output. A far contradiction between that reading and
 the locked descriptor invalidates the verdict as `VERIFIER_INCONSISTENT_CURRENT_READ`. It otherwise returns
-structured feature visibility and relations. Server normalization treats covered
-or cropped details as `unknown`, caps length/fit/silhouette evidence at weak, and requires jointly visible
-medium/strong construction evidence for a safe match or difference. An AI confidence value is a routing signal,
-not a calibrated probability. The default match threshold remains `0.88`, and safe same additionally requires
-an effective metadata/continuity prior of at least `0.55`. At most three surviving candidates receive visual
-verification. Multiple safe matches require a `0.15` prior lead or resolve as ambiguous. The required different threshold rises
+structured feature visibility and relations. Server-owned taxonomy separates class-level similarity (color,
+pattern family, neckline family, sleeve length, texture family, fit, silhouette, and length) from instance-specific
+construction evidence such as pocket geometry, print placement, drawstring construction, and stitching layout.
+Class-level evidence can never establish physical identity, even when the verifier labels it strong. Server
+normalization treats covered or cropped details as `unknown` and requires jointly visible instance-specific
+evidence for a safe match or difference. An AI confidence value is a routing signal, not a calibrated probability.
+The default match threshold remains `0.88`. Historical real appearances require one strong or two independent
+medium instance-specific matches. Catalog-only references require at least two instance-specific matches, including
+one strong match. At most three surviving candidates receive visual verification. Multiple safe matches always
+resolve as ambiguous; metadata or continuity prior never selects a physical-identity winner. The required different threshold rises
 from `0.78` with the candidate's effective prior. A candidate seen in the immediately previous same-slot capture
 within 60 minutes receives a `0.08` continuity prior; a 12-hour WearEvent receives `0.02`. These priors affect
 ranking and auto-create safety only, never establish a match. Only surviving candidates with an effective prior
@@ -223,7 +227,8 @@ silent auto-creation and yields `ambiguous`. `uncertain` never creates an item, 
 decide whether a garment is new.
 
 Each resolution persists a bounded, sanitized `GarmentIdentityDecisionTrace` containing recall scores, tiers,
-reference asset IDs, raw and normalized pairwise evidence, downgrade reasons, thresholds, latency, and final
+reference evidence type, soft contradictions, class-level and instance-specific match features, Safe Same reject
+reasons, reference asset IDs, raw and normalized pairwise evidence, downgrade reasons, thresholds, latency, and final
 reason codes. The repository retains the latest 200 traces per browser user without image payloads, prompts,
 absolute paths, or user IDs. `FASHION_AGENT_TRACE=true` emits the same redacted decision summary to server logs.
 The signed-browser diagnostics route exposes only the current user's traces.

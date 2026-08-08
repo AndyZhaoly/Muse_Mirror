@@ -67,14 +67,14 @@ and Chinese labels are normalized only at comparison time, while visually uncert
 neckline, length, and material stay
 `unknown` and contribute no identity similarity.
 
-Identity resolution keeps recall broad, deterministically removes explicit attribute contradictions, and then
+Identity resolution keeps recall broad, removes only physically impossible slot/category candidates, and then
 verifies at most three surviving ClosetItems one at a time. The current descriptor is locked before each visual
 comparison, and a verifier that changes its reading of the current color/sleeve/neckline is downgraded to
 uncertain. Only jointly visible
-construction evidence can establish a safe match or difference; occlusion, crop, length, fit, and silhouette
-drift cannot silently create a duplicate. Safe same requires both visual evidence and a minimum prior; low-prior
-uncertainty no longer blocks a clearly new item, while recent wear raises a candidate's prior without proving
-identity and a strong prior vetoes automatic creation. Ambiguous evidence writes no ClosetItem. The latest 200
+instance-specific construction evidence can establish a safe match or difference; generic color, neckline, sleeve,
+pattern-family, fit, or silhouette similarity cannot prove physical identity. Catalog-only references use a stricter
+gate than historical real appearances. Recent wear and metadata prior only rank candidates and veto risky automatic
+creation; they never establish a match or choose among multiple safe matches. Ambiguous evidence writes no ClosetItem. The latest 200
 sanitized decision traces remain available to the signed browser identity for diagnostics.
 Duplicate overlay items can be repaired through a dry-run-first, atomic repository merge; the duplicate is
 archived as an alias and is excluded from recommendation without deleting its historical appearances or wear.

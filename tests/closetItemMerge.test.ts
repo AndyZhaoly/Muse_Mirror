@@ -181,8 +181,8 @@ function identityTrace() {
   const pairwise = { verdict: 'same' as const, confidence: 0.95, featureComparisons: [], occlusions: [], jointlyVisibleEvidence: [], model: 'fixture' };
   return {
     traceId: 'trace-duplicate', episodeId: 'episode', observationItemId: 'shorts', currentAppearanceAssetId: 'duplicate-appearance',
-    recall: { strategy: 'metadata', candidates: [{ closetItemId: 'shorts-duplicate', source: 'user' as const, metadataScore: 0.9, continuityPrior: 0, effectivePrior: 0.9, tier: 'strong' as const, categoryCompatibility: 'exact' as const, referenceAssetIds: ['duplicate-appearance'] }] },
-    pairwiseVerifications: [{ candidateClosetItemId: 'shorts-duplicate', rawResult: pairwise, normalizedResult: pairwise, serverDowngradeReasons: [], requiredDifferentConfidence: 0.93, autoCreateVeto: true, model: 'fixture', latencyMs: 10 }],
+    recall: { strategy: 'metadata', candidates: [{ closetItemId: 'shorts-duplicate', source: 'user' as const, metadataScore: 0.9, continuityPrior: 0, effectivePrior: 0.9, tier: 'strong' as const, categoryCompatibility: 'exact' as const, referenceEvidenceType: 'historical_appearance' as const, referenceAssetIds: ['duplicate-appearance'], softContradictions: [] }] },
+    pairwiseVerifications: [{ candidateClosetItemId: 'shorts-duplicate', rawResult: pairwise, normalizedResult: pairwise, serverDowngradeReasons: [], requiredDifferentConfidence: 0.93, autoCreateVeto: true, referenceEvidenceType: 'historical_appearance' as const, evidenceTaxonomyVersion: 1, classLevelSameFeatures: [], instanceSpecificSameFeatures: [], safeSameGateResult: false, safeSameRejectReasons: ['fixture'], multiFrameEvidenceCount: 1, temporalEvidenceConsistency: 'insufficient' as const, model: 'fixture', latencyMs: 10 }],
     thresholds: { matchConfidence: 0.88, baseNewConfidence: 0.78, strongPriorVeto: 0.85 },
     finalDecision: 'matched_existing' as const, matchedClosetItemId: 'shorts-duplicate', reasonCodes: ['fixture'],
     promptVersion: 'garment-pairwise-v1', schemaVersion: 1, createdAt: '2026-08-06T20:46:00.000Z',

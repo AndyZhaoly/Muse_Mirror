@@ -308,7 +308,13 @@ test('visual identity uses metadata only for recall and can match a base catalog
     ready: true,
     async verifyPair(input) {
       candidateIds.push(input.candidate.closetItem.id);
-      return pairwise('same', 0.96);
+      return {
+        ...pairwise('same', 0.96),
+        featureComparisons: [
+          { ...pairwise('same', 0.96).featureComparisons[0]!, feature: 'pocket_geometry' as const },
+          { ...pairwise('same', 0.96).featureComparisons[0]!, feature: 'logo_placement' as const, discriminativeStrength: 'medium' as const },
+        ],
+      };
     },
   };
   const provider = new VisualGarmentIdentityProvider({ verifier });
@@ -581,7 +587,7 @@ function pairwise(verdict: 'same' | 'different', confidence: number) {
     verdict,
     confidence,
     featureComparisons: [{
-      feature: 'pocket' as const,
+      feature: 'pocket_geometry' as const,
       currentVisibility: 'visible' as const,
       referenceVisibility: 'visible' as const,
       relation: verdict,

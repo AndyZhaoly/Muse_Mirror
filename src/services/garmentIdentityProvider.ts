@@ -10,12 +10,15 @@ import type {
   IdentityCategoryCompatibility,
   OutfitCapture,
   PairwiseGarmentVerification,
+  ReferenceEvidenceType,
   WearEvent,
   WornGarmentObservation,
 } from '../domain/ambientCapture.js';
 import type { ClosetItem } from '../types.js';
 import { makeId } from '../utils/ids.js';
 import {
+  assessSafeSame,
+  attributeCompatibility,
   hardAttributeExclusion,
   isSafeDifferent,
   isSafeSame,
@@ -64,6 +67,8 @@ export interface GarmentIdentityCandidate {
   effectivePrior: number;
   tier: IdentityCandidateTier;
   categoryCompatibility: IdentityCategoryCompatibility;
+  referenceEvidenceType: ReferenceEvidenceType;
+  softContradictions: string[];
   descriptor: GarmentAppearanceDescriptor;
   referenceAppearanceAssetIds: string[];
   closetItem: ClosetItem;
@@ -110,9 +115,7 @@ export class VisualGarmentIdentityProvider implements GarmentIdentityProvider {
       baseNewConfidence?: number;
       newConfidence?: number;
       strongPriorVeto?: number;
-      safeSameMinPrior?: number;
       vetoMinPrior?: number;
-      multipleSafeMatchMargin?: number;
       maxVisualCandidates?: number;
       newConfidenceCeiling?: number;
       strongContinuityWindowMs?: number;
@@ -132,9 +135,7 @@ export class VisualGarmentIdentityProvider implements GarmentIdentityProvider {
       matchConfidence: this.options.matchConfidence ?? 0.88,
       baseNewConfidence: this.options.baseNewConfidence ?? this.options.newConfidence ?? 0.78,
       strongPriorVeto: this.options.strongPriorVeto ?? 0.85,
-      safeSameMinPrior: this.options.safeSameMinPrior ?? 0.55,
       vetoMinPrior: this.options.vetoMinPrior ?? 0.6,
-      multipleSafeMatchMargin: this.options.multipleSafeMatchMargin ?? 0.15,
     };
     const traceBase = {
       traceId: makeId('identity_trace'),
@@ -199,14 +200,9 @@ export class VisualGarmentIdentityProvider implements GarmentIdentityProvider {
     const verifiedResults: VerificationRecord[] = [];
     if (toVerify.length > 0 && this.options.verifier.ready) {
       const top = toVerify[0]!;
-      const topResult = await this.verifyCandidate(input.currentAppearance, descriptor, top);
-      verifiedResults.push(topResult);
-      const nextPrior = survivors[1]?.effectivePrior ?? 0;
-      const topHasDecisiveLead = top.effectivePrior - nextPrior >= thresholds.multipleSafeMatchMargin;
-      if (!(isSafeSame(top, topResult.normalized, thresholds) && topHasDecisiveLead)) {
-        verifiedResults.push(...await Promise.all(toVerify.slice(1).map((candidate) =>
-          this.verifyCandidate(input.currentAppearance, descriptor, candidate))));
-      }
+      verifiedResults.push(await this.verifyCandidate(input.currentAppearance, descriptor, top));
+      verifiedResults.push(...await Promise.all(toVerify.slice(1).map((candidate) =>
+        this.verifyCandidate(input.currentAppearance, descriptor, candidate))));
     }
     const results = [...excludedResults, ...verifiedResults];
     const safeMatches = verifiedResults.filter(({ candidate, normalized }) =>
@@ -214,13 +210,13 @@ export class VisualGarmentIdentityProvider implements GarmentIdentityProvider {
     if (safeMatches.length === 1) {
       const match = safeMatches[0]!;
       const verifiedIds = new Set(verifiedResults.map((result) => result.candidate.closetItemId));
-      const unverifiedCloseContender = survivors.some((candidate) =>
+      const unverifiedContender = survivors.some((candidate) =>
+        candidate.tier !== 'fallback' &&
         !verifiedIds.has(candidate.closetItemId) &&
-        candidate.effectivePrior >= thresholds.safeSameMinPrior &&
-        match.candidate.effectivePrior - candidate.effectivePrior < thresholds.multipleSafeMatchMargin);
-      if (unverifiedCloseContender) {
+        (candidate.referenceAppearances.length > 0 || candidate.catalogFallbackImage));
+      if (unverifiedContender) {
         return this.finalize(input, fingerprint, selected, results, traceBase, 'ambiguous',
-          match.normalized.confidence, ['UNVERIFIED_CLOSE_MATCH_CONTENDER'], recall);
+          match.normalized.confidence, ['UNVERIFIED_MATCH_CONTENDER'], recall);
       }
       return this.finalize(input, fingerprint, selected, results, traceBase, 'matched_existing',
         match.normalized.confidence, [
@@ -229,16 +225,6 @@ export class VisualGarmentIdentityProvider implements GarmentIdentityProvider {
         ], recall, match.candidate.closetItemId);
     }
     if (safeMatches.length > 1) {
-      const rankedMatches = [...safeMatches].sort((left, right) =>
-        right.candidate.effectivePrior - left.candidate.effectivePrior ||
-        left.candidate.closetItemId.localeCompare(right.candidate.closetItemId));
-      const lead = rankedMatches[0]!.candidate.effectivePrior - rankedMatches[1]!.candidate.effectivePrior;
-      if (lead >= thresholds.multipleSafeMatchMargin) {
-        const match = rankedMatches[0]!;
-        return this.finalize(input, fingerprint, selected, results, traceBase, 'matched_existing',
-          match.normalized.confidence, ['REAL_VISUAL_APPEARANCE_MATCH', 'SAFE_MATCH_PRIOR_MARGIN'],
-          recall, match.candidate.closetItemId);
-      }
       return this.finalize(input, fingerprint, selected, results, traceBase, 'ambiguous',
         Math.max(...safeMatches.map((item) => item.normalized.confidence)), [
           'MULTIPLE_SAFE_MATCHES',
@@ -329,10 +315,14 @@ export class VisualGarmentIdentityProvider implements GarmentIdentityProvider {
           effectivePrior: candidate.effectivePrior,
           tier: candidate.tier,
           categoryCompatibility: candidate.categoryCompatibility,
+          referenceEvidenceType: candidate.referenceEvidenceType,
           referenceAssetIds: candidate.referenceAppearanceAssetIds,
+          softContradictions: candidate.softContradictions,
         })),
       },
-      pairwiseVerifications: verificationResults.map((result) => ({
+      pairwiseVerifications: verificationResults.map((result) => {
+        const gate = assessSafeSame(result.candidate, result.normalized, traceBase.thresholds);
+        return ({
         candidateClosetItemId: result.candidate.closetItemId,
         evaluation: result.evaluation,
         exclusionReason: result.exclusionReason,
@@ -344,9 +334,17 @@ export class VisualGarmentIdentityProvider implements GarmentIdentityProvider {
           traceBase.thresholds.baseNewConfidence,
         ),
         autoCreateVeto: result.candidate.effectivePrior >= traceBase.thresholds.strongPriorVeto,
+        referenceEvidenceType: result.candidate.referenceEvidenceType,
+        evidenceTaxonomyVersion: 1,
+        classLevelSameFeatures: gate.classLevelSameFeatures,
+        instanceSpecificSameFeatures: gate.instanceSpecificSameFeatures,
+        safeSameGateResult: gate.safe,
+        safeSameRejectReasons: gate.rejectReasons,
+        multiFrameEvidenceCount: 1,
+        temporalEvidenceConsistency: gate.temporalEvidenceConsistency,
         model: result.raw.model,
         latencyMs: result.latencyMs,
-      })),
+      }); }),
       finalDecision: status,
       matchedClosetItemId,
       reasonCodes,
@@ -372,6 +370,9 @@ export class VisualGarmentIdentityProvider implements GarmentIdentityProvider {
           downgradeReasons: verification.serverDowngradeReasons,
           requiredDifferentConfidence: verification.requiredDifferentConfidence,
           autoCreateVeto: verification.autoCreateVeto,
+          referenceEvidenceType: verification.referenceEvidenceType,
+          safeSameGateResult: verification.safeSameGateResult,
+          safeSameRejectReasons: verification.safeSameRejectReasons,
         })),
         thresholds: trace.thresholds,
         finalDecision: trace.finalDecision,
@@ -443,6 +444,8 @@ interface CandidateRecord {
   effectivePrior: number;
   categoryCompatibility: IdentityCategoryCompatibility;
   tier: IdentityCandidateTier;
+  referenceEvidenceType: ReferenceEvidenceType;
+  softContradictions: string[];
   referenceAppearances: GarmentImageAsset[];
   catalogFallbackImage?: GarmentImageAsset;
 }
@@ -477,6 +480,8 @@ function buildIdentityCandidates(
       effectivePrior: record.effectivePrior,
       tier: record.tier,
       categoryCompatibility: record.categoryCompatibility,
+      referenceEvidenceType: record.referenceEvidenceType,
+      softContradictions: record.softContradictions,
       descriptor: record.descriptor,
       referenceAppearanceAssetIds: record.referenceAppearances.map((asset) => asset.assetId),
       closetItem: record.item,
@@ -546,6 +551,7 @@ function candidateRecord(
   const tier: IdentityCandidateTier = categoryCompatibility === 'conflicting'
     ? 'fallback'
     : effectivePrior >= 0.8 ? 'strong' : 'plausible';
+  const compatibility = attributeCompatibility(observed, descriptor);
   return {
     item,
     source,
@@ -555,6 +561,8 @@ function candidateRecord(
     effectivePrior,
     categoryCompatibility,
     tier,
+    referenceEvidenceType: referenceAppearances.length > 0 ? 'historical_appearance' : 'catalog_only',
+    softContradictions: compatibility.softContradictions,
     referenceAppearances,
     catalogFallbackImage: source === 'base' ? input.baseCatalogAssets?.get(item.id) : undefined,
   };
@@ -569,6 +577,8 @@ function recallCandidate(candidate: GarmentIdentityCandidate): GarmentRecallCand
     effectivePrior: candidate.effectivePrior,
     tier: candidate.tier,
     categoryCompatibility: candidate.categoryCompatibility,
+    referenceEvidenceType: candidate.referenceEvidenceType,
+    softContradictions: candidate.softContradictions,
     referenceAppearanceAssetIds: candidate.referenceAppearanceAssetIds,
     appearanceCount: candidate.referenceAppearances.length,
     hasCatalogFallbackImage: Boolean(candidate.catalogFallbackImage),
