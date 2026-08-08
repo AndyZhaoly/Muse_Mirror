@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { AmbientCaptureCompletedEvent } from '../web/src/agentClient.js';
-import { deriveWardrobeMoment } from '../web/src/components/mirror/wardrobeMoment.js';
+import {
+  deriveWardrobeMoment,
+  wardrobeMomentPollIntervalMs,
+} from '../web/src/components/mirror/wardrobeMoment.js';
 
 function event(
   overrides: Partial<AmbientCaptureCompletedEvent> = {},
@@ -88,6 +91,36 @@ test('product images reveal independently without replacing the capture identity
   assert.equal(after?.items[0]?.imageUrl, '/api/fashion/wardrobe-assets/top-product');
   assert.equal(after?.items[1]?.imageState, 'processing');
   assert.equal(after?.updatedAt, '2026-08-08T02:00:10.000Z');
+});
+
+test('Wardrobe Moment polling follows unresolved event content instead of transient capture status', () => {
+  assert.equal(wardrobeMomentPollIntervalMs(event()), 1_200);
+  assert.equal(wardrobeMomentPollIntervalMs(event({
+    itemSummaries: [{
+      closetItemId: 'top-1',
+      slot: 'top',
+      label: '浅蓝色上衣',
+      status: 'new',
+      imageStatus: 'ready',
+      imageUrl: '/api/fashion/wardrobe-assets/top-product',
+    }],
+    pendingItems: [{
+      resolutionId: 'pending-bottom',
+      slot: 'bottom',
+      label: '浅灰色短裤',
+      state: 'awaiting_evidence',
+    }],
+  })), 4_000);
+  assert.equal(wardrobeMomentPollIntervalMs(event({
+    itemSummaries: [{
+      closetItemId: 'top-1',
+      slot: 'top',
+      label: '浅蓝色上衣',
+      status: 'new',
+      imageStatus: 'ready',
+      imageUrl: '/api/fashion/wardrobe-assets/top-product',
+    }],
+  })), undefined);
 });
 
 test('recognized outfit reuses existing wardrobe cards', () => {

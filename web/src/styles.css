@@ -230,8 +230,8 @@ button:focus-visible, input:focus-visible { outline: 3px solid rgba(102, 112, 90
 .wardrobe-moment-card { min-width: 0; overflow: hidden; border: 1px solid rgba(83, 76, 66, .13); border-radius: 7px; background: rgba(255,255,255,.68); box-shadow: 0 10px 34px rgba(61, 53, 43, .06); }
 .wardrobe-moment-card.status-pending { border-style: dashed; background: rgba(246,243,237,.58); box-shadow: none; }
 .wardrobe-moment-image { height: clamp(120px, 16vw, 160px); display: grid; place-items: center; overflow: hidden; background: rgba(245,242,236,.9); }
-.wardrobe-moment-image img { width: 100%; height: 100%; object-fit: contain; animation: wardrobe-image-reveal .48s ease-out both; }
-.wardrobe-moment-card.image-fallback .wardrobe-moment-image img { object-fit: cover; filter: saturate(.88); }
+.wardrobe-moment-image img { display: block; width: auto; height: auto; min-width: 0; min-height: 0; max-width: 100%; max-height: 100%; object-fit: contain; animation: wardrobe-image-reveal .48s ease-out both; }
+.wardrobe-moment-card.image-fallback .wardrobe-moment-image img { object-fit: contain; filter: saturate(.88); }
 .wardrobe-moment-placeholder { width: 100%; height: 100%; display: grid; place-items: center; position: relative; overflow: hidden; background: linear-gradient(110deg, #efebe3 18%, #f8f5ee 42%, #efebe3 66%); background-size: 230% 100%; animation: wardrobe-placeholder 2s ease-in-out infinite; }
 .wardrobe-moment-placeholder::before { content: ""; width: 44%; height: 64%; border-radius: 44% 44% 16% 16%; background: rgba(169,161,149,.16); }
 .wardrobe-moment-card.status-pending .wardrobe-moment-placeholder { animation: none; background: #f1eee8; }

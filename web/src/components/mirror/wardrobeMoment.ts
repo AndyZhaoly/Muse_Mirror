@@ -36,7 +36,7 @@ function momentCopy(
       summary: items.length > pendingItems.length
         ? `${items.length - pendingItems.length} 件已记下`
         : `${pendingItems.length} 件还在确认`,
-      supportingText: `${pendingItems.map((item) => item.label).join('、')}我还在确认`,
+      supportingText: `还在确认：${pendingItems.map((item) => item.label).join('、')}`,
     };
   }
 
@@ -90,4 +90,20 @@ export function deriveWardrobeMoment(
     items,
     updatedAt: event.updatedAt ?? event.committedAt,
   };
+}
+
+export function wardrobeMomentPollIntervalMs(
+  event?: AmbientCaptureCompletedEvent,
+): number | undefined {
+  if (!event) return undefined;
+
+  if (event.itemSummaries.some((item) => item.imageStatus === 'processing')) {
+    return 1_200;
+  }
+
+  if (event.pendingItems.length > 0) {
+    return 4_000;
+  }
+
+  return undefined;
 }

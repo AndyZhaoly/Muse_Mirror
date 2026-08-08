@@ -71,6 +71,7 @@ import {
   summarizeMirrorActivity,
 } from './components/mirror/mirrorScreenController';
 import { MirrorWorkspace } from './components/mirror/MirrorWorkspace';
+import { wardrobeMomentPollIntervalMs } from './components/mirror/wardrobeMoment';
 import {
   MIRROR_SITUATION_SCENARIOS,
   getMirrorSituationScenario,
@@ -1397,19 +1398,23 @@ function App() {
     return () => { cancelled = true; };
   }, [userId]);
 
+  const wardrobeMomentPollMs = wardrobeMomentPollIntervalMs(ambientCaptureEvent);
+
   useEffect(() => {
-    if (ambientCaptureOutcome?.status !== 'committed_processing_images') return undefined;
+    if (!wardrobeMomentPollMs) return undefined;
     let cancelled = false;
-    const poll = window.setInterval(() => {
+    const refreshWardrobeMoment = () => {
       void getAmbientCaptureState().then((state) => {
         if (cancelled) return;
         setAmbientCaptureOutcome(ambientOutcomeFromState(state));
         setAmbientCaptureEvent(state.pendingCompletionEvent);
         setAmbientClosetItems(state.closetItems);
       }).catch(() => undefined);
-    }, 1800);
+    };
+    refreshWardrobeMoment();
+    const poll = window.setInterval(refreshWardrobeMoment, wardrobeMomentPollMs);
     return () => { cancelled = true; window.clearInterval(poll); };
-  }, [ambientCaptureOutcome?.status]);
+  }, [ambientCaptureEvent?.eventId, wardrobeMomentPollMs]);
 
   useEffect(() => {
     if (!ambientProductImageBackfillPending) return undefined;
