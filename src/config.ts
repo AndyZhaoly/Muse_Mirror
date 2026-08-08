@@ -87,6 +87,7 @@ export interface AppConfig {
   identityStrongContinuityWeight: number;
   identityWeakContinuityWeight: number;
   ambientIgnoreBaseCloset: boolean;
+  ambientResetUserDataOnStart: boolean;
   ambientCaptureRetainDiagnostics: boolean;
   ambientCaptureDiagnosticLimit: number;
   skillsDir: string;
@@ -103,6 +104,7 @@ export interface EmptySceneConfig {
 
 export interface AmbientIdentityConfig {
   ignoreBaseCloset: boolean;
+  resetUserDataOnStart: boolean;
 }
 
 function boolEnv(name: string, fallback: boolean): boolean {
@@ -140,6 +142,7 @@ export function loadEmptySceneConfig(env: NodeJS.ProcessEnv = process.env): Empt
 export function loadAmbientIdentityConfig(env: NodeJS.ProcessEnv = process.env): AmbientIdentityConfig {
   return {
     ignoreBaseCloset: boolFromEnv(env, 'FASHION_AGENT_AMBIENT_IGNORE_BASE_CLOSET', false),
+    resetUserDataOnStart: boolFromEnv(env, 'FASHION_AGENT_AMBIENT_RESET_USER_DATA_ON_START', false),
   };
 }
 
@@ -419,6 +422,7 @@ export function loadConfig(): AppConfig {
     identityStrongContinuityWeight: numberEnv('FASHION_AGENT_IDENTITY_STRONG_CONTINUITY_WEIGHT', 0.08),
     identityWeakContinuityWeight: numberEnv('FASHION_AGENT_IDENTITY_WEAK_CONTINUITY_WEIGHT', 0.02),
     ambientIgnoreBaseCloset: ambientIdentity.ignoreBaseCloset,
+    ambientResetUserDataOnStart: ambientIdentity.resetUserDataOnStart,
     ambientCaptureRetainDiagnostics: boolEnv('FASHION_AGENT_AMBIENT_CAPTURE_RETAIN_DIAGNOSTICS', trace),
     ambientCaptureDiagnosticLimit: Math.max(1, Math.round(numberEnv('FASHION_AGENT_AMBIENT_CAPTURE_DIAGNOSTIC_LIMIT', 100))),
     skillsDir: path.resolve(process.env.FASHION_AGENT_SKILLS_DIR ?? './skills'),

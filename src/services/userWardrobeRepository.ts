@@ -32,6 +32,7 @@ interface WardrobeRepositoryFile {
 
 export interface WardrobeRepository {
   getState(userId: string): Promise<UserWardrobeState>;
+  listUserIds(): Promise<string[]>;
   commitCapture(command: CommitOutfitCaptureCommand): Promise<OutfitCaptureCommitResult>;
   appendIdentityDecisionTraces(
     userId: string,
@@ -68,6 +69,11 @@ export class JsonUserWardrobeRepository implements WardrobeRepository {
   async getState(userId: string): Promise<UserWardrobeState> {
     const file = await this.readFile();
     return structuredClone(file.users[userId] ?? emptyUserState(userId));
+  }
+
+  async listUserIds(): Promise<string[]> {
+    const file = await this.readFile();
+    return Object.keys(file.users).sort();
   }
 
   async appendIdentityDecisionTraces(

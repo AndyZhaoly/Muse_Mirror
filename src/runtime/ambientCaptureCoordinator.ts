@@ -534,11 +534,32 @@ export class AmbientCaptureCoordinator {
 
   async resetUser(userId: string): Promise<void> {
     await this.exclusive(userId, async () => {
-      const state = await this.options.repository.getState(userId);
-      await this.options.repository.resetUser(userId);
-      await this.options.assetService.deleteAssets(state.assets);
-      this.lastOutcomes.delete(userId);
+      await this.resetUserLocked(userId, false);
     });
+  }
+
+  async resetAllUserDataOnStartup(): Promise<{ userCount: number; preservedGrantCount: number }> {
+    const userIds = await this.options.repository.listUserIds();
+    let preservedGrantCount = 0;
+    for (const userId of userIds) {
+      await this.exclusive(userId, async () => {
+        if (await this.resetUserLocked(userId, true)) preservedGrantCount += 1;
+      });
+    }
+    return { userCount: userIds.length, preservedGrantCount };
+  }
+
+  private async resetUserLocked(userId: string, preserveActiveGrant: boolean): Promise<boolean> {
+    const state = await this.options.repository.getState(userId);
+    const shouldRestoreGrant = preserveActiveGrant && activeGrant(state.grant);
+    await this.options.repository.resetUser(userId);
+    await this.options.assetService.deleteAssets(state.assets);
+    if (shouldRestoreGrant) {
+      await this.options.repository.setGrant(userId, true, state.grant?.grantedAt);
+    }
+    this.lastOutcomes.delete(userId);
+    this.lastOutcomeRevisions.delete(userId);
+    return shouldRestoreGrant;
   }
 
   async diagnostics(userId: string): Promise<AmbientCaptureDiagnostics> {

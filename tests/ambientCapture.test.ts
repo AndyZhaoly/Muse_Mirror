@@ -1447,6 +1447,36 @@ test('reset deletes only the selected browser identity assets and state', async 
   for (const assetPath of userBAssets) await fs.access(assetPath);
 });
 
+test('startup demo reset clears every ambient overlay while preserving active grants', async () => {
+  const fixture = await createFixture('startup-reset');
+  const observed = outfit([
+    garment('top', 'top', 'navy', 'crew tee'),
+    garment('bottom', 'bottom', 'sand', 'straight trousers'),
+  ]);
+  await fixture.repository.setGrant('user-a', true);
+  await fixture.repository.setGrant('user-b', true);
+  const calls: ProductImageGenerationInput[] = [];
+  const runtimeA = coordinator({ repository: fixture.repository, assetService: fixture.assetService, observations: [observed, observed], productCalls: calls });
+  const runtimeB = coordinator({ repository: fixture.repository, assetService: fixture.assetService, observations: [observed, observed], productCalls: calls });
+  await runtimeA.process({ ...packet(fixture.framePath, 'startup-a', 'a1'), userId: 'user-a' });
+  await runtimeA.process({ ...packet(fixture.framePath, 'startup-a', 'a2'), userId: 'user-a' });
+  await runtimeB.process({ ...packet(fixture.framePath, 'startup-b', 'b1'), userId: 'user-b' });
+  await runtimeB.process({ ...packet(fixture.framePath, 'startup-b', 'b2'), userId: 'user-b' });
+
+  const reset = await runtimeA.resetAllUserDataOnStartup();
+  assert.deepEqual(reset, { userCount: 2, preservedGrantCount: 2 });
+  for (const userId of ['user-a', 'user-b']) {
+    const state = await fixture.repository.getState(userId);
+    assert.equal(state.closetItems.length, 0);
+    assert.equal(state.captures.length, 0);
+    assert.equal(state.wearEvents.length, 0);
+    assert.equal(state.assets.length, 0);
+    assert.equal(state.pendingIdentityResolutions.length, 0);
+    assert.equal(state.grant?.autoRecordWornGarments, true);
+    assert.equal(state.grant?.revokedAt, undefined);
+  }
+});
+
 function coordinator(input: {
   repository: JsonUserWardrobeRepository;
   assetService: GarmentImageAssetService;

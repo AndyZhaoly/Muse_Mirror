@@ -208,6 +208,7 @@ FASHION_AGENT_OUTPUT_DIR=./out
 FASHION_AGENT_MEMORY_DATA=./out/muse-memory-v1.json
 FASHION_AGENT_AMBIENT_WARDROBE_DATA=./out/ambient-wardrobe-v1.json
 FASHION_AGENT_AMBIENT_IGNORE_BASE_CLOSET=false
+FASHION_AGENT_AMBIENT_RESET_USER_DATA_ON_START=false
 FASHION_AGENT_EMPTY_SCENE_THRESHOLD=0.03
 FASHION_AGENT_EMPTY_SCENE_CONFIRMATIONS=2
 FASHION_AGENT_EMPTY_SCENE_FORCE_PROBE_MS=90000
@@ -245,6 +246,11 @@ garment identity candidate retrieval. The seed wardrobe, its product images, ord
 recommendation remain unchanged. Ambient-captured user items and their real appearance evidence still participate,
 and switching the value back to `false` immediately restores normal Base + Ambient identity retrieval without a
 data migration. Product-image generation for newly recorded garments remains enabled independently.
+
+For repeatable local investor-demo runs, `FASHION_AGENT_AMBIENT_RESET_USER_DATA_ON_START=true` clears ambient
+user overlays and their stored garment assets whenever the server starts. Active capture grants are retained so
+the same browser can resume testing immediately. Base Closet seed records and product images are stored separately
+and are never deleted or rewritten by this reset. Keep this flag disabled in shared or production environments.
 
 `FASHION_AGENT_VISUAL_QC=false` reproduces the time-constrained demo behavior in which image QC does not block a generated result. Set it to `true` when you want failed visual checks to block artifacts.
 

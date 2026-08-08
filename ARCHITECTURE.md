@@ -212,6 +212,10 @@ the ambient identity-input boundary. It defaults to `false` and never mutates se
 `ClosetService`, recommendation, or the user overlay. When enabled, ambient-captured items continue to participate
 through their real garment appearances; disabling it restores normal Base + Ambient recall immediately.
 
+The independent demo-only `FASHION_AGENT_AMBIENT_RESET_USER_DATA_ON_START` flag clears ambient user overlays and
+their owned garment assets at server startup while retaining active capture grants. It does not touch Base Closet
+fixtures or product images. The flag defaults to `false` and is intended only for repeatable local demo runs.
+
 The pairwise verifier receives the canonical current descriptor as locked input and repeats its own current
 color, sleeve, and neckline reading in strict structured output. A far contradiction between that reading and
 the locked descriptor invalidates the verdict as `VERIFIER_INCONSISTENT_CURRENT_READ`. It otherwise returns

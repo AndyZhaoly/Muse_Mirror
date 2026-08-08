@@ -128,6 +128,10 @@ const ambientCaptureCoordinator = new AmbientCaptureCoordinator({
     demo2ProductImageDir: config.demo2ProductImageDir,
   }),
 });
+if (config.ambientResetUserDataOnStart) {
+  const reset = await ambientCaptureCoordinator.resetAllUserDataOnStartup();
+  console.log('[AmbientDemo] reset user capture data on startup', reset);
+}
 void providerReadiness.refresh();
 const runtime =
   config.agentProvider === 'gemma4'
