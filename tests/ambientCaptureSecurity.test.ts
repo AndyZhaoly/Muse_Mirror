@@ -11,6 +11,7 @@ test('ambient routes derive ownership from the signed browser identity and ignor
   assert.match(handler, /const userId = requireBrowserIdentity\(req, res\)/);
   assert.doesNotMatch(handler, /body\.userId|url\.searchParams\.get\(['"]userId/);
   assert.match(handler, /retryProductImage\(userId, body\.closetItemId\)/);
+  assert.match(handler, /backfillProductImages\(userId\)/);
   assert.match(handler, /resetUser\(userId\)/);
 });
 

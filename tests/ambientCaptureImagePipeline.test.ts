@@ -161,12 +161,59 @@ test('real image pipeline survives reload, label drift, repeat recognition, and 
   assert.equal(bottom.item.ownershipStatus, 'unverified');
 });
 
+test('failed mirror-captured catalog images can be backfilled and promoted one item at a time', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'muse-product-backfill-'));
+  const repository = new JsonUserWardrobeRepository(path.join(root, 'wardrobe.json'));
+  const assetService = new GarmentImageAssetService({ rootDirectory: path.join(root, 'assets') });
+  const frame = await renderFrame(path.join(root, 'capture.jpg'), {
+    topColor: '#d8dce2', bottomColor: '#4b5260', topLeft: [282, 150], bottomLeft: [390, 505], brightness: 1,
+  });
+  const observation = observedOutfit('backfill',
+    observedGarment('backfill-top', 'top', 'pale blue', 'solid', 'crewneck tee', 'regular', { x: 0.22, y: 0.15, width: 0.42, height: 0.34 }),
+    observedGarment('backfill-bottom', 'bottom', 'charcoal', 'solid', 'straight shorts', 'regular', { x: 0.30, y: 0.53, width: 0.40, height: 0.43 }),
+  );
+  await repository.setGrant(owner, true);
+  const unavailableRuntime = pipeline({
+    repository,
+    assetService,
+    observations: [observation, observation],
+    productCalls: [],
+    verificationCalls: [],
+    productImageProvider: new UnavailableProductProvider(),
+    productImageVerifier: new UnavailableProductVerifier(),
+  });
+  await unavailableRuntime.process(packet(frame, 'backfill-session', 'backfill-a'));
+  assert.equal((await unavailableRuntime.process(packet(frame, 'backfill-session', 'backfill-b'))).status, 'committed_processing_images');
+  await waitForNeedsReview(repository, 2);
+
+  const productCalls: ProductImageGenerationInput[] = [];
+  const availableRuntime = pipeline({
+    repository,
+    assetService,
+    observations: [],
+    productCalls,
+    verificationCalls: [],
+  });
+  const result = await availableRuntime.backfillProductImages(owner);
+  const state = await repository.getState(owner);
+
+  assert.equal(result.attemptedItemIds.length, 2);
+  assert.deepEqual(result.readyItemIds.sort(), result.attemptedItemIds.sort());
+  assert.deepEqual(result.needsReviewItemIds, []);
+  assert.deepEqual(result.skippedItemIds, []);
+  assert.equal(productCalls.length, 2);
+  assert.equal(state.closetItems.every((entry) => entry.item.imageStatus === 'ready'), true);
+  assert.equal(state.closetItems.every((entry) => entry.item.primaryImageAssetId && entry.item.imageUrl), true);
+});
+
 function pipeline(input: {
   repository: JsonUserWardrobeRepository;
   assetService: GarmentImageAssetService;
   observations: WornOutfitObservation[];
   productCalls: ProductImageGenerationInput[];
   verificationCalls: Array<{ currentFrameId?: string; references: Array<{ role: GarmentImageAsset['role']; sourceFrameId?: string }> }>;
+  productImageProvider?: ProductImageProvider;
+  productImageVerifier?: ProductImageVerifier;
 }): AmbientCaptureCoordinator {
   return new AmbientCaptureCoordinator({
     observationProvider: queued(input.observations),
@@ -176,9 +223,23 @@ function pipeline(input: {
     repository: input.repository,
     baseClosetItems: () => [],
     assetService: input.assetService,
-    productImageProvider: new FakeEditProvider(input.assetService, input.productCalls),
-    productImageVerifier: new PassProductVerifier(),
+    productImageProvider: input.productImageProvider ?? new FakeEditProvider(input.assetService, input.productCalls),
+    productImageVerifier: input.productImageVerifier ?? new PassProductVerifier(),
   });
+}
+
+class UnavailableProductProvider implements ProductImageProvider {
+  readonly ready = false;
+  async createCanonicalProductImage(): Promise<never> {
+    throw new Error('PRODUCT_IMAGE_PIPELINE_UNAVAILABLE');
+  }
+}
+
+class UnavailableProductVerifier implements ProductImageVerifier {
+  readonly ready = false;
+  async verify(): Promise<never> {
+    throw new Error('PRODUCT_IMAGE_PIPELINE_UNAVAILABLE');
+  }
 }
 
 class PixelVerifier implements GarmentVisualVerifier {
@@ -314,6 +375,16 @@ async function waitForReady(repository: JsonUserWardrobeRepository, expected: nu
     await new Promise((resolve) => setTimeout(resolve, 15));
   }
   throw new Error('Timed out waiting for verified product images.');
+}
+
+async function waitForNeedsReview(repository: JsonUserWardrobeRepository, expected: number) {
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    const state = await repository.getState(owner);
+    if (state.closetItems.filter((entry) => entry.item.imageStatus === 'needs_review').length === expected &&
+      state.productImageJobs.filter((job) => job.status === 'failed').length === expected) return state;
+    await new Promise((resolve) => setTimeout(resolve, 15));
+  }
+  throw new Error('Timed out waiting for failed product-image jobs.');
 }
 
 async function average(asset: GarmentImageAsset): Promise<[number, number, number]> {

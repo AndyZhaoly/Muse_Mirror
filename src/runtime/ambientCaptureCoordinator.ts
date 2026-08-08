@@ -3,6 +3,7 @@ import type {
   AmbientCaptureDiagnostics,
   AmbientCaptureOutcome,
   AmbientCapturePacket,
+  AmbientProductImageBackfillResult,
   AmbientClosetItem,
   AmbientGarmentTrack,
   AmbientOutfitEpisode,
@@ -311,49 +312,39 @@ export class AmbientCaptureCoordinator {
   }
 
   async retryProductImage(userId: string, closetItemId: string): Promise<AmbientCaptureOutcome> {
+    return this.exclusive(userId, () => this.retryProductImageLocked(userId, closetItemId));
+  }
+
+  async backfillProductImages(userId: string): Promise<AmbientProductImageBackfillResult> {
     return this.exclusive(userId, async () => {
-      closetItemId = await this.options.repository.resolveClosetItemId(userId, closetItemId);
       const state = await this.options.repository.getState(userId);
-      const entry = state.closetItems.find((item) => item.item.id === closetItemId);
-      const appearance = [...state.appearances].reverse().find((item) => item.closetItemId === closetItemId);
-      const sourceAsset = appearance ? state.assets.find((asset) => asset.assetId === appearance.appearanceAssetId) : undefined;
-      if (!entry || !sourceAsset) return this.remember(userId, { status: 'unavailable', reasonCodes: ['RETRY_ITEM_OR_APPEARANCE_NOT_FOUND'] });
-      if (!this.options.productImageProvider.ready || !this.options.productImageVerifier.ready) {
-        return this.remember(userId, { status: 'unavailable', reasonCodes: ['PRODUCT_IMAGE_PIPELINE_UNAVAILABLE'] });
+      const eligibleItemIds = state.closetItems
+        .filter((entry) => entry.status === 'active' &&
+          entry.item.identityStatus !== 'merged' &&
+          entry.item.source === 'mirror_auto_capture' &&
+          entry.item.imageStatus !== 'ready' &&
+          entry.item.imageStatus !== 'processing')
+        .map((entry) => entry.item.id);
+      const attemptedItemIds = eligibleItemIds.slice(0, 8);
+      const skippedItemIds = eligibleItemIds.slice(8);
+      const readyItemIds: string[] = [];
+      const needsReviewItemIds: string[] = [];
+
+      for (const closetItemId of attemptedItemIds) {
+        const outcome = await this.retryProductImageLocked(userId, closetItemId);
+        if (outcome.status === 'ready') readyItemIds.push(closetItemId);
+        else needsReviewItemIds.push(closetItemId);
       }
-      const job = await this.options.repository.beginProductImageJob(userId, closetItemId, sourceAsset.assetId);
-      let generatedAsset: GarmentImageAsset | undefined;
-      try {
-        const generated = await this.options.productImageProvider.createCanonicalProductImage({
-          userId,
-          closetItemId,
-          sourceAppearance: sourceAsset,
-          item: {
-            category: entry.item.category,
-            color: entry.item.color,
-            slot: entry.item.category === 'jumpsuit' ? 'dress' : entry.item.category,
-            description: entry.item.name,
-          },
-        });
-        generatedAsset = generated.asset;
-        const verification = await this.options.productImageVerifier.verify({
-          sourceAppearance: sourceAsset,
-          generatedProductImage: generated.asset,
-          category: entry.item.category,
-        });
-        const completed = await this.options.repository.completeProductImageJob({
-          userId, jobId: job.jobId, productAsset: generated.asset, verification,
-          threshold: this.options.productImageVerifyConfidence ?? 0.84,
-        });
-        return this.remember(userId, {
-          status: completed.ready ? 'ready' : 'image_needs_review',
-          reasonCodes: [completed.ready ? 'CATALOG_IMAGE_VERIFIED' : 'CATALOG_IMAGE_NEEDS_REVIEW'],
-        });
-      } catch (error) {
-        if (generatedAsset) await this.options.assetService.deleteAssets([generatedAsset]);
-        await this.options.repository.failProductImageJob(userId, job.jobId, safeErrorCode(error));
-        return this.remember(userId, { status: 'image_needs_review', reasonCodes: ['PRODUCT_IMAGE_RETRY_FAILED', safeErrorCode(error)] });
-      }
+
+      this.remember(userId, {
+        status: needsReviewItemIds.length ? 'image_needs_review' : readyItemIds.length ? 'ready' : 'unavailable',
+        reasonCodes: needsReviewItemIds.length
+          ? ['PRODUCT_IMAGE_BACKFILL_PARTIAL', 'CATALOG_IMAGE_NEEDS_REVIEW']
+          : readyItemIds.length
+            ? ['PRODUCT_IMAGE_BACKFILL_COMPLETED', 'CATALOG_IMAGES_VERIFIED']
+            : ['PRODUCT_IMAGE_BACKFILL_EMPTY'],
+      });
+      return { attemptedItemIds, readyItemIds, needsReviewItemIds, skippedItemIds };
     });
   }
 
@@ -461,6 +452,56 @@ export class AmbientCaptureCoordinator {
       completedEvent,
       retryAfterMs: 12_000,
     });
+  }
+
+  private async retryProductImageLocked(userId: string, requestedClosetItemId: string): Promise<AmbientCaptureOutcome> {
+    const closetItemId = await this.options.repository.resolveClosetItemId(userId, requestedClosetItemId);
+    const state = await this.options.repository.getState(userId);
+    const entry = state.closetItems.find((item) => item.item.id === closetItemId && item.status === 'active');
+    const appearance = [...state.appearances].reverse().find((item) => item.closetItemId === closetItemId);
+    const sourceAsset = appearance ? state.assets.find((asset) => asset.assetId === appearance.appearanceAssetId) : undefined;
+    if (!entry || entry.item.source !== 'mirror_auto_capture' || !sourceAsset) {
+      return this.remember(userId, { status: 'unavailable', reasonCodes: ['RETRY_ITEM_OR_APPEARANCE_NOT_FOUND'] });
+    }
+    if (entry.item.imageStatus === 'ready') {
+      return this.remember(userId, { status: 'ready', reasonCodes: ['CATALOG_IMAGE_ALREADY_READY'] });
+    }
+    if (!this.options.productImageProvider.ready || !this.options.productImageVerifier.ready) {
+      return this.remember(userId, { status: 'unavailable', reasonCodes: ['PRODUCT_IMAGE_PIPELINE_UNAVAILABLE'] });
+    }
+    const job = await this.options.repository.beginProductImageJob(userId, closetItemId, sourceAsset.assetId);
+    let generatedAsset: GarmentImageAsset | undefined;
+    try {
+      const generated = await this.options.productImageProvider.createCanonicalProductImage({
+        userId,
+        closetItemId,
+        sourceAppearance: sourceAsset,
+        item: {
+          category: entry.item.category,
+          color: entry.item.color,
+          slot: entry.item.category === 'jumpsuit' ? 'dress' : entry.item.category,
+          description: entry.item.name,
+        },
+      });
+      generatedAsset = generated.asset;
+      const verification = await this.options.productImageVerifier.verify({
+        sourceAppearance: sourceAsset,
+        generatedProductImage: generated.asset,
+        category: entry.item.category,
+      });
+      const completed = await this.options.repository.completeProductImageJob({
+        userId, jobId: job.jobId, productAsset: generated.asset, verification,
+        threshold: this.options.productImageVerifyConfidence ?? 0.84,
+      });
+      return this.remember(userId, {
+        status: completed.ready ? 'ready' : 'image_needs_review',
+        reasonCodes: [completed.ready ? 'CATALOG_IMAGE_VERIFIED' : 'CATALOG_IMAGE_NEEDS_REVIEW'],
+      });
+    } catch (error) {
+      if (generatedAsset) await this.options.assetService.deleteAssets([generatedAsset]);
+      await this.options.repository.failProductImageJob(userId, job.jobId, safeErrorCode(error));
+      return this.remember(userId, { status: 'image_needs_review', reasonCodes: ['PRODUCT_IMAGE_RETRY_FAILED', safeErrorCode(error)] });
+    }
   }
 
   private remember(userId: string, outcome: AmbientCaptureOutcome): AmbientCaptureOutcome {

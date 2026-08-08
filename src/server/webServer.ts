@@ -1000,6 +1000,12 @@ async function handleAmbientCapture(
     return;
   }
 
+  if (req.method === 'POST' && url.pathname === '/api/ambient-capture/product-images/backfill') {
+    await readJson(req).catch(() => ({}));
+    jsonResponse(res, 200, { ok: true, result: await ambientCaptureCoordinator.backfillProductImages(userId) });
+    return;
+  }
+
   textResponse(res, 404, 'Not found');
 }
 

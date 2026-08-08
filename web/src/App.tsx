@@ -7,6 +7,7 @@ import {
   dismissMemoryCandidate,
   getPerceptionStatus,
   getAmbientCaptureState,
+  backfillAmbientProductImages,
   acknowledgeAmbientCapture,
   getAgentStatus,
   getConversationMessages,
@@ -41,6 +42,7 @@ import {
   type UserMemory,
 	  type AmbientCaptureCompletedEvent,
 	  type AmbientCaptureOutcome,
+	  type AmbientCaptureClosetEntry,
 	} from './agentClient';
 import {
   evaluateEmptySceneGuard,
@@ -83,6 +85,17 @@ type VisualMode =
   | 'agent-look-board'
   | 'agent-items';
 type MessageRole = 'assistant' | 'user';
+
+function ambientOutcomeFromState(state: Awaited<ReturnType<typeof getAmbientCaptureState>>): AmbientCaptureOutcome | undefined {
+  if (state.diagnostics.processingImageCount > 0) {
+    return { status: 'committed_processing_images', reasonCodes: ['CATALOG_IMAGES_PROCESSING'] };
+  }
+  if (state.diagnostics.needsReviewImageCount > 0) {
+    return { status: 'image_needs_review', reasonCodes: ['CATALOG_IMAGE_NEEDS_REVIEW'] };
+  }
+  return state.diagnostics.lastOutcome;
+}
+
 type IconName =
   | 'camera'
   | 'pause'
@@ -1280,6 +1293,9 @@ function App() {
   const [ambientCaptureEvent, setAmbientCaptureEvent] = useState<AmbientCaptureCompletedEvent>();
   const [ambientCaptureOutcome, setAmbientCaptureOutcome] = useState<AmbientCaptureOutcome>();
   const [ambientCaptureCounts, setAmbientCaptureCounts] = useState({ closet: 0, captures: 0 });
+  const [ambientClosetItems, setAmbientClosetItems] = useState<AmbientCaptureClosetEntry[]>([]);
+  const [ambientProductImageProviderReady, setAmbientProductImageProviderReady] = useState(false);
+  const [ambientProductImageBackfillPending, setAmbientProductImageBackfillPending] = useState(false);
   const [emptySceneGuardConfig, setEmptySceneGuardConfig] = useState(defaultEmptySceneGuardConfig);
   const [ambientEmptySceneDiagnostics, setAmbientEmptySceneDiagnostics] = useState<AmbientEmptySceneDiagnostics>({
     status: 'inactive',
@@ -1364,12 +1380,16 @@ function App() {
       .then((state) => {
         if (cancelled) return;
         setAmbientCaptureEnabled(state.diagnostics.grantActive);
-        setAmbientCaptureOutcome(state.diagnostics.lastOutcome);
+        setAmbientCaptureOutcome(ambientOutcomeFromState(state));
         setAmbientCaptureEvent(state.pendingCompletionEvent);
         setAmbientCaptureCounts({
           closet: state.diagnostics.closetItemCount,
           captures: state.diagnostics.captureCount,
         });
+        setAmbientClosetItems(state.closetItems);
+        setAmbientProductImageProviderReady(
+          state.diagnostics.productImageProviderReady && state.diagnostics.productImageVerifierReady,
+        );
       })
       .catch(() => undefined);
     return () => { cancelled = true; };
@@ -1381,12 +1401,42 @@ function App() {
     const poll = window.setInterval(() => {
       void getAmbientCaptureState().then((state) => {
         if (cancelled) return;
-        setAmbientCaptureOutcome(state.diagnostics.lastOutcome);
+        setAmbientCaptureOutcome(ambientOutcomeFromState(state));
         if (state.pendingCompletionEvent) setAmbientCaptureEvent(state.pendingCompletionEvent);
+        setAmbientClosetItems(state.closetItems);
       }).catch(() => undefined);
     }, 1800);
     return () => { cancelled = true; window.clearInterval(poll); };
   }, [ambientCaptureOutcome?.status]);
+
+  useEffect(() => {
+    if (!ambientProductImageBackfillPending) return undefined;
+    let cancelled = false;
+    const poll = window.setInterval(() => {
+      void getAmbientCaptureState().then((state) => {
+        if (cancelled) return;
+        setAmbientClosetItems(state.closetItems);
+        setAmbientCaptureOutcome(ambientOutcomeFromState(state));
+      }).catch(() => undefined);
+    }, 1_500);
+    return () => { cancelled = true; window.clearInterval(poll); };
+  }, [ambientProductImageBackfillPending]);
+
+  const backfillAmbientProductImagesFromUi = useCallback(async () => {
+    if (ambientProductImageBackfillPending) return;
+    setAmbientProductImageBackfillPending(true);
+    try {
+      await backfillAmbientProductImages();
+      const state = await getAmbientCaptureState();
+      setAmbientClosetItems(state.closetItems);
+      setAmbientCaptureOutcome(ambientOutcomeFromState(state));
+      if (state.pendingCompletionEvent) setAmbientCaptureEvent(state.pendingCompletionEvent);
+    } catch {
+      setAmbientCaptureOutcome({ status: 'image_needs_review', reasonCodes: ['PRODUCT_IMAGE_BACKFILL_FAILED'] });
+    } finally {
+      setAmbientProductImageBackfillPending(false);
+    }
+  }, [ambientProductImageBackfillPending]);
 
   useEffect(() => {
     if (!ambientCaptureEvent) return undefined;
@@ -2406,6 +2456,9 @@ function App() {
       situationDecision: developmentSituationResult?.decision,
       ambientCaptureEvent,
       ambientCaptureStatus: ambientCaptureOutcome?.status,
+      ambientClosetItems,
+      ambientProductImageProviderReady,
+      ambientProductImageBackfillPending,
     }),
     [
       agentStatusLabel,
@@ -2424,6 +2477,9 @@ function App() {
       developmentSituationResult,
       ambientCaptureEvent,
       ambientCaptureOutcome?.status,
+      ambientClosetItems,
+      ambientProductImageProviderReady,
+      ambientProductImageBackfillPending,
     ],
   );
 
@@ -2567,6 +2623,7 @@ function App() {
         canvas={(
           <MirrorAgentCanvas
             state={mirrorScreenState}
+            onBackfillProductImages={() => { void backfillAmbientProductImagesFromUi(); }}
             approval={mirrorScreenState.showApproval && pendingApproval ? (
               <ConsentCard
                 busy={generating}

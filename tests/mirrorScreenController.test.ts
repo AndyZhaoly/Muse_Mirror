@@ -110,6 +110,31 @@ test('empty state is idle conversation without approval or artifact', () => {
   assert.equal(state.caption.museTextSource, 'idle_fallback');
   assert.equal(state.showApproval, false);
   assert.equal(state.primaryArtifact, undefined);
+  assert.deepEqual(state.ambientClosetItems, []);
+});
+
+test('verified ambient closet images remain projected after the completion notice is gone', () => {
+  const state = deriveMirrorScreenState(input({
+    ambientClosetItems: [{
+      status: 'active',
+      item: {
+        id: 'ambient-shirt',
+        name: '浅蓝圆领 T 恤',
+        category: 'top',
+        color: '浅蓝',
+        fit: 'regular',
+        formality: 'casual',
+        styleTags: ['minimal'],
+        imageUrl: '/api/wardrobe/assets/product-shirt',
+        imageStatus: 'ready',
+        source: 'mirror_auto_capture',
+      },
+    }],
+    ambientProductImageProviderReady: true,
+  }));
+  assert.equal(state.ambientClosetItems.length, 1);
+  assert.equal(state.ambientClosetItems[0]?.item.imageStatus, 'ready');
+  assert.equal(state.ambientProductImageProviderReady, true);
 });
 
 test('ambient capture completion owns the passive canvas instead of stale conversation content', () => {

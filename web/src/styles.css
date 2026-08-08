@@ -231,6 +231,19 @@ button:focus-visible, input:focus-visible { outline: 3px solid rgba(102, 112, 90
 .ambient-capture-items small { grid-column: 3; color: var(--subtle); font-size: 9px; }
 .ambient-capture-complete.is-processing > strong::after { content: ''; display: inline-block; width: 7px; height: 7px; margin-left: 9px; border-radius: 50%; background: #8ea07e; animation: ambient-pulse 1.4s ease-in-out infinite; }
 .ambient-capture-complete.is-limited { color: var(--muted); }
+.ambient-product-action { justify-self: start; border: 1px solid var(--ink); background: var(--ink); color: #fff; min-height: 34px; padding: 7px 12px; cursor: pointer; font-size: 10px; }
+.ambient-product-action:disabled { cursor: wait; opacity: .58; }
+.ambient-product-gallery { border-top: 1px solid var(--line); padding-top: 18px; display: grid; gap: 12px; }
+.ambient-product-gallery-heading { display: grid; gap: 3px; }
+.ambient-product-gallery-heading > strong { font-family: var(--serif); font-size: 20px; font-weight: 500; }
+.ambient-product-gallery-heading > small { color: var(--subtle); font-size: 9px; }
+.ambient-product-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.ambient-product-card { min-width: 0; border: 1px solid var(--line); background: rgba(255,255,255,.62); padding: 8px; display: grid; grid-template-columns: 62px minmax(0, 1fr); gap: 9px; align-items: center; }
+.ambient-product-card > img { width: 62px; height: 72px; object-fit: contain; background: #f4f2ec; }
+.ambient-product-card > div { min-width: 0; display: grid; gap: 3px; }
+.ambient-product-card span { color: #718065; font-size: 8px; text-transform: uppercase; }
+.ambient-product-card strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10px; font-weight: 600; }
+.ambient-product-card small { color: var(--subtle); font-size: 8px; }
 @keyframes ambient-pulse { 0%, 100% { opacity: .35; } 50% { opacity: 1; } }
 @media (prefers-reduced-motion: reduce) { .ambient-capture-complete.is-processing > strong::after { animation: none; opacity: 1; } }
 

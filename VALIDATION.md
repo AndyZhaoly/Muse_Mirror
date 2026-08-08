@@ -95,6 +95,11 @@ Confirm counts are `2 new`, `0 new/2 matched`, then `1 new/1 matched`, and that 
 counts are `2`, `0`, then `1`. Use `?ambientDebug=1` for safe diagnostics. Do not claim this live acceptance
 unless all three physical-camera rounds were actually executed.
 
+If items were recorded while the product-image provider was disabled, use the visible “生成衣橱单品图” action.
+The browser-scoped backfill processes only that user's active mirror-captured items, keeps failed verification
+results hidden, and exposes each verified result as soon as it is ready. Confirm the card says “AI 整理图” and
+does not present the generated asset as a merchant product photo.
+
 Run the focused streaming suite with:
 
 ```bash

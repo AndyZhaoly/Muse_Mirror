@@ -29,6 +29,8 @@ services:
         value: mock
       - key: FASHION_AGENT_PRODUCT_PROVIDER
         value: disabled
+      - key: FASHION_AGENT_PRODUCT_IMAGE_PROVIDER
+        value: openai
       - key: FASHION_AGENT_MOCK_TOOLS
         value: "false"
       - key: FASHION_AGENT_VISUAL_QC
@@ -49,6 +51,12 @@ services:
         value: gpt-5.4-mini
       - key: OPENAI_IMAGE_MODEL
         value: gpt-image-2
+      - key: OPENAI_PRODUCT_IMAGE_MODEL
+        value: gpt-image-2
+      - key: OPENAI_PRODUCT_IMAGE_QUALITY
+        value: medium
+      - key: OPENAI_PRODUCT_IMAGE_SIZE
+        value: 1024x1024
       - key: OPENAI_REASONING_EFFORT
         value: low
       - key: OPENAI_VOICE_REASONING_EFFORT

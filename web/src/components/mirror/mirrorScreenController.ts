@@ -331,5 +331,8 @@ export function deriveMirrorScreenState(input: MirrorScreenControllerInput): Mir
     situationDecision: input.situationDecision,
     ambientCaptureEvent,
     ambientCaptureStatus,
+    ambientClosetItems: input.ambientClosetItems ?? [],
+    ambientProductImageProviderReady: Boolean(input.ambientProductImageProviderReady),
+    ambientProductImageBackfillPending: Boolean(input.ambientProductImageBackfillPending),
   };
 }

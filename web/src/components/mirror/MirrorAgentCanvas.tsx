@@ -8,11 +8,25 @@ interface MirrorAgentCanvasProps {
   state: MirrorScreenState;
   approval?: ReactNode;
   composer: ReactNode;
+  onBackfillProductImages?: () => void;
 }
 
 function needsFullConversationHint(text?: string): boolean {
   if (!text) return false;
   return text.length > 180 || text.split('\n').length > 6;
+}
+
+function closetCategoryLabel(category: string): string {
+  return ({
+    top: '上衣',
+    bottom: '下装',
+    dress: '连衣装',
+    jumpsuit: '连体装',
+    outerwear: '外套',
+    shoes: '鞋',
+    bag: '包',
+    accessory: '配饰',
+  } as Record<string, string>)[category] ?? category;
 }
 
 function MirrorVoiceDock({ voice }: { voice: MirrorVoicePresentation }) {
@@ -33,10 +47,15 @@ export function MirrorAgentCanvas({
   state,
   approval,
   composer,
+  onBackfillProductImages,
 }: MirrorAgentCanvasProps) {
   const { caption } = state;
   const showFullConversationHint = needsFullConversationHint(caption.museText);
   const ariaLive = state.phase === 'speaking' || state.isActiveTurn ? 'off' : 'polite';
+  const ambientProductImages = state.ambientClosetItems
+    .filter((entry) => entry.item.imageStatus === 'ready' && entry.item.imageUrl)
+    .slice(-6)
+    .reverse();
 
   return (
     <aside
@@ -155,6 +174,38 @@ export function MirrorAgentCanvas({
               <span className="eyebrow">WARDROBE</span>
               <strong>今日穿搭已记录</strong>
               <p className="ambient-capture-summary">衣橱图片还需要整理；未通过校验的图片不会展示。</p>
+              {state.ambientProductImageProviderReady && onBackfillProductImages && (
+                <button
+                  className="ambient-product-action"
+                  type="button"
+                  disabled={state.ambientProductImageBackfillPending}
+                  onClick={onBackfillProductImages}
+                >
+                  {state.ambientProductImageBackfillPending ? '正在逐件生成…' : '生成衣橱单品图'}
+                </button>
+              )}
+            </section>
+          )}
+
+          {ambientProductImages.length > 0 && (
+            <section className="ambient-product-gallery" aria-label="已整理的衣橱单品图">
+              <div className="ambient-product-gallery-heading">
+                <span className="eyebrow">MY WARDROBE</span>
+                <strong>镜头录入的衣橱单品</strong>
+                <small>AI 基于实拍整理 · 通过视觉检查</small>
+              </div>
+              <div className="ambient-product-grid">
+                {ambientProductImages.map((entry) => (
+                  <article key={entry.item.id} className="ambient-product-card">
+                    <img src={entry.item.imageUrl} alt={entry.item.name} />
+                    <div>
+                      <span>AI 整理图</span>
+                      <strong>{entry.item.name}</strong>
+                      <small>{entry.item.color} · {closetCategoryLabel(entry.item.category)}</small>
+                    </div>
+                  </article>
+                ))}
+              </div>
             </section>
           )}
 

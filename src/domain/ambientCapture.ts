@@ -473,6 +473,13 @@ export interface AmbientCaptureOutcome {
   completedEvent?: OutfitCaptureCompletedEvent;
 }
 
+export interface AmbientProductImageBackfillResult {
+  attemptedItemIds: string[];
+  readyItemIds: string[];
+  needsReviewItemIds: string[];
+  skippedItemIds: string[];
+}
+
 export interface AmbientCaptureDiagnostics {
   enabled: boolean;
   providerReady: boolean;

@@ -682,6 +682,15 @@ export interface AmbientCaptureState {
   };
 }
 
+export type AmbientCaptureClosetEntry = AmbientCaptureState['closetItems'][number];
+
+export interface AmbientProductImageBackfillResult {
+  attemptedItemIds: string[];
+  readyItemIds: string[];
+  needsReviewItemIds: string[];
+  skippedItemIds: string[];
+}
+
 export async function getAgentStatus(): Promise<AgentStatus> {
   const response = await fetch('/api/fashion/status');
   const body = await response.json().catch(() => ({}));
@@ -846,6 +855,10 @@ export function acknowledgeAmbientCapture(): Promise<{ ok: true; acknowledged: b
 
 export function retryAmbientProductImage(closetItemId: string): Promise<{ ok: true; outcome: AmbientCaptureOutcome }> {
   return postJson('/api/dev/outfit-capture/retry-product-image', { closetItemId });
+}
+
+export function backfillAmbientProductImages(): Promise<{ ok: true; result: AmbientProductImageBackfillResult }> {
+  return postJson('/api/ambient-capture/product-images/backfill', {});
 }
 
 export async function getPerceptionStatus(sessionId: string): Promise<PerceptionState> {
