@@ -20,7 +20,7 @@ import {
 export const GARMENT_PAIRWISE_PROMPT_VERSION = 'garment-pairwise-v3-instance-taxonomy';
 
 export interface GarmentPairwiseVerificationInput {
-  currentAppearance: GarmentImageAsset;
+  currentAppearances: GarmentImageAsset[];
   lockedDescriptor: GarmentAppearanceDescriptor;
   candidate: {
     closetItem: ClosetItem;
@@ -65,12 +65,14 @@ export class OpenAIGarmentVisualVerifier implements GarmentPairwiseVerifier {
       ? input.candidate.referenceAppearances.slice(-2)
       : input.candidate.catalogFallbackImage ? [input.candidate.catalogFallbackImage] : [];
     if (!references.length) return uncertainGarmentVerification('VISUAL_REFERENCE_UNAVAILABLE', this.options.model);
+    const currentAppearances = input.currentAppearances.slice(-2);
+    if (!currentAppearances.length) return uncertainGarmentVerification('CURRENT_VISUAL_EVIDENCE_UNAVAILABLE', this.options.model);
     const content: Array<Record<string, unknown>> = [
       {
         type: 'input_text',
         text: [
           `Pairwise garment identity verification. Prompt version: ${GARMENT_PAIRWISE_PROMPT_VERSION}.`,
-          'Compare the current garment crop with exactly one candidate ClosetItem.',
+          'Compare up to two temporal crops of one current garment with exactly one candidate ClosetItem.',
           `Candidate ID: ${input.candidate.closetItem.id}`,
           `Locked current descriptor: ${JSON.stringify({
             dominantColor: input.lockedDescriptor.dominantColor,
@@ -91,14 +93,17 @@ export class OpenAIGarmentVisualVerifier implements GarmentPairwiseVerifier {
           'Physical identity requires jointly visible instance-specific construction details: pattern/print/logo placement, pocket geometry, drawstring construction, closure/button/zipper layout, unique decoration, stitching layout, waistband/hem/cuff construction, unique texture details, or distinctive hardware.',
           'Use pattern_family only for the broad pattern type. Use pattern_placement or print_placement for location-specific evidence. Use pocket_geometry, button_layout, and the other construction-specific enum values rather than generic pocket or button labels.',
           'Ignore the wearer, face, body shape, pose, and background.',
+          'Return per-current-frame structured evidence. Temporal consistency is consistent only when the same instance-specific detail supports identity across both current frames, mixed when strong evidence conflicts, and insufficient otherwise.',
           'Return uncertain whenever jointly visible discriminative evidence is insufficient.',
           'Use high confidence only when the structured evidence supports it.',
         ].join('\n'),
       },
-      { type: 'input_text', text: 'CURRENT GARMENT' },
-      { type: 'input_image', image_url: await assetDataUrl(input.currentAppearance) },
-      { type: 'input_text', text: `REFERENCE GARMENT: ${input.candidate.closetItem.id}` },
     ];
+    for (const [index, current] of currentAppearances.entries()) {
+      content.push({ type: 'input_text', text: `CURRENT GARMENT FRAME ${index + 1}` });
+      content.push({ type: 'input_image', image_url: await assetDataUrl(current) });
+    }
+    content.push({ type: 'input_text', text: `REFERENCE GARMENT: ${input.candidate.closetItem.id}` });
     for (const reference of references) {
       content.push({ type: 'input_image', image_url: await assetDataUrl(reference) });
     }
@@ -137,12 +142,41 @@ export class OpenAIGarmentVisualVerifier implements GarmentPairwiseVerifier {
                     required: ['feature', 'currentVisibility', 'referenceVisibility', 'relation', 'discriminativeStrength', 'note'],
                   },
                 },
+                currentFrameEvidence: {
+                  type: 'array',
+                  items: {
+                    type: 'object',
+                    additionalProperties: false,
+                    properties: {
+                      frameIndex: { type: 'integer', minimum: 0, maximum: 1 },
+                      featureComparisons: {
+                        type: 'array',
+                        items: {
+                          type: 'object',
+                          additionalProperties: false,
+                          properties: {
+                            feature: { type: 'string', enum: GARMENT_IDENTITY_FEATURES },
+                            currentVisibility: { type: 'string', enum: ['visible', 'partial', 'not_visible'] },
+                            referenceVisibility: { type: 'string', enum: ['visible', 'partial', 'not_visible'] },
+                            relation: { type: 'string', enum: ['same', 'different', 'unknown'] },
+                            discriminativeStrength: { type: 'string', enum: ['weak', 'medium', 'strong'] },
+                            note: { type: 'string' },
+                          },
+                          required: ['feature', 'currentVisibility', 'referenceVisibility', 'relation', 'discriminativeStrength', 'note'],
+                        },
+                      },
+                    },
+                    required: ['frameIndex', 'featureComparisons'],
+                  },
+                },
+                temporalEvidenceConsistency: { type: 'string', enum: ['consistent', 'mixed', 'insufficient'] },
                 occlusions: { type: 'array', items: { type: 'string' } },
                 jointlyVisibleEvidence: { type: 'array', items: { type: 'string' } },
               },
               required: [
                 'verdict', 'confidence', 'currentColor', 'currentSleeve', 'currentNeckline',
-                'featureComparisons', 'occlusions', 'jointlyVisibleEvidence',
+                'featureComparisons', 'currentFrameEvidence', 'temporalEvidenceConsistency',
+                'occlusions', 'jointlyVisibleEvidence',
               ],
             },
           },
@@ -339,6 +373,23 @@ function parsePairwiseVerification(value: unknown, model: string): PairwiseGarme
       note: comparison.note,
     };
   });
+  const currentFrameEvidence = Array.isArray(record.currentFrameEvidence)
+    ? record.currentFrameEvidence.map((entry) => {
+        if (!entry || typeof entry !== 'object') throw new Error('Invalid current frame evidence.');
+        const frame = entry as Record<string, unknown>;
+        if (!Number.isInteger(frame.frameIndex) || Number(frame.frameIndex) < 0 || Number(frame.frameIndex) > 1 ||
+            !Array.isArray(frame.featureComparisons)) {
+          throw new Error('Invalid current frame evidence.');
+        }
+        return {
+          frameIndex: Number(frame.frameIndex),
+          featureComparisons: frame.featureComparisons.map(parseFeatureComparison),
+        };
+      })
+    : [];
+  const temporalEvidenceConsistency = ['consistent', 'mixed', 'insufficient'].includes(String(record.temporalEvidenceConsistency))
+    ? record.temporalEvidenceConsistency as PairwiseGarmentVerification['temporalEvidenceConsistency']
+    : 'insufficient';
   return {
     verdict: record.verdict as PairwiseGarmentVerification['verdict'],
     confidence: clamp(Number(record.confidence)),
@@ -346,8 +397,10 @@ function parsePairwiseVerification(value: unknown, model: string): PairwiseGarme
     currentSleeve: canonicalizeSleeve(String(record.currentSleeve ?? 'unknown')),
     currentNeckline: canonicalizeNeckline(String(record.currentNeckline ?? 'unknown')),
     featureComparisons,
+    currentFrameEvidence,
     occlusions: safeStrings(record.occlusions),
     jointlyVisibleEvidence: safeStrings(record.jointlyVisibleEvidence),
+    temporalEvidenceConsistency,
     model,
   };
 }
@@ -356,7 +409,29 @@ function uncertainGarmentVerification(reason: string, model: string): PairwiseGa
   return {
     verdict: 'uncertain', confidence: 0,
     currentColor: 'unknown', currentSleeve: 'unknown', currentNeckline: 'unknown', featureComparisons: [],
+    currentFrameEvidence: [], temporalEvidenceConsistency: 'insufficient',
     occlusions: [reason], jointlyVisibleEvidence: [], model,
+  };
+}
+
+function parseFeatureComparison(entry: unknown): PairwiseGarmentVerification['featureComparisons'][number] {
+  if (!entry || typeof entry !== 'object') throw new Error('Invalid feature comparison.');
+  const comparison = entry as Record<string, unknown>;
+  if (!GARMENT_IDENTITY_FEATURES.includes(comparison.feature as GarmentIdentityFeature) ||
+      !['visible', 'partial', 'not_visible'].includes(String(comparison.currentVisibility)) ||
+      !['visible', 'partial', 'not_visible'].includes(String(comparison.referenceVisibility)) ||
+      !['same', 'different', 'unknown'].includes(String(comparison.relation)) ||
+      !['weak', 'medium', 'strong'].includes(String(comparison.discriminativeStrength)) ||
+      typeof comparison.note !== 'string') {
+    throw new Error('Invalid garment feature evidence.');
+  }
+  return {
+    feature: comparison.feature as GarmentIdentityFeature,
+    currentVisibility: comparison.currentVisibility as 'visible' | 'partial' | 'not_visible',
+    referenceVisibility: comparison.referenceVisibility as 'visible' | 'partial' | 'not_visible',
+    relation: comparison.relation as 'same' | 'different' | 'unknown',
+    discriminativeStrength: comparison.discriminativeStrength as 'weak' | 'medium' | 'strong',
+    note: comparison.note,
   };
 }
 

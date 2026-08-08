@@ -9,4 +9,5 @@ examples/captured/*
 .env.*
 !.env.example
 *.log
+.local/identity-eval/
 .DS_Store

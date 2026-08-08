@@ -6,6 +6,8 @@ import test from 'node:test';
 import sharp from 'sharp';
 import type {
   AmbientCapturePacket,
+  GarmentIdentityDecisionTrace,
+  GarmentIdentityHypothesis,
   GarmentImageAsset,
   ProductImageVerification,
   WornGarmentObservation,
@@ -13,7 +15,7 @@ import type {
 } from '../src/domain/ambientCapture.js';
 import { AmbientCaptureCoordinator, gateWornGarmentObservation } from '../src/runtime/ambientCaptureCoordinator.js';
 import { GarmentImageAssetService } from '../src/services/garmentImageAssetService.js';
-import { VisualGarmentIdentityProvider } from '../src/services/garmentIdentityProvider.js';
+import { VisualGarmentIdentityProvider, type GarmentIdentityInput } from '../src/services/garmentIdentityProvider.js';
 import {
   OpenAIGarmentVisualVerifier,
   type GarmentVisualVerifier,
@@ -321,7 +323,7 @@ test('visual identity uses metadata only for recall and can match a base catalog
   const result = await provider.resolve({
     userId,
     garment: garment('observed', 'top', 'navy', 'short sleeve crew neck tee'),
-    currentAppearance: current,
+    currentAppearances: [current],
     baseClosetItems: [baseItem],
     userClosetItems: [], appearances: [], assets: [],
     baseCatalogAssets: new Map([[baseItem.id, baseAsset]]),
@@ -349,7 +351,7 @@ test('visual verifier converts invalid legacy-shaped output to uncertain', async
     }),
   });
   const result = await verifier.verifyPair({
-    currentAppearance: current,
+    currentAppearances: [current],
     lockedDescriptor: {
       slot: 'top', category: 'top', dominantColor: 'navy', secondaryColors: [], pattern: 'solid',
       sleeve: 'short', neckline: 'crew', lengthClass: 'medium', materialClass: 'cotton',
@@ -397,7 +399,7 @@ test('OpenAI catalog provider uses source-image edit and never puts user identit
   assert.notEqual(result.asset.contentHash, sourceAppearance.contentHash);
 });
 
-test('ambiguous visual identity deletes transient crops and commits no partial business state', async () => {
+test('ambiguous visual identity retains bounded track evidence and commits no business state', async () => {
   const fixture = await createFixture('ambiguous');
   await fixture.repository.setGrant(userId, true);
   const observed = outfit([
@@ -429,15 +431,201 @@ test('ambiguous visual identity deletes transient crops and commits no partial b
   const state = await fixture.repository.getState(userId);
   assert.equal(state.closetItems.length, 0);
   assert.equal(state.captures.length, 0);
-  assert.equal(state.assets.length, 0);
+  assert.equal(state.assets.length, 4);
+  assert.ok(state.assets.every((asset) => asset.role === 'track_identity_evidence'));
+  assert.equal(state.pendingIdentityResolutions.length, 2);
+  assert.ok(state.pendingIdentityResolutions.every((resolution) => resolution.state === 'pending_confirmation'));
   const bundles = await fixture.assetService.listDiagnosticCaptures(userId);
-  assert.equal(bundles.length, 1);
+  assert.equal(bundles.length, 2);
   assert.equal(bundles[0]?.frameId, 'a2');
   assert.equal(bundles[0]?.assetIds.length, 3);
   const diagnostics = await runtime.diagnostics(userId);
   assert.equal(diagnostics.diagnosticCaptureRetentionEnabled, true);
-  assert.equal(diagnostics.diagnosticCaptureCount, 1);
+  assert.equal(diagnostics.diagnosticCaptureCount, 2);
   assert.equal(diagnostics.latestDiagnosticCapture?.bundleId, bundles[0]?.bundleId);
+});
+
+test('first reliable observation retains ephemeral crops and second observation resolves with both frames', async () => {
+  const fixture = await createFixture('two-frame-track-evidence');
+  await fixture.repository.setGrant(userId, true);
+  const observed = outfit([garment('tracked-top', 'top', 'navy', 'crew tee')]);
+  const receivedFrameCounts: number[] = [];
+  const runtime = new AmbientCaptureCoordinator({
+    observationProvider: queuedProvider([observed, observed]),
+    identityProvider: {
+      ready: true,
+      async resolve(input) {
+        receivedFrameCounts.push(input.currentAppearances.length);
+        return {
+          observationItemId: input.garment.observationItemId,
+          status: 'ambiguous', appearanceFingerprint: 'two-frame', confidence: 0.5,
+          candidateItemIds: [], reasonCodes: ['FIXTURE_AMBIGUOUS'],
+        };
+      },
+    },
+    repository: fixture.repository,
+    baseClosetItems: () => [], assetService: fixture.assetService,
+    productImageProvider: new DisabledFakeProductProvider(),
+    productImageVerifier: new PassingProductVerifier(),
+  });
+
+  assert.equal((await runtime.process(packet(fixture.framePath, 'two-frame', 'tf1'))).status, 'observing');
+  const first = await fixture.repository.getState(userId);
+  assert.equal(receivedFrameCounts.length, 0, 'identity resolution must wait for the second reliable observation');
+  assert.equal(first.assets.filter((asset) => asset.role === 'track_identity_evidence').length, 1);
+  assert.equal(first.episodes.at(-1)?.garmentTracks?.[0]?.identityEvidence.length, 1);
+
+  assert.equal((await runtime.process(packet(fixture.framePath, 'two-frame', 'tf2'))).status, 'ambiguous');
+  assert.deepEqual(receivedFrameCounts, [2]);
+  const second = await fixture.repository.getState(userId);
+  assert.equal(second.assets.filter((asset) => asset.role === 'track_identity_evidence').length, 2);
+  assert.equal(second.episodes.at(-1)?.garmentTracks?.[0]?.identityEvidence.length, 2);
+});
+
+test('occlusion ambiguity waits for one genuinely new frame and then stops automatic rechecks', async () => {
+  const fixture = await createFixture('occlusion-recheck');
+  const changedFrame = await writeFrame(path.join(fixture.directory, 'changed.jpg'), '#23375f', '#c5a66b');
+  await fixture.repository.setGrant(userId, true);
+  const observed = outfit([garment('occluded-top', 'top', 'navy', 'crew tee')]);
+  let identityCalls = 0;
+  const runtime = new AmbientCaptureCoordinator({
+    observationProvider: queuedProvider([observed, observed, observed, observed]),
+    identityProvider: {
+      ready: true,
+      async resolve(input) {
+        identityCalls += 1;
+        return ambiguousIdentity(input, true);
+      },
+    },
+    repository: fixture.repository,
+    baseClosetItems: () => [], assetService: fixture.assetService,
+    productImageProvider: new DisabledFakeProductProvider(),
+    productImageVerifier: new PassingProductVerifier(),
+  });
+
+  await runtime.process(packet(fixture.framePath, 'occlusion-recheck', 'or1'));
+  assert.equal((await runtime.process(packet(fixture.framePath, 'occlusion-recheck', 'or2'))).status, 'ambiguous');
+  let state = await fixture.repository.getState(userId);
+  assert.equal(identityCalls, 1);
+  assert.equal(state.pendingIdentityResolutions[0]?.state, 'awaiting_evidence');
+  assert.equal(state.pendingIdentityResolutions[0]?.automaticRecheckCount, 0);
+
+  assert.equal((await runtime.process(packet(changedFrame, 'occlusion-recheck', 'or3'))).status, 'ambiguous');
+  state = await fixture.repository.getState(userId);
+  assert.equal(identityCalls, 2);
+  assert.equal(state.pendingIdentityResolutions[0]?.state, 'pending_confirmation');
+  assert.equal(state.pendingIdentityResolutions[0]?.automaticRecheckCount, 1);
+  assert.equal(state.pendingIdentityResolutions[0]?.currentEvidenceAssetIds.length, 2);
+  assert.equal(state.identityDecisionTraces.at(-1)?.automaticRecheckCount, 1);
+
+  assert.equal((await runtime.process(packet(changedFrame, 'occlusion-recheck', 'or4'))).status, 'ambiguous');
+  assert.equal(identityCalls, 2, 'pending confirmation must block any further automatic verifier call');
+});
+
+test('an identical crop cannot trigger an automatic identity recheck', async () => {
+  const fixture = await createFixture('same-frame-no-recheck');
+  await fixture.repository.setGrant(userId, true);
+  const observed = outfit([garment('same-top', 'top', 'navy', 'crew tee')]);
+  let identityCalls = 0;
+  const runtime = new AmbientCaptureCoordinator({
+    observationProvider: queuedProvider([observed, observed, observed]),
+    identityProvider: {
+      ready: true,
+      async resolve(input) {
+        identityCalls += 1;
+        return ambiguousIdentity(input, true);
+      },
+    },
+    repository: fixture.repository,
+    baseClosetItems: () => [], assetService: fixture.assetService,
+    productImageProvider: new DisabledFakeProductProvider(),
+    productImageVerifier: new PassingProductVerifier(),
+  });
+
+  await runtime.process(packet(fixture.framePath, 'same-frame', 'sf1'));
+  await runtime.process(packet(fixture.framePath, 'same-frame', 'sf2'));
+  const result = await runtime.process(packet(fixture.framePath, 'same-frame', 'sf3'));
+  const state = await fixture.repository.getState(userId);
+  assert.equal(result.status, 'ambiguous');
+  assert.equal(identityCalls, 1);
+  assert.ok(result.reasonCodes.includes('AUTOMATIC_RECHECK_REQUIRES_NEW_EVIDENCE'));
+  assert.equal(state.pendingIdentityResolutions[0]?.state, 'pending_confirmation');
+});
+
+test('episode departure defers occluded identity and the next episode consumes its one recheck', async () => {
+  const fixture = await createFixture('deferred-recheck');
+  const changedFrame = await writeFrame(path.join(fixture.directory, 'deferred-changed.jpg'), '#29436f', '#c5a66b');
+  await fixture.repository.setGrant(userId, true);
+  const observed = outfit([garment('deferred-top', 'top', 'navy', 'crew tee')]);
+  let identityCalls = 0;
+  const identityProvider = {
+    ready: true,
+    async resolve(input: GarmentIdentityInput) {
+      identityCalls += 1;
+      return ambiguousIdentity(input, true);
+    },
+  };
+  const firstEpisode = new AmbientCaptureCoordinator({
+    observationProvider: queuedProvider([observed, observed]), identityProvider,
+    repository: fixture.repository, baseClosetItems: () => [], assetService: fixture.assetService,
+    productImageProvider: new DisabledFakeProductProvider(), productImageVerifier: new PassingProductVerifier(),
+  });
+  await firstEpisode.process(packet(fixture.framePath, 'deferred-one', 'dr1'));
+  await firstEpisode.process(packet(fixture.framePath, 'deferred-one', 'dr2'));
+  assert.equal((await fixture.repository.getState(userId)).pendingIdentityResolutions[0]?.state, 'awaiting_evidence');
+  await firstEpisode.endEpisode(userId, 'deferred-one');
+  let state = await new JsonUserWardrobeRepository(path.join(fixture.directory, 'wardrobe.json')).getState(userId);
+  assert.equal(state.pendingIdentityResolutions[0]?.state, 'deferred_until_next_episode');
+  assert.equal(state.pendingIdentityResolutions[0]?.currentEvidenceAssetIds.length, 0);
+
+  const nextEpisode = new AmbientCaptureCoordinator({
+    observationProvider: queuedProvider([observed, observed]), identityProvider,
+    repository: fixture.repository, baseClosetItems: () => [], assetService: fixture.assetService,
+    productImageProvider: new DisabledFakeProductProvider(), productImageVerifier: new PassingProductVerifier(),
+  });
+  await nextEpisode.process(packet(changedFrame, 'deferred-two', 'dr3'));
+  await nextEpisode.process(packet(changedFrame, 'deferred-two', 'dr4'));
+  state = await fixture.repository.getState(userId);
+  assert.equal(identityCalls, 2);
+  assert.equal(state.pendingIdentityResolutions.length, 1);
+  assert.equal(state.pendingIdentityResolutions[0]?.state, 'pending_confirmation');
+  assert.equal(state.pendingIdentityResolutions[0]?.automaticRecheckCount, 1);
+  assert.equal(state.pendingIdentityResolutions[0]?.episodeId, state.episodes.at(-1)?.episodeId);
+});
+
+test('episode end and privacy pause remove orphan track evidence', async () => {
+  const endedFixture = await createFixture('episode-evidence-cleanup');
+  await endedFixture.repository.setGrant(userId, true);
+  const observed = outfit([garment('cleanup-top', 'top', 'navy', 'crew tee')]);
+  const endedRuntime = new AmbientCaptureCoordinator({
+    observationProvider: queuedProvider([observed]),
+    identityProvider: new VisualGarmentIdentityProvider({ verifier: new PixelGarmentVerifier() }),
+    repository: endedFixture.repository,
+    baseClosetItems: () => [], assetService: endedFixture.assetService,
+    productImageProvider: new DisabledFakeProductProvider(), productImageVerifier: new PassingProductVerifier(),
+  });
+  await endedRuntime.process(packet(endedFixture.framePath, 'cleanup-ended', 'ce1'));
+  assert.equal((await endedFixture.repository.getState(userId)).assets.length, 1);
+  await endedRuntime.endEpisode(userId, 'cleanup-ended');
+  let state = await endedFixture.repository.getState(userId);
+  assert.equal(state.assets.filter((asset) => asset.role === 'track_identity_evidence').length, 0);
+  assert.equal(state.episodes.at(-1)?.garmentTracks?.[0]?.identityEvidence.length, 0);
+
+  const privacyFixture = await createFixture('privacy-evidence-cleanup');
+  await privacyFixture.repository.setGrant(userId, true);
+  const privacyObservation = { ...observed, observationId: 'privacy-observation', personCount: 2 };
+  const privacyRuntime = new AmbientCaptureCoordinator({
+    observationProvider: queuedProvider([observed, privacyObservation]),
+    identityProvider: new VisualGarmentIdentityProvider({ verifier: new PixelGarmentVerifier() }),
+    repository: privacyFixture.repository,
+    baseClosetItems: () => [], assetService: privacyFixture.assetService,
+    productImageProvider: new DisabledFakeProductProvider(), productImageVerifier: new PassingProductVerifier(),
+  });
+  await privacyRuntime.process(packet(privacyFixture.framePath, 'cleanup-privacy', 'cp1'));
+  assert.equal((await privacyFixture.repository.getState(userId)).assets.length, 1);
+  assert.equal((await privacyRuntime.process(packet(privacyFixture.framePath, 'cleanup-privacy', 'cp2'))).status, 'privacy_paused');
+  state = await privacyFixture.repository.getState(userId);
+  assert.equal(state.assets.filter((asset) => asset.role === 'track_identity_evidence').length, 0);
 });
 
 test('capture without product providers commits evidence but never promotes a crop as primary image', async () => {
@@ -570,7 +758,7 @@ function coordinator(input: {
 class PixelGarmentVerifier implements GarmentVisualVerifier {
   readonly ready = true;
   async verifyPair(input: Parameters<GarmentVisualVerifier['verifyPair']>[0]) {
-    const current = await averageRgb(input.currentAppearance);
+    const current = await averageRgb(input.currentAppearances.at(-1)!);
     const references = input.candidate.referenceAppearances.length
       ? input.candidate.referenceAppearances
       : input.candidate.catalogFallbackImage ? [input.candidate.catalogFallbackImage] : [];
@@ -597,6 +785,63 @@ function pairwise(verdict: 'same' | 'different', confidence: number) {
     occlusions: [],
     jointlyVisibleEvidence: ['pixel fixture'],
     model: 'pixel-fixture',
+  };
+}
+
+function ambiguousIdentity(input: GarmentIdentityInput, occluded: boolean): GarmentIdentityHypothesis {
+  const comparison = {
+    feature: 'waistband_construction' as const,
+    currentVisibility: occluded ? 'not_visible' as const : 'visible' as const,
+    referenceVisibility: 'visible' as const,
+    relation: 'unknown' as const,
+    discriminativeStrength: 'strong' as const,
+    note: occluded ? 'waistband is covered in the current frame' : 'visible but not distinctive enough',
+  };
+  const pairwiseResult = {
+    verdict: 'uncertain' as const,
+    confidence: 0.62,
+    featureComparisons: [comparison],
+    currentFrameEvidence: input.currentAppearances.map((_, frameIndex) => ({
+      frameIndex,
+      featureComparisons: [comparison],
+    })),
+    temporalEvidenceConsistency: 'insufficient' as const,
+    occlusions: occluded ? ['waistband'] : [],
+    jointlyVisibleEvidence: [],
+    model: 'pending-fixture',
+  };
+  const decisionTrace: GarmentIdentityDecisionTrace = {
+    traceId: `trace-${input.garment.observationItemId}-${input.currentAppearances.at(-1)?.assetId}`,
+    episodeId: input.episodeId ?? 'episode-fixture',
+    observationItemId: input.garment.observationItemId,
+    currentAppearanceAssetId: input.currentAppearances.at(-1)!.assetId,
+    currentAppearanceAssetIds: input.currentAppearances.map((asset) => asset.assetId),
+    recall: {
+      strategy: 'metadata',
+      candidates: [{
+        closetItemId: 'fixture-candidate', source: 'user', metadataScore: 0.7,
+        continuityPrior: 0, effectivePrior: 0.7, tier: 'plausible', categoryCompatibility: 'exact',
+        referenceEvidenceType: 'historical_appearance', referenceAssetIds: ['fixture-reference'],
+        softContradictions: [],
+      }],
+    },
+    pairwiseVerifications: [{
+      candidateClosetItemId: 'fixture-candidate', evaluation: 'verified', rawResult: pairwiseResult,
+      normalizedResult: pairwiseResult, serverDowngradeReasons: [], requiredDifferentConfidence: 0.83,
+      autoCreateVeto: false, referenceEvidenceType: 'historical_appearance', evidenceTaxonomyVersion: 1,
+      classLevelSameFeatures: [], instanceSpecificSameFeatures: [], safeSameGateResult: false,
+      safeSameRejectReasons: ['VERDICT_NOT_SAME'], multiFrameEvidenceCount: input.currentAppearances.length,
+      temporalEvidenceConsistency: 'insufficient', model: 'pending-fixture', latencyMs: 1,
+    }],
+    thresholds: { matchConfidence: 0.88, baseNewConfidence: 0.78, strongPriorVeto: 0.85 },
+    finalDecision: 'ambiguous', reasonCodes: ['FIXTURE_AMBIGUOUS'],
+    promptVersion: 'fixture-v1', schemaVersion: 1,
+    createdAt: input.capturedAt ?? new Date(0).toISOString(),
+  };
+  return {
+    observationItemId: input.garment.observationItemId,
+    status: 'ambiguous', appearanceFingerprint: 'pending-fixture', confidence: 0.62,
+    candidateItemIds: ['fixture-candidate'], reasonCodes: ['FIXTURE_AMBIGUOUS'], decisionTrace,
   };
 }
 

@@ -124,6 +124,30 @@ including when the final identity result is `ambiguous`. Deleting transient busi
 wardrobe reset must not remove these diagnostic copies. Keep the default rolling limit bounded and disable this
 mode on shared production deployments unless the photo-retention policy explicitly allows it.
 
+Identity safety fixtures also verify that generic style similarity and VLM confidence cannot establish physical
+identity, metadata/continuity prior cannot establish a match, multiple safe candidates remain ambiguous, and a
+fallback candidate cannot auto-match. Multi-frame fixtures verify first-frame ephemeral retention, two-frame
+pairwise input, cross-frame consistency/mixed evidence, content-hash-gated recheck, the one-recheck limit,
+cross-episode deferral, and cleanup on episode end/privacy pause.
+
+Private real-camera cases can be summarized without committing photos:
+
+```bash
+npm run identity:eval
+# or: npm run identity:eval -- /absolute/path/to/private/cases
+```
+
+Each JSON case contains `caseId`, `expected` (`same`, `different`, or `ambiguous`) and either `actual` or a
+sanitized identity `trace.finalDecision`. Keep associated images in `.local/identity-eval/`, which is gitignored.
+The report includes `falseExisting`, `falseNew`, `autoMatchPrecision`, `autoNewPrecision`, and automation coverage.
+Do not quote precision when no automated decisions exist or when the physical sample is too small.
+
+Before merge, repeat five physical checks: a new generic basic against similar Base Closet items; a true Base
+Closet item; a user item with a historical appearance; two visually similar but physically distinct basics; and
+the same trousers with waistband occlusion. Ambiguous is acceptable when instance evidence is insufficient.
+False-existing and silent duplicate creation are not. Record these as unexecuted unless a real camera run actually
+occurred in the current validation session.
+
 If items were recorded while the product-image provider was disabled, use the visible “生成衣橱单品图” action.
 The browser-scoped backfill processes only that user's active mirror-captured items, keeps failed verification
 results hidden, and exposes each verified result as soon as it is ready. Confirm the card says “AI 整理图” and

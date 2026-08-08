@@ -17,6 +17,7 @@ export interface GarmentCropInput {
   observationItemId: string;
   boundingBox: NormalizedBoundingBox;
   slot: AmbientGarmentSlot;
+  role?: 'track_identity_evidence' | 'garment_appearance';
   capturedAt?: string;
 }
 
@@ -152,10 +153,11 @@ export class GarmentImageAssetService {
       .toBuffer();
     const quality = await deterministicCropQuality(bytes);
     if (quality.result !== 'pass') throw new Error(`GARMENT_CROP_QUALITY_${quality.issues[0] ?? 'FAILED'}`);
+    const role = input.role ?? 'garment_appearance';
     const asset = await this.writeAsset({
       userId: input.userId,
-      role: 'garment_appearance',
-      prefix: 'appearance',
+      role,
+      prefix: role === 'track_identity_evidence' ? 'track-evidence' : 'appearance',
       bytes,
       sourceFrameId: input.sourceFrameId,
       observationItemId: input.observationItemId,

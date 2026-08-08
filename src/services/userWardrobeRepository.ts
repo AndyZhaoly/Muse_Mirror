@@ -9,6 +9,7 @@ import type {
   GarmentAppearance,
   GarmentImageAsset,
   GarmentIdentityDecisionTrace,
+  PendingIdentityResolution,
   ClosetItemMergePreview,
   MergeClosetItemsResult,
   OutfitCapture,
@@ -224,6 +225,87 @@ export class JsonUserWardrobeRepository implements WardrobeRepository {
     });
   }
 
+  async persistTrackEvidence(
+    userId: string,
+    episode: AmbientOutfitEpisode,
+    assets: GarmentImageAsset[],
+    evictedAssetIds: string[] = [],
+  ): Promise<void> {
+    await this.exclusive(async () => {
+      const file = await this.readFile();
+      const state = ensureUser(file, userId);
+      const episodeIndex = state.episodes.findIndex((item) => item.episodeId === episode.episodeId);
+      if (episodeIndex >= 0) state.episodes[episodeIndex] = structuredClone(episode);
+      else state.episodes.push(structuredClone(episode));
+      state.episodes = state.episodes.slice(-50);
+      const evicted = new Set(evictedAssetIds);
+      state.assets = state.assets.filter((asset) => !evicted.has(asset.assetId));
+      for (const asset of assets) {
+        const index = state.assets.findIndex((entry) => entry.assetId === asset.assetId);
+        if (index >= 0) state.assets[index] = structuredClone(asset);
+        else state.assets.push(structuredClone(asset));
+      }
+      bump(state, episode.lastObservedAt ?? episode.startedAt);
+      await this.writeFile(file);
+    });
+  }
+
+  async upsertPendingIdentityResolution(
+    userId: string,
+    resolution: PendingIdentityResolution,
+  ): Promise<void> {
+    await this.exclusive(async () => {
+      const file = await this.readFile();
+      const state = ensureUser(file, userId);
+      const index = state.pendingIdentityResolutions.findIndex((entry) => entry.resolutionId === resolution.resolutionId);
+      if (index >= 0) state.pendingIdentityResolutions[index] = structuredClone(resolution);
+      else state.pendingIdentityResolutions.push(structuredClone(resolution));
+      state.pendingIdentityResolutions = state.pendingIdentityResolutions.slice(-50);
+      bump(state, resolution.updatedAt);
+      await this.writeFile(file);
+    });
+  }
+
+  async removePendingIdentityResolutions(userId: string, resolutionIds: string[]): Promise<void> {
+    if (!resolutionIds.length) return;
+    await this.exclusive(async () => {
+      const file = await this.readFile();
+      const state = ensureUser(file, userId);
+      const ids = new Set(resolutionIds);
+      state.pendingIdentityResolutions = state.pendingIdentityResolutions.filter((entry) => !ids.has(entry.resolutionId));
+      bump(state, new Date().toISOString());
+      await this.writeFile(file);
+    });
+  }
+
+  async cleanupEpisodeIdentityEvidence(
+    userId: string,
+    episodeId: string,
+    occurredAt = new Date().toISOString(),
+    deferPending = true,
+  ): Promise<GarmentImageAsset[]> {
+    return this.exclusive(async () => {
+      const file = await this.readFile();
+      const state = ensureUser(file, userId);
+      const episode = state.episodes.find((entry) => entry.episodeId === episodeId);
+      const ids = new Set(episode?.garmentTracks?.flatMap((track) => track.identityEvidence.map((evidence) => evidence.assetId)) ?? []);
+      const removed = state.assets.filter((asset) => ids.has(asset.assetId) && asset.role === 'track_identity_evidence');
+      state.assets = state.assets.filter((asset) => !ids.has(asset.assetId) || asset.role !== 'track_identity_evidence');
+      if (episode?.garmentTracks) {
+        episode.garmentTracks = episode.garmentTracks.map((track) => ({ ...track, identityEvidence: [] }));
+      }
+      state.pendingIdentityResolutions = deferPending
+        ? state.pendingIdentityResolutions.map((resolution) =>
+            resolution.episodeId === episodeId
+              ? { ...resolution, currentEvidenceAssetIds: [], state: 'deferred_until_next_episode', updatedAt: occurredAt }
+              : resolution)
+        : state.pendingIdentityResolutions.filter((resolution) => resolution.episodeId !== episodeId);
+      bump(state, occurredAt);
+      await this.writeFile(file);
+      return structuredClone(removed);
+    });
+  }
+
   async endActiveEpisode(userId: string, sessionId: string, occurredAt = new Date().toISOString()): Promise<AmbientOutfitEpisode | undefined> {
     return this.exclusive(async () => {
       const file = await this.readFile();
@@ -268,7 +350,9 @@ export class JsonUserWardrobeRepository implements WardrobeRepository {
       for (const item of proposal.items) {
         const appearanceAsset = structuredClone(item.appearanceAsset);
         appearanceAsset.closetItemId = item.resolvedClosetItemId;
-        state.assets.push(appearanceAsset);
+        const existingAssetIndex = state.assets.findIndex((asset) => asset.assetId === appearanceAsset.assetId);
+        if (existingAssetIndex >= 0) state.assets[existingAssetIndex] = appearanceAsset;
+        else state.assets.push(appearanceAsset);
         if (item.createItem) {
           if (state.closetItems.some((existingItem) => existingItem.item.id === item.createItem?.item.id)) {
             throw new Error(`Duplicate ambient closet item ID: ${item.createItem.item.id}`);
@@ -561,6 +645,7 @@ function emptyUserState(userId: string): UserWardrobeState {
     committedIdempotencyKeys: [],
     productImageJobs: [],
     identityDecisionTraces: [],
+    pendingIdentityResolutions: [],
     closetItemAliases: {},
     events: [],
     updatedAt: new Date(0).toISOString(),
@@ -578,6 +663,7 @@ function normalizeUserState(state: UserWardrobeState): void {
   state.episodes ??= [];
   state.committedIdempotencyKeys ??= [];
   state.identityDecisionTraces ??= [];
+  state.pendingIdentityResolutions ??= [];
   state.closetItemAliases ??= {};
   for (const entry of state.closetItems) {
     const legacyStatus = entry.status as string;

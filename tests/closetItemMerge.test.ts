@@ -118,6 +118,7 @@ function userState(userId: string): UserWardrobeState {
       createdAt: '2026-08-06T20:46:00.000Z', updatedAt: '2026-08-06T20:46:00.000Z',
     }] : [],
     identityDecisionTraces: userId === 'user-a' ? [identityTrace()] : [],
+    pendingIdentityResolutions: [],
     closetItemAliases: {},
     events: userId === 'user-a' ? [{
       eventId: 'event-duplicate', userId, type: 'provisional_item_created', closetItemId: 'shorts-duplicate',
@@ -178,9 +179,10 @@ function wear(wearEventId: string, closetItemId: string, captureId: string) {
 }
 
 function identityTrace() {
-  const pairwise = { verdict: 'same' as const, confidence: 0.95, featureComparisons: [], occlusions: [], jointlyVisibleEvidence: [], model: 'fixture' };
+  const pairwise = { verdict: 'same' as const, confidence: 0.95, featureComparisons: [], currentFrameEvidence: [], occlusions: [], jointlyVisibleEvidence: [], model: 'fixture' };
   return {
     traceId: 'trace-duplicate', episodeId: 'episode', observationItemId: 'shorts', currentAppearanceAssetId: 'duplicate-appearance',
+    currentAppearanceAssetIds: ['duplicate-appearance'],
     recall: { strategy: 'metadata', candidates: [{ closetItemId: 'shorts-duplicate', source: 'user' as const, metadataScore: 0.9, continuityPrior: 0, effectivePrior: 0.9, tier: 'strong' as const, categoryCompatibility: 'exact' as const, referenceEvidenceType: 'historical_appearance' as const, referenceAssetIds: ['duplicate-appearance'], softContradictions: [] }] },
     pairwiseVerifications: [{ candidateClosetItemId: 'shorts-duplicate', rawResult: pairwise, normalizedResult: pairwise, serverDowngradeReasons: [], requiredDifferentConfidence: 0.93, autoCreateVeto: true, referenceEvidenceType: 'historical_appearance' as const, evidenceTaxonomyVersion: 1, classLevelSameFeatures: [], instanceSpecificSameFeatures: [], safeSameGateResult: false, safeSameRejectReasons: ['fixture'], multiFrameEvidenceCount: 1, temporalEvidenceConsistency: 'insufficient' as const, model: 'fixture', latencyMs: 10 }],
     thresholds: { matchConfidence: 0.88, baseNewConfidence: 0.78, strongPriorVeto: 0.85 },

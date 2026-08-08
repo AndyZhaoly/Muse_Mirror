@@ -79,6 +79,13 @@ sanitized decision traces remain available to the signed browser identity for di
 Duplicate overlay items can be repaired through a dry-run-first, atomic repository merge; the duplicate is
 archived as an alias and is excluded from recommendation without deleting its historical appearances or wear.
 
+The first reliable frame now retains ephemeral garment-track crops; the second reliable frame supplies a second
+view to the same pairwise identity check. Catalog-only matches require consistent instance-specific evidence across
+both current views. Occlusion-driven ambiguity waits for a genuinely new crop and may recheck once; otherwise it
+stays pending rather than silently matching or creating an item. Ephemeral evidence is removed on episode end or
+privacy pause. Local, photo-containing replay cases belong under the gitignored `.local/identity-eval/` directory;
+`npm run identity:eval` reports false-existing, false-new, precision, and automation coverage without committing media.
+
 After two similar frames are independently confirmed by the server as `NO_PERSON_PRESENT`, the browser keeps
 a low-resolution empty-scene reference and suppresses ordinary high-resolution ambient uploads. A changed
 scene clears suppression and starts a fresh three-sample stability window; a configurable forced probe still

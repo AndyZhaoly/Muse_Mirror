@@ -24,6 +24,7 @@ export interface NormalizedBoundingBox {
 
 export type GarmentImageRole =
   | 'capture_evidence'
+  | 'track_identity_evidence'
   | 'garment_appearance'
   | 'canonical_product';
 
@@ -228,6 +229,11 @@ export interface GarmentFeatureComparison {
   note: string;
 }
 
+export interface GarmentFrameFeatureEvidence {
+  frameIndex: number;
+  featureComparisons: GarmentFeatureComparison[];
+}
+
 export interface PairwiseGarmentVerification {
   verdict: 'same' | 'different' | 'uncertain';
   confidence: number;
@@ -235,6 +241,7 @@ export interface PairwiseGarmentVerification {
   currentSleeve?: CanonicalSleeve;
   currentNeckline?: CanonicalNeckline;
   featureComparisons: GarmentFeatureComparison[];
+  currentFrameEvidence?: GarmentFrameFeatureEvidence[];
   occlusions: string[];
   jointlyVisibleEvidence: string[];
   temporalEvidenceConsistency?: TemporalEvidenceConsistency;
@@ -249,6 +256,9 @@ export interface GarmentIdentityDecisionTrace {
   episodeId: string;
   observationItemId: string;
   currentAppearanceAssetId: string;
+  currentAppearanceAssetIds?: string[];
+  pendingResolutionId?: string;
+  automaticRecheckCount?: number;
   recall: {
     strategy: string;
     candidates: Array<{
@@ -330,6 +340,41 @@ export interface AmbientGarmentTrack {
   firstObservationId: string;
   latestObservationId: string;
   consecutiveMatches: number;
+  identityEvidence: TrackIdentityEvidence[];
+  maxEvidenceCount: number;
+}
+
+export interface TrackIdentityEvidence {
+  observationId: string;
+  frameId: string;
+  assetId: string;
+  capturedAt: string;
+  descriptor: GarmentAppearanceDescriptor;
+  qualityScore?: number;
+}
+
+export type PendingIdentityResolutionState =
+  | 'awaiting_evidence'
+  | 'pending_confirmation'
+  | 'deferred_until_next_episode';
+
+export interface PendingIdentityResolution {
+  resolutionId: string;
+  userId: string;
+  episodeId: string;
+  trackId: string;
+  observationItemId: string;
+  slot?: AmbientGarmentSlot;
+  category?: ClosetItem['category'];
+  currentEvidenceAssetIds: string[];
+  candidateClosetItemIds: string[];
+  ambiguityReasonCodes: string[];
+  occludedFeatures: string[];
+  automaticRecheckCount: number;
+  state: PendingIdentityResolutionState;
+  createdAt: string;
+  updatedAt: string;
+  deadlineAt?: string;
 }
 
 export interface AmbientOutfitEpisode {
@@ -435,6 +480,7 @@ export interface UserWardrobeState {
   committedIdempotencyKeys: string[];
   productImageJobs: ProductImageJob[];
   identityDecisionTraces: GarmentIdentityDecisionTrace[];
+  pendingIdentityResolutions: PendingIdentityResolution[];
   closetItemAliases: Record<string, string>;
   events: WardrobeEvent[];
   pendingCompletionEvent?: OutfitCaptureCompletedEvent;

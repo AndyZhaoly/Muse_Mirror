@@ -44,7 +44,7 @@ export interface GarmentIdentityInput {
   episodeId?: string;
   capturedAt?: string;
   garment: WornGarmentObservation;
-  currentAppearance: GarmentImageAsset;
+  currentAppearances: GarmentImageAsset[];
   baseClosetItems: ClosetItem[];
   userClosetItems: AmbientClosetItem[];
   appearances: GarmentAppearance[];
@@ -141,11 +141,12 @@ export class VisualGarmentIdentityProvider implements GarmentIdentityProvider {
       traceId: makeId('identity_trace'),
       episodeId: input.episodeId ?? 'unknown_episode',
       observationItemId: input.garment.observationItemId,
-      currentAppearanceAssetId: input.currentAppearance.assetId,
+      currentAppearanceAssetId: input.currentAppearances.at(-1)!.assetId,
+      currentAppearanceAssetIds: input.currentAppearances.map((asset) => asset.assetId),
       thresholds,
       promptVersion: GARMENT_PAIRWISE_PROMPT_VERSION,
       schemaVersion: 1,
-      createdAt: input.capturedAt ?? input.currentAppearance.createdAt,
+      createdAt: input.capturedAt ?? input.currentAppearances.at(-1)!.createdAt,
     } as const;
 
     if (input.garment.confidence < 0.72 || !usableDescriptor(descriptor)) {
@@ -200,13 +201,13 @@ export class VisualGarmentIdentityProvider implements GarmentIdentityProvider {
     const verifiedResults: VerificationRecord[] = [];
     if (toVerify.length > 0 && this.options.verifier.ready) {
       const top = toVerify[0]!;
-      verifiedResults.push(await this.verifyCandidate(input.currentAppearance, descriptor, top));
+      verifiedResults.push(await this.verifyCandidate(input.currentAppearances, descriptor, top));
       verifiedResults.push(...await Promise.all(toVerify.slice(1).map((candidate) =>
-        this.verifyCandidate(input.currentAppearance, descriptor, candidate))));
+        this.verifyCandidate(input.currentAppearances, descriptor, candidate))));
     }
     const results = [...excludedResults, ...verifiedResults];
     const safeMatches = verifiedResults.filter(({ candidate, normalized }) =>
-      isSafeSame(candidate, normalized, thresholds));
+      isSafeSame(candidate, normalized, thresholds, input.currentAppearances.length));
     if (safeMatches.length === 1) {
       const match = safeMatches[0]!;
       const verifiedIds = new Set(verifiedResults.map((result) => result.candidate.closetItemId));
@@ -266,13 +267,13 @@ export class VisualGarmentIdentityProvider implements GarmentIdentityProvider {
   }
 
   private async verifyCandidate(
-    currentAppearance: GarmentImageAsset,
+    currentAppearances: GarmentImageAsset[],
     lockedDescriptor: GarmentAppearanceDescriptor,
     candidate: GarmentIdentityCandidate,
   ): Promise<VerificationRecord> {
     const startedAt = Date.now();
     const raw = await this.options.verifier.verifyPair({
-      currentAppearance,
+      currentAppearances: currentAppearances.slice(-2),
       lockedDescriptor,
       candidate: {
         closetItem: candidate.closetItem,
@@ -321,7 +322,12 @@ export class VisualGarmentIdentityProvider implements GarmentIdentityProvider {
         })),
       },
       pairwiseVerifications: verificationResults.map((result) => {
-        const gate = assessSafeSame(result.candidate, result.normalized, traceBase.thresholds);
+        const gate = assessSafeSame(
+          result.candidate,
+          result.normalized,
+          traceBase.thresholds,
+          traceBase.currentAppearanceAssetIds?.length ?? 1,
+        );
         return ({
         candidateClosetItemId: result.candidate.closetItemId,
         evaluation: result.evaluation,
@@ -340,7 +346,7 @@ export class VisualGarmentIdentityProvider implements GarmentIdentityProvider {
         instanceSpecificSameFeatures: gate.instanceSpecificSameFeatures,
         safeSameGateResult: gate.safe,
         safeSameRejectReasons: gate.rejectReasons,
-        multiFrameEvidenceCount: 1,
+        multiFrameEvidenceCount: traceBase.currentAppearanceAssetIds?.length ?? 1,
         temporalEvidenceConsistency: gate.temporalEvidenceConsistency,
         model: result.raw.model,
         latencyMs: result.latencyMs,
@@ -597,7 +603,7 @@ function continuityPriorFor(
   },
 ): number {
   if (compatibility === 'conflicting') return 0;
-  const now = Date.parse(input.capturedAt ?? input.currentAppearance.createdAt);
+  const now = Date.parse(input.capturedAt ?? input.currentAppearances.at(-1)!.createdAt);
   if (!Number.isFinite(now)) return 0;
   const strongWindow = options.strongContinuityWindowMs ?? 60 * 60 * 1000;
   const weakWindow = options.weakContinuityWindowMs ?? 12 * 60 * 60 * 1000;
@@ -719,6 +725,8 @@ function excludedVerificationRecord(
     currentSleeve: currentDescriptor.sleeve ?? 'unknown',
     currentNeckline: currentDescriptor.neckline ?? 'unknown',
     featureComparisons: [],
+    currentFrameEvidence: [],
+    temporalEvidenceConsistency: 'insufficient',
     occlusions: [],
     jointlyVisibleEvidence: [],
     model: 'deterministic_attribute_exclusion',

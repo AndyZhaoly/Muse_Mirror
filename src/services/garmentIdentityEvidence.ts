@@ -86,6 +86,10 @@ export function normalizePairwiseVerification(
     comparison,
     downgradeReasons,
   ));
+  const currentFrameEvidence = (raw.currentFrameEvidence ?? []).map((frame) => ({
+    ...frame,
+    featureComparisons: frame.featureComparisons.map((comparison) => normalizeComparison(comparison, downgradeReasons)),
+  }));
   const hasUsableSame = featureComparisons.some((comparison) =>
     jointlyVisible(comparison) && comparison.relation === 'same');
   const hasUsableDifferent = featureComparisons.some((comparison) =>
@@ -110,7 +114,11 @@ export function normalizePairwiseVerification(
       verdict,
       confidence: clamp(raw.confidence),
       featureComparisons,
-      temporalEvidenceConsistency: raw.temporalEvidenceConsistency ?? 'insufficient',
+      currentFrameEvidence,
+      temporalEvidenceConsistency: deriveTemporalEvidenceConsistency(
+        currentFrameEvidence,
+        raw.temporalEvidenceConsistency ?? 'insufficient',
+      ),
     },
     downgradeReasons: [...new Set(downgradeReasons)],
   };
@@ -291,6 +299,35 @@ function jointlyVisible(comparison: GarmentFeatureComparison): boolean {
 
 function uniqueFeatures(comparisons: GarmentFeatureComparison[]): GarmentIdentityFeature[] {
   return [...new Set(comparisons.map((comparison) => comparison.feature))];
+}
+
+function deriveTemporalEvidenceConsistency(
+  frames: NonNullable<PairwiseGarmentVerification['currentFrameEvidence']>,
+  declared: TemporalEvidenceConsistency,
+): TemporalEvidenceConsistency {
+  if (declared === 'mixed') return 'mixed';
+  const distinctFrames = [...new Map(frames.map((frame) => [frame.frameIndex, frame])).values()];
+  if (distinctFrames.length < 2) return 'insufficient';
+  const evidenceByFrame = distinctFrames.map((frame) => frame.featureComparisons.filter((comparison) =>
+    jointlyVisible(comparison) &&
+    isInstanceSpecificFeature(comparison.feature) &&
+    comparison.discriminativeStrength !== 'weak' &&
+    comparison.relation !== 'unknown'));
+  const relations = new Map<GarmentIdentityFeature, Set<'same' | 'different'>>();
+  for (const comparisons of evidenceByFrame) {
+    for (const comparison of comparisons) {
+      const values = relations.get(comparison.feature) ?? new Set<'same' | 'different'>();
+      values.add(comparison.relation as 'same' | 'different');
+      relations.set(comparison.feature, values);
+    }
+  }
+  if ([...relations.values()].some((values) => values.has('same') && values.has('different'))) return 'mixed';
+  const sameFeatureSets = evidenceByFrame.map((comparisons) => new Set(
+    comparisons.filter((comparison) => comparison.relation === 'same').map((comparison) => comparison.feature),
+  ));
+  if (sameFeatureSets.some((features) => features.size === 0)) return 'insufficient';
+  const shared = [...sameFeatureSets[0]!].filter((feature) => sameFeatureSets.every((features) => features.has(feature)));
+  return shared.length > 0 && declared === 'consistent' ? 'consistent' : 'insufficient';
 }
 
 function clamp(value: number): number {

@@ -54,6 +54,7 @@ function trace(index: number): GarmentIdentityDecisionTrace {
     episodeId: 'episode-1',
     observationItemId: 'observation-item-1',
     currentAppearanceAssetId: 'asset-current',
+    currentAppearanceAssetIds: ['asset-current'],
     recall: {
       strategy: 'metadata',
       candidates: [{

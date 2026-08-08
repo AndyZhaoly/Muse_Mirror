@@ -178,6 +178,60 @@ test('catalog-only item retains a strict match path with multiple instance-speci
   assert.equal(result.matchedClosetItemId, base.id);
 });
 
+test('catalog-only match accepts two consistent current frames with instance-specific evidence', async () => {
+  const base = ambientItem('base-logo-shorts-two-frames', 'Logo pocket shorts', 'light gray').item;
+  const input = identityInput({
+    currentAppearances: [asset('current-frame-a'), asset('current-frame-b')],
+    baseClosetItems: [base],
+    baseCatalogAssets: new Map([[base.id, asset('base-logo-shorts-two-frames-catalog')]]),
+  });
+  const comparisons = [
+    feature('logo_placement', 'same', 'strong'),
+    feature('pocket_geometry', 'same', 'medium'),
+  ];
+  const frameCounts: number[] = [];
+  const result = await provider(verifier({
+    [base.id]: {
+      ...verification('same', 0.96, comparisons),
+      currentFrameEvidence: [
+        { frameIndex: 0, featureComparisons: comparisons },
+        { frameIndex: 1, featureComparisons: comparisons },
+      ],
+      temporalEvidenceConsistency: 'consistent',
+    },
+  }, [], frameCounts)).resolve(input);
+  assert.equal(result.status, 'matched_existing');
+  assert.deepEqual(frameCounts, [2]);
+  assert.equal(result.decisionTrace?.pairwiseVerifications[0]?.multiFrameEvidenceCount, 2);
+  assert.equal(result.decisionTrace?.pairwiseVerifications[0]?.temporalEvidenceConsistency, 'consistent');
+});
+
+test('strong cross-frame contradiction makes a catalog match ambiguous', async () => {
+  const base = ambientItem('base-mixed-shorts', 'Logo pocket shorts', 'light gray').item;
+  const input = identityInput({
+    currentAppearances: [asset('mixed-frame-a'), asset('mixed-frame-b')],
+    baseClosetItems: [base],
+    baseCatalogAssets: new Map([[base.id, asset('base-mixed-shorts-catalog')]]),
+  });
+  const result = await provider(verifier({
+    [base.id]: {
+      ...verification('same', 0.97, [
+        feature('logo_placement', 'same', 'strong'),
+        feature('pocket_geometry', 'same', 'medium'),
+      ]),
+      currentFrameEvidence: [
+        { frameIndex: 0, featureComparisons: [feature('logo_placement', 'same', 'strong')] },
+        { frameIndex: 1, featureComparisons: [feature('logo_placement', 'different', 'strong')] },
+      ],
+      temporalEvidenceConsistency: 'consistent',
+    },
+  })).resolve(input);
+  assert.equal(result.status, 'ambiguous');
+  const gate = result.decisionTrace?.pairwiseVerifications[0];
+  assert.equal(gate?.temporalEvidenceConsistency, 'mixed');
+  assert.ok(gate?.safeSameRejectReasons.includes('MIXED_TEMPORAL_EVIDENCE'));
+});
+
 test('multiple safe matches remain ambiguous instead of choosing top one', async () => {
   const first = ambientItem('shorts-a', 'Light gray knee shorts', 'light gray');
   const second = ambientItem('shorts-b', 'Light gray knee shorts', 'light gray');
@@ -342,12 +396,15 @@ function provider(pairVerifier: GarmentPairwiseVerifier): VisualGarmentIdentityP
 function verifier(
   results: Record<string, PairwiseGarmentVerification>,
   calls: string[] = [],
+  frameCounts: number[] = [],
 ): GarmentPairwiseVerifier {
   return {
     ready: true,
     async verifyPair(input) {
       calls.push(input.candidate.closetItem.id);
+      frameCounts.push(input.currentAppearances.length);
       assert.ok(input.lockedDescriptor.dominantColor);
+      assert.ok(input.currentAppearances.length <= 2);
       assert.ok(input.candidate.referenceAppearances.length <= 2);
       return results[input.candidate.closetItem.id] ?? verification('uncertain', 0, []);
     },
@@ -381,7 +438,7 @@ function identityInput(overrides: Partial<GarmentIdentityInput> = {}): GarmentId
     episodeId: 'episode-test',
     capturedAt: '2026-08-06T20:46:00.000Z',
     garment: shortsObservation(),
-    currentAppearance: asset('current-appearance'),
+    currentAppearances: [asset('current-appearance')],
     baseClosetItems: [], userClosetItems: [], appearances: [], assets: [], captures: [], wearEvents: [],
     ...overrides,
   };

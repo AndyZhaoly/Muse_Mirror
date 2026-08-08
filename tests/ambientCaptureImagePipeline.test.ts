@@ -250,10 +250,10 @@ class PixelVerifier implements GarmentVisualVerifier {
       ? input.candidate.referenceAppearances
       : input.candidate.catalogFallbackImage ? [input.candidate.catalogFallbackImage] : [];
     this.calls.push({
-      currentFrameId: input.currentAppearance.sourceFrameId,
+      currentFrameId: input.currentAppearances.at(-1)?.sourceFrameId,
       references: references.map((reference) => ({ role: reference.role, sourceFrameId: reference.sourceFrameId })),
     });
-    const current = await average(input.currentAppearance);
+    const current = await average(input.currentAppearances.at(-1)!);
     let bestDistance = Number.POSITIVE_INFINITY;
     for (const reference of references) {
       bestDistance = Math.min(bestDistance, colorDistance(current, await average(reference)));

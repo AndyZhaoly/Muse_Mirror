@@ -187,8 +187,9 @@ send a forced probe on a configurable TTL (90 seconds by default). Camera pause,
 replacement clears the guard. The client diagnostic panel exposes confirmation count, skip/probe counts,
 scene difference, configured threshold, confirmation time, and observed re-entry latency.
 
-The image model has three non-interchangeable roles: `capture_evidence` is the selected full still,
-`garment_appearance` is an independently cropped real garment used for identity and image editing, and
+The image model has four non-interchangeable roles: `capture_evidence` is the selected full still,
+`track_identity_evidence` is a bounded ephemeral crop retained while identity is unresolved,
+`garment_appearance` is a promoted real garment crop used for historical identity and image editing, and
 `canonical_product` is a cleaned catalog image. Only a canonical image whose source-crop comparison passes
 the product verifier can become `ClosetItem.imageUrl`. Full-person evidence and raw crops never become a
 closet card.
@@ -197,8 +198,9 @@ closet card.
 color, pattern, fit, sleeve, neckline, length class, and material class; uncertain or legacy values normalize
 to `unknown` and cannot trigger a contradiction. Identity uses wide metadata recall, then assigns each
 candidate a `strong`, `plausible`, or `fallback` tier. Before spending a visual call, deterministic rules
-exclude only explicit color/pattern, distant sleeve, distant neckline-family, or short/long contradictions.
-Excluded candidates remain visible in the trace and count as safely ruled out, but a total effective prior of
+exclude only physically impossible slot/category combinations. Color, pattern, sleeve, neckline, length, and
+material drift are soft contradictions used for ranking and diagnostics, never hard identity exclusions.
+Excluded candidates remain visible in the trace, but a total effective prior of
 `0.85` or more still blocks silent item creation. Every visual request compares the current real crop with
 exactly one ClosetItem and at most two of that item's recent real appearances. Different ClosetItems are never
 sent in the same verifier request, so unrelated fallback candidates cannot change a strong candidate's verdict.
@@ -226,9 +228,22 @@ An effective prior of at least `0.85` prevents
 silent auto-creation and yields `ambiguous`. `uncertain` never creates an item, and fallback candidates cannot
 decide whether a garment is new.
 
+The first reliable observation creates one ephemeral crop per garment track. The second reliable observation
+adds a second crop and identity resolution sends both current frames, but still compares them with exactly one
+ClosetItem at a time. Track buffers retain at most two assets. Catalog-only matches with two current frames must
+show consistent instance-specific support across both; mixed strong evidence can never be averaged into a match.
+
+An ambiguous result creates a persisted `PendingIdentityResolution`. Occlusion-driven ambiguity enters
+`awaiting_evidence`; intrinsic ambiguity enters `pending_confirmation`. A genuinely new crop (checked by content
+hash, not merely a new asset ID) permits one automatic recheck. A second ambiguous result always requires future
+confirmation. Leaving the episode changes unresolved work to `deferred_until_next_episode`; the next same-slot
+track may consume the remaining recheck once. Episode end and privacy pause remove ephemeral assets. Successful
+match/new decisions promote the selected crop to a formal appearance before cleanup.
+
 Each resolution persists a bounded, sanitized `GarmentIdentityDecisionTrace` containing recall scores, tiers,
 reference evidence type, soft contradictions, class-level and instance-specific match features, Safe Same reject
-reasons, reference asset IDs, raw and normalized pairwise evidence, downgrade reasons, thresholds, latency, and final
+reasons, current evidence asset IDs, multi-frame count and temporal consistency, pending-resolution linkage,
+automatic recheck count, reference asset IDs, raw and normalized pairwise evidence, downgrade reasons, thresholds, latency, and final
 reason codes. The repository retains the latest 200 traces per browser user without image payloads, prompts,
 absolute paths, or user IDs. `FASHION_AGENT_TRACE=true` emits the same redacted decision summary to server logs.
 The signed-browser diagnostics route exposes only the current user's traces.
@@ -237,7 +252,7 @@ When ambient diagnostic retention is enabled (implicitly by `FASHION_AGENT_TRACE
 overridden), the asset service copies each stable identity-attempt frame and its garment crops into an isolated,
 per-browser reproduction bundle before business-state resolution. A redacted manifest links frame, observation,
 bounding box, and opaque asset IDs without storing raw user IDs or absolute paths. The normal transient assets
-are still deleted on ambiguous/failed outcomes; diagnostic copies are separately capped by
+remain bounded while ambiguity is active; diagnostic copies are separately capped by
 `FASHION_AGENT_AMBIENT_CAPTURE_DIAGNOSTIC_LIMIT` and intentionally survive wardrobe reset for local replay.
 
 Observation, garment-track continuity, and identity recall use the same canonical appearance vocabulary.
