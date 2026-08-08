@@ -70,6 +70,55 @@ test('merge validation blocks same IDs, cross-user IDs, and base fixtures', asyn
   assert.equal((await fixture.repository.getState('user-b')).closetItems[0]?.item.id, 'user-b-item');
 });
 
+test('resolving persisted pending identity migrates capture refs and creates one wear event', async () => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'muse-pending-identity-'));
+  const filePath = path.join(directory, 'wardrobe.json');
+  const state = userState('user-a');
+  state.captures = [capture('capture-pending', ['top-a'])];
+  state.captures[0]!.items = [
+    { type: 'closet_item', closetItemId: 'top-a', slot: 'top' },
+    { type: 'pending_identity', resolutionId: 'pending-shorts', slot: 'bottom' },
+  ];
+  state.captures[0]!.outfitSignature = 'closet:top-a|pending:pending-shorts';
+  state.wearEvents = [];
+  state.pendingIdentityResolutions = [{
+    resolutionId: 'pending-shorts', userId: 'user-a', episodeId: 'episode-capture-pending',
+    trackId: 'track-bottom', observationItemId: 'observation-bottom', slot: 'bottom', category: 'bottom',
+    lockedDescriptor: {
+      slot: 'bottom', category: 'bottom', dominantColor: 'light gray', secondaryColors: [],
+      pattern: 'solid', silhouette: 'straight', fit: 'regular', distinctiveFeatures: ['shorts'],
+    },
+    currentEvidenceAssetIds: ['pending-crop'], evidenceSignatures: [],
+    candidateClosetItemIds: ['shorts-first'],
+    candidateSummaries: [{
+      closetItemId: 'shorts-first', label: 'Light gray shorts', imageUrl: '/assets/canonical-appearance',
+      priorRank: 1, identityReasonCodes: ['INSUFFICIENT_INSTANCE_EVIDENCE'],
+    }],
+    ambiguityReasonCodes: ['INSUFFICIENT_INSTANCE_EVIDENCE'],
+    occludedFeatures: ['waistband_construction'], automaticRecheckCount: 1, state: 'ready_to_ask',
+    createdAt: '2026-08-06T20:46:00.000Z', updatedAt: '2026-08-06T20:46:00.000Z',
+  }];
+  await fs.writeFile(filePath, `${JSON.stringify({ schemaVersion: 1, users: { 'user-a': state } }, null, 2)}\n`);
+
+  const repository = new JsonUserWardrobeRepository(filePath);
+  const resolution = {
+    userId: 'user-a', resolutionId: 'pending-shorts', closetItemId: 'shorts-first',
+    state: 'resolved_existing' as const,
+  };
+  await repository.resolvePendingIdentity({ ...resolution, occurredAt: '2026-08-06T20:47:00.000Z' });
+  await repository.resolvePendingIdentity({ ...resolution, occurredAt: '2026-08-06T20:48:00.000Z' });
+
+  const reloaded = await new JsonUserWardrobeRepository(filePath).getState('user-a');
+  assert.equal(reloaded.pendingIdentityResolutions[0]?.state, 'resolved_existing');
+  assert.deepEqual(reloaded.captures[0]?.items, [
+    { type: 'closet_item', closetItemId: 'top-a', slot: 'top' },
+    { type: 'closet_item', closetItemId: 'shorts-first', slot: 'bottom' },
+  ]);
+  assert.deepEqual(reloaded.captures[0]?.closetItemIds, ['top-a', 'shorts-first']);
+  assert.equal(reloaded.captures[0]?.outfitSignature, signature(['shorts-first', 'top-a']));
+  assert.equal(reloaded.wearEvents.filter((event) => event.closetItemId === 'shorts-first').length, 1);
+});
+
 async function repositoryFixture(): Promise<{ repository: JsonUserWardrobeRepository; filePath: string }> {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'muse-closet-merge-'));
   const filePath = path.join(directory, 'wardrobe.json');
@@ -168,7 +217,9 @@ function appearance(appearanceId: string, closetItemId: string, appearanceAssetI
 function capture(captureId: string, closetItemIds: string[]) {
   return {
     captureId, userId: 'user-a', sessionId: 'session', episodeId: `episode-${captureId}`,
-    observationId: `observation-${captureId}`, closetItemIds, outfitSignature: signature(closetItemIds),
+    observationId: `observation-${captureId}`, closetItemIds,
+    items: closetItemIds.map((closetItemId) => ({ type: 'closet_item' as const, closetItemId, slot: 'bottom' as const })),
+    outfitSignature: signature(closetItemIds),
     repeatedOutfit: false, evidenceImageUrl: '/evidence.jpg', capturedAt: '2026-08-06T20:46:00.000Z',
     committedAt: '2026-08-06T20:46:00.000Z',
   };

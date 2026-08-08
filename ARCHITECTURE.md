@@ -233,12 +233,20 @@ adds a second crop and identity resolution sends both current frames, but still 
 ClosetItem at a time. Track buffers retain at most two assets. Catalog-only matches with two current frames must
 show consistent instance-specific support across both; mixed strong evidence can never be averaged into a match.
 
-An ambiguous result creates a persisted `PendingIdentityResolution`. Occlusion-driven ambiguity enters
-`awaiting_evidence`; intrinsic ambiguity enters `pending_confirmation`. A genuinely new crop (checked by content
-hash, not merely a new asset ID) permits one automatic recheck. A second ambiguous result always requires future
-confirmation. Leaving the episode changes unresolved work to `deferred_until_next_episode`; the next same-slot
-track may consume the remaining recheck once. Episode end and privacy pause remove ephemeral assets. Successful
-match/new decisions promote the selected crop to a formal appearance before cleanup.
+An ambiguous result creates a persisted `PendingIdentityResolution` without blocking other garments in the same
+capture. `OutfitCapture.items` may mix durable `closet_item` references with `pending_identity` references. Clear
+new and existing garments still commit appearances and WearEvents while the unresolved slot remains pending.
+Occlusion-driven ambiguity enters `awaiting_evidence`; intrinsic ambiguity enters `ready_to_ask`, but PR8 never
+asks the user. A meaningful visual change may consume one automatic recheck. Meaningfulness comes from perceptual
+crop difference, bounding-box or coverage change, or improved visibility of an occluded feature, never from a new
+JPEG SHA alone. A second ambiguous result enters `ready_to_ask`. Leaving the episode changes unresolved work to
+`deferred` while retaining only bounded garment-crop evidence. Privacy pause discards unresolved evidence.
+
+A deferred resolution reconnects across episodes only when slot and category are compatible, descriptors remain
+compatible without a hard contradiction, and candidate sets overlap. If zero or multiple deferred resolutions
+satisfy those constraints, runtime does not guess. Successful later resolution atomically replaces historical
+`pending_identity` capture references with the canonical `closet_item` reference and adds any missing WearEvent
+exactly once. TTS, ASR, confirmation wording, and user-answer parsing are intentionally deferred to PR9.
 
 Each resolution persists a bounded, sanitized `GarmentIdentityDecisionTrace` containing recall scores, tiers,
 reference evidence type, soft contradictions, class-level and instance-specific match features, Safe Same reject

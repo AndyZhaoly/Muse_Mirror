@@ -11,6 +11,7 @@ import type {
   OutfitCaptureProposal,
   WornOutfitObservation,
   GarmentImageAsset,
+  GarmentIdentityHypothesis,
   PendingIdentityResolution,
 } from '../domain/ambientCapture.js';
 import type { OutfitEpisode } from '../domain/outfitEpisode.js';
@@ -25,6 +26,7 @@ import { hardAttributeExclusion } from '../services/garmentIdentityEvidence.js';
 import type { OutfitObservationProvider } from '../services/outfitObservationProvider.js';
 import type { JsonUserWardrobeRepository } from '../services/userWardrobeRepository.js';
 import type { GarmentImageAssetService } from '../services/garmentImageAssetService.js';
+import { perceptualHashDistance } from '../services/garmentImageAssetService.js';
 import type { ProductImageProvider } from '../services/productImageProvider.js';
 import type { ProductImageVerifier } from '../services/garmentVisualVerifier.js';
 
@@ -77,7 +79,7 @@ export class AmbientCaptureCoordinator {
       episode: policyEpisode(episode),
     });
     if (preflight.privacyPaused) {
-      await this.cleanupEpisodeEvidence(packet.userId, episode, packet.capturedAt, true);
+      await this.cleanupEpisodeEvidence(packet.userId, episode, packet.capturedAt, 'discard_all');
       return this.remember(packet.userId, { status: 'privacy_paused', reasonCodes: preflight.reasonCodes, episodeId: episode.episodeId });
     }
     if (preflight.action === 'defer') {
@@ -102,7 +104,7 @@ export class AmbientCaptureCoordinator {
     if (observation.personCount === 0) {
       episode = { ...episode, status: 'ended', endedAt: observation.analyzedAt, lastObservationId: observation.observationId, lastObservedAt: observation.analyzedAt };
       await this.options.repository.upsertEpisode(packet.userId, episode);
-      await this.cleanupEpisodeEvidence(packet.userId, episode, observation.analyzedAt, true);
+      await this.cleanupEpisodeEvidence(packet.userId, episode, observation.analyzedAt, 'defer_pending');
       return this.remember(packet.userId, {
         status: 'episode_ended',
         reasonCodes: ['NO_PERSON_PRESENT'],
@@ -125,7 +127,7 @@ export class AmbientCaptureCoordinator {
         lastObservedAt: observation.analyzedAt,
       };
       await this.options.repository.upsertEpisode(packet.userId, episode);
-      await this.cleanupEpisodeEvidence(packet.userId, episode, observation.analyzedAt, true);
+      await this.cleanupEpisodeEvidence(packet.userId, episode, observation.analyzedAt, 'discard_all');
       return this.remember(packet.userId, {
         status: 'privacy_paused',
         reasonCodes: observedEnvelope.reasonCodes,
@@ -163,22 +165,6 @@ export class AmbientCaptureCoordinator {
         episodeId: episode.episodeId,
         observationId: observation.observationId,
         retryAfterMs: 4_000,
-      });
-    }
-
-    const confirmationBlocker = state.pendingIdentityResolutions.find((resolution) =>
-      (resolution.episodeId === episode.episodeId && resolution.state === 'pending_confirmation') ||
-      (resolution.state === 'deferred_until_next_episode' && resolution.automaticRecheckCount >= 1 &&
-        observation.garments.some((garment) =>
-          resolution.slot === garment.slot && resolution.category === garment.category)));
-    if (confirmationBlocker) {
-      await this.options.repository.upsertEpisode(packet.userId, episode);
-      return this.remember(packet.userId, {
-        status: 'ambiguous',
-        reasonCodes: ['PENDING_IDENTITY_CONFIRMATION_REQUIRED', ...confirmationBlocker.ambiguityReasonCodes],
-        episodeId: episode.episodeId,
-        observationId: observation.observationId,
-        retryAfterMs: 30_000,
       });
     }
 
@@ -259,10 +245,20 @@ export class AmbientCaptureCoordinator {
     const baseCatalogAssets = await this.options.baseCatalogAssets?.() ?? new Map<string, GarmentImageAsset>();
     const currentAppearanceGroups = observation.garments.map((garment) => {
       const track = findTrackForGarment(garmentTracks, garment);
-      return (track?.identityEvidence ?? []).flatMap((evidence) => {
+      const current = (track?.identityEvidence ?? []).flatMap((evidence) => {
         const asset = freshState.assets.find((entry) => entry.assetId === evidence.assetId);
         return asset ? [asset] : [];
-      }).slice(-2);
+      });
+      const pending = track
+        ? findPendingResolutionForTrack(freshState.pendingIdentityResolutions, episode.episodeId, track)
+        : undefined;
+      const retained = pending?.currentEvidenceAssetIds.flatMap((assetId) => {
+        const asset = freshState.assets.find((entry) => entry.assetId === assetId);
+        return asset ? [asset] : [];
+      }) ?? [];
+      return [...retained, ...current]
+        .filter((asset, index, all) => all.findIndex((candidate) => candidate.assetId === asset.assetId) === index)
+        .slice(-2);
     });
     if (currentAppearanceGroups.some((group) => group.length === 0)) {
       await this.options.assetService.deleteAssets([evidenceAsset]);
@@ -274,98 +270,74 @@ export class AmbientCaptureCoordinator {
         retryAfterMs: 5_000,
       });
     }
-    const awaiting = freshState.pendingIdentityResolutions.filter((resolution) =>
-      resolution.episodeId === episode.episodeId && resolution.state === 'awaiting_evidence');
-    if (awaiting.length && awaiting.every((resolution) => !hasNewEvidenceContent(
-      resolution,
-      state.assets,
-      freshState.assets,
-      garmentTracks.find((track) => track.trackId === resolution.trackId),
-    ))) {
-      for (const resolution of awaiting) {
-        await this.options.repository.upsertPendingIdentityResolution(packet.userId, {
-          ...resolution,
-          state: 'pending_confirmation',
-          updatedAt: packet.capturedAt,
-          ambiguityReasonCodes: [...new Set([...resolution.ambiguityReasonCodes, 'AUTOMATIC_RECHECK_REQUIRES_NEW_EVIDENCE'])],
-        });
+    const automaticRechecks = new Set<string>();
+    const identities = await Promise.all(observation.garments.map(async (garment, index) => {
+      const track = findTrackForGarment(garmentTracks, garment);
+      const pending = track
+        ? findPendingResolutionForTrack(freshState.pendingIdentityResolutions, episode.episodeId, track)
+        : undefined;
+      const meaningfulEvidence = pending
+        ? hasMeaningfullyNewEvidence(pending, freshState.assets, track)
+        : false;
+      const crossEpisodeEvidenceReady = pending?.ambiguityReasonCodes.includes('CROSS_EPISODE_EVIDENCE_ATTACHED') ?? false;
+      if (pending && (
+        pending.state === 'ready_to_ask' ||
+        pending.automaticRecheckCount >= 1 ||
+        (pending.state === 'awaiting_evidence' && !meaningfulEvidence && !crossEpisodeEvidenceReady)
+      )) {
+        return pendingIdentityHypothesis(garment, pending, meaningfulEvidence
+          ? 'AUTOMATIC_RECHECK_LIMIT_REACHED'
+          : 'AUTOMATIC_RECHECK_REQUIRES_MEANINGFUL_EVIDENCE');
       }
-      await this.options.assetService.deleteAssets([evidenceAsset]);
-      return this.remember(packet.userId, {
-        status: 'ambiguous',
-        reasonCodes: ['AUTOMATIC_RECHECK_REQUIRES_NEW_EVIDENCE', 'PENDING_IDENTITY_CONFIRMATION_REQUIRED'],
+      if (pending?.state === 'awaiting_evidence' && (meaningfulEvidence || crossEpisodeEvidenceReady)) {
+        automaticRechecks.add(pending.resolutionId);
+      }
+      return this.options.identityProvider.resolve({
+        userId: packet.userId,
         episodeId: episode.episodeId,
-        observationId: observation.observationId,
-        retryAfterMs: 30_000,
+        capturedAt: packet.capturedAt,
+        garment,
+        currentAppearances: currentAppearanceGroups[index]!,
+        baseClosetItems: this.options.baseClosetItems(),
+        userClosetItems: freshState.closetItems,
+        appearances: freshState.appearances,
+        assets: freshState.assets,
+        captures: freshState.captures,
+        wearEvents: freshState.wearEvents,
+        baseCatalogAssets,
       });
-    }
-    const identities = await Promise.all(observation.garments.map((garment, index) => this.options.identityProvider.resolve({
-      userId: packet.userId,
-      episodeId: episode.episodeId,
-      capturedAt: packet.capturedAt,
-      garment,
-      currentAppearances: currentAppearanceGroups[index]!,
-      baseClosetItems: this.options.baseClosetItems(),
-      userClosetItems: freshState.closetItems,
-      appearances: freshState.appearances,
-      assets: freshState.assets,
-      captures: freshState.captures,
-      wearEvents: freshState.wearEvents,
-      baseCatalogAssets,
-    })));
-    const resolvedPendingIds: string[] = [];
+    }));
+    const resolvedPending = new Map<string, Awaited<ReturnType<GarmentIdentityProvider['resolve']>>>();
     for (const [index, identity] of identities.entries()) {
       const garment = observation.garments[index];
       if (!garment) continue;
       const track = findTrackForGarment(garmentTracks, garment);
       const pending = track
-        ? findPendingResolutionForTrack(freshState.pendingIdentityResolutions, episode.episodeId, track)
+        ? findPendingResolutionForTrack(freshState.pendingIdentityResolutions, episode.episodeId, track, identity.candidateItemIds)
         : undefined;
       if (!pending) continue;
-      const hasNewEvidence = hasNewEvidenceContent(pending, state.assets, freshState.assets, track);
       if (identity.decisionTrace) {
         identity.decisionTrace.pendingResolutionId = pending.resolutionId;
-        identity.decisionTrace.automaticRecheckCount = pending.state !== 'pending_confirmation' && hasNewEvidence
+        identity.decisionTrace.automaticRecheckCount = automaticRechecks.has(pending.resolutionId)
           ? Math.min(1, pending.automaticRecheckCount + 1)
           : pending.automaticRecheckCount;
       }
       if (identity.status !== 'ambiguous' && identity.status !== 'insufficient_evidence') {
-        resolvedPendingIds.push(pending.resolutionId);
+        resolvedPending.set(pending.resolutionId, identity);
       }
     }
-    await this.options.repository.removePendingIdentityResolutions(packet.userId, resolvedPendingIds);
     const unresolved = identities.filter((identity) => identity.status === 'ambiguous' || identity.status === 'insufficient_evidence');
-    if (unresolved.length) {
-      const pendingStates = await this.persistPendingIdentityResolutions({
+    const pendingStates = unresolved.length
+      ? await this.persistPendingIdentityResolutions({
         packet,
         episode,
         observation,
         tracks: garmentTracks,
         identities,
         existing: freshState.pendingIdentityResolutions,
-        previousAssets: state.assets,
         currentAssets: freshState.assets,
-      });
-      await this.options.repository.appendIdentityDecisionTraces(
-        packet.userId,
-        identities.flatMap((identity) => identity.decisionTrace ? [identity.decisionTrace] : []),
-        this.options.identityTraceLimit ?? 200,
-      );
-      await this.options.assetService.deleteAssets([evidenceAsset]);
-      return this.remember(packet.userId, {
-        status: unresolved.some((item) => item.status === 'ambiguous') ? 'ambiguous' : 'insufficient_evidence',
-        reasonCodes: [
-          ...observationGateReasonCodes,
-          ...unresolved.flatMap((item) => item.reasonCodes),
-          ...pendingStates.map((pending) => pending.state === 'awaiting_evidence'
-            ? 'PENDING_IDENTITY_AWAITING_NEW_EVIDENCE'
-            : 'PENDING_IDENTITY_CONFIRMATION_REQUIRED'),
-        ],
-        episodeId: episode.episodeId,
-        observationId: observation.observationId,
-        retryAfterMs: pendingStates.some((pending) => pending.state === 'awaiting_evidence') ? 2_500 : 30_000,
-      });
-    }
+      })
+      : [];
 
     await this.options.repository.appendIdentityDecisionTraces(
       packet.userId,
@@ -383,7 +355,7 @@ export class AmbientCaptureCoordinator {
       : postflight.eligibility.wearRecord === 'eligible';
     if (!eligible) {
       await this.options.assetService.deleteAssets([evidenceAsset]);
-      await this.cleanupEpisodeEvidence(packet.userId, episode, observation.analyzedAt, true);
+      await this.cleanupEpisodeEvidence(packet.userId, episode, observation.analyzedAt, 'defer_pending');
       return this.remember(packet.userId, {
         status: postflight.privacyPaused ? 'privacy_paused' : postflight.action === 'defer' ? 'deferred' : 'insufficient_evidence',
         reasonCodes: postflight.reasonCodes,
@@ -392,19 +364,42 @@ export class AmbientCaptureCoordinator {
       });
     }
 
-    const proposal = buildProposal({ packet, episode, observation, identities, state: freshState, evidenceAsset, appearanceAssets });
+    const pendingByObservationItemId = new Map(pendingStates.map((pending) => [pending.observationItemId, pending]));
+    const proposal = buildProposal({
+      packet,
+      episode,
+      observation,
+      identities,
+      state: freshState,
+      evidenceAsset,
+      appearanceAssets,
+      pendingByObservationItemId,
+    });
     let committed: Awaited<ReturnType<JsonUserWardrobeRepository['commitCapture']>>;
     try {
       committed = await this.options.repository.commitCapture({ proposal });
     } catch (error) {
       await this.options.assetService.deleteAssets([evidenceAsset]);
-      await this.cleanupEpisodeEvidence(packet.userId, episode, observation.analyzedAt, true);
+      await this.cleanupEpisodeEvidence(packet.userId, episode, observation.analyzedAt, 'defer_pending');
       throw error;
     }
     if (committed.status === 'already_committed') {
       await this.options.assetService.deleteAssets([evidenceAsset]);
     }
-    await this.cleanupEpisodeEvidence(packet.userId, episode, observation.analyzedAt, false);
+    for (const [resolutionId, identity] of resolvedPending) {
+      const existing = freshState.pendingIdentityResolutions.find((entry) => entry.resolutionId === resolutionId);
+      if (!existing) continue;
+      const proposalItem = proposal.items.find((item) => item.identity === identity);
+      if (!proposalItem || proposalItem.type !== 'closet_item') continue;
+      await this.options.repository.resolvePendingIdentity({
+        userId: packet.userId,
+        resolutionId,
+        closetItemId: proposalItem.resolvedClosetItemId,
+        state: identity.status === 'matched_existing' ? 'resolved_existing' : 'resolved_new',
+        occurredAt: packet.capturedAt,
+      });
+    }
+    await this.cleanupEpisodeEvidence(packet.userId, episode, observation.analyzedAt, 'preserve_pending');
     if (committed.status === 'committed' && committed.createdClosetItemIds.length) {
       const processing: AmbientCaptureOutcome = {
         status: 'committed_processing_images',
@@ -429,25 +424,28 @@ export class AmbientCaptureCoordinator {
       ? completedEventFromCommit(proposal, committed, observation, await this.options.repository.getState(packet.userId), this.options.baseClosetItems())
       : undefined;
     if (completedEvent) await this.options.repository.setPendingCompletionEvent(packet.userId, completedEvent);
-    const status: AmbientCaptureOutcome['status'] = committed.status === 'already_committed' ? 'already_committed' : 'recognized';
+    const status: AmbientCaptureOutcome['status'] = committed.status === 'already_committed'
+      ? 'already_committed'
+      : pendingStates.length ? 'mixed' : 'recognized';
     return this.remember(packet.userId, {
       status,
       reasonCodes: [
         ...observationGateReasonCodes,
         committed.createdClosetItemIds.length ? 'NEW_GARMENTS_COMMITTED' : 'KNOWN_GARMENTS_RECOGNIZED',
+        ...(pendingStates.length ? ['PENDING_IDENTITY_RECORDED'] : []),
         proposal.repeatedOutfit ? 'REPEATED_OUTFIT_SIGNATURE' : 'NEW_OUTFIT_SIGNATURE',
       ],
       episodeId: episode.episodeId,
       observationId: observation.observationId,
       completedEvent,
-      retryAfterMs: 12_000,
+      retryAfterMs: pendingStates.some((pending) => pending.state === 'awaiting_evidence') ? 2_500 : 12_000,
     });
   }
 
   async endEpisode(userId: string, sessionId: string, occurredAt?: string): Promise<AmbientCaptureOutcome> {
     return this.exclusive(userId, async () => {
       const ended = await this.options.repository.endActiveEpisode(userId, sessionId, occurredAt);
-      if (ended) await this.cleanupEpisodeEvidence(userId, ended, occurredAt ?? new Date().toISOString(), true);
+      if (ended) await this.cleanupEpisodeEvidence(userId, ended, occurredAt ?? new Date().toISOString(), 'defer_pending');
       return this.remember(userId, {
         status: 'episode_ended',
         reasonCodes: [ended ? 'EPISODE_ENDED' : 'NO_ACTIVE_EPISODE'],
@@ -629,6 +627,8 @@ export class AmbientCaptureCoordinator {
           assetId: asset.assetId,
           capturedAt: packet.capturedAt,
           descriptor: descriptorFromObservation(garment),
+          boundingBox: garment.boundingBox,
+          coverage: observation.coverage,
           qualityScore: garment.confidence,
         },
       ].filter((entry, index, all) => all.findIndex((candidate) => candidate.assetId === entry.assetId) === index);
@@ -650,7 +650,6 @@ export class AmbientCaptureCoordinator {
     tracks: AmbientGarmentTrack[];
     identities: Awaited<ReturnType<GarmentIdentityProvider['resolve']>>[];
     existing: PendingIdentityResolution[];
-    previousAssets: GarmentImageAsset[];
     currentAssets: GarmentImageAsset[];
   }): Promise<PendingIdentityResolution[]> {
     const pending: PendingIdentityResolution[] = [];
@@ -659,15 +658,18 @@ export class AmbientCaptureCoordinator {
       const garment = input.observation.garments[index]!;
       const track = findTrackForGarment(input.tracks, garment);
       if (!track) continue;
-      const existing = findPendingResolutionForTrack(input.existing, input.episode.episodeId, track);
-      const currentEvidenceAssetIds = track.identityEvidence.map((entry) => entry.assetId);
-      const hasNewEvidence = existing
-        ? hasNewEvidenceContent(existing, input.previousAssets, input.currentAssets, track)
-        : false;
-      const automaticRecheckCount = existing && existing.state !== 'pending_confirmation' && hasNewEvidence
-        ? Math.min(1, existing.automaticRecheckCount + 1)
-        : existing?.automaticRecheckCount ?? 0;
+      const existing = findPendingResolutionForTrack(
+        input.existing,
+        input.episode.episodeId,
+        track,
+        identity.candidateItemIds,
+      );
+      const currentEvidenceAssetIds = [...new Set([
+        ...(existing?.currentEvidenceAssetIds ?? []),
+        ...track.identityEvidence.map((entry) => entry.assetId),
+      ])].slice(-2);
       const trace = identity.decisionTrace;
+      const automaticRecheckCount = trace?.automaticRecheckCount ?? existing?.automaticRecheckCount ?? 0;
       const occludedFeatures = [...new Set(trace?.pairwiseVerifications.flatMap((verification) => [
         ...verification.normalizedResult.occlusions,
         ...verification.normalizedResult.featureComparisons
@@ -676,9 +678,11 @@ export class AmbientCaptureCoordinator {
       ]) ?? [])];
       const resolutionId = existing?.resolutionId ?? makeId('pending_identity');
       const state: PendingIdentityResolution['state'] = existing
-        ? 'pending_confirmation'
-        : occludedFeatures.length > 0 ? 'awaiting_evidence' : 'pending_confirmation';
+        ? automaticRecheckCount >= 1 || existing.state === 'ready_to_ask' ? 'ready_to_ask' : 'awaiting_evidence'
+        : occludedFeatures.length > 0 ? 'awaiting_evidence' : 'ready_to_ask';
       const now = input.packet.capturedAt;
+      const allClosetItems = this.options.baseClosetItems();
+      const userItems = (await this.options.repository.getState(input.packet.userId)).closetItems.map((entry) => entry.item);
       const resolution: PendingIdentityResolution = {
         resolutionId,
         userId: input.packet.userId,
@@ -687,9 +691,40 @@ export class AmbientCaptureCoordinator {
         observationItemId: garment.observationItemId,
         slot: garment.slot,
         category: garment.category,
+        lockedDescriptor: existing?.lockedDescriptor ?? track.descriptor,
         currentEvidenceAssetIds,
-        candidateClosetItemIds: identity.candidateItemIds,
-        ambiguityReasonCodes: identity.reasonCodes,
+        evidenceSignatures: [
+          ...(existing?.evidenceSignatures ?? []),
+          ...track.identityEvidence.flatMap((evidence) => {
+            const asset = input.currentAssets.find((entry) => entry.assetId === evidence.assetId);
+            return asset ? [{
+              assetId: asset.assetId,
+              perceptualHash: asset.perceptualHash,
+              boundingBox: evidence.boundingBox,
+              descriptor: evidence.descriptor,
+              coverage: evidence.coverage,
+            }] : [];
+          }),
+        ].filter((entry, index, all) => all.findIndex((candidate) => candidate.assetId === entry.assetId) === index).slice(-2),
+        candidateClosetItemIds: [...new Set([...(existing?.candidateClosetItemIds ?? []), ...identity.candidateItemIds])],
+        candidateSummaries: [
+          ...(existing?.candidateSummaries ?? []),
+          ...identity.candidateItemIds.flatMap((closetItemId, index) => {
+            const item = [...allClosetItems, ...userItems].find((entry) => entry.id === closetItemId);
+            return item ? [{
+              closetItemId,
+              label: item.name,
+              imageUrl: item.imageUrl,
+              priorRank: index + 1,
+              identityReasonCodes: identity.reasonCodes,
+            }] : [];
+          }),
+        ].filter((entry, index, all) =>
+          all.findIndex((candidate) => candidate.closetItemId === entry.closetItemId) === index),
+        ambiguityReasonCodes: [...new Set([
+          ...identity.reasonCodes,
+          ...(existing && existing.episodeId !== input.episode.episodeId ? ['CROSS_EPISODE_EVIDENCE_ATTACHED'] : []),
+        ])],
         occludedFeatures,
         automaticRecheckCount,
         state,
@@ -711,13 +746,13 @@ export class AmbientCaptureCoordinator {
     userId: string,
     episode: AmbientOutfitEpisode,
     occurredAt: string,
-    deferPending: boolean,
+    mode: 'defer_pending' | 'preserve_pending' | 'discard_all',
   ): Promise<void> {
     const assets = await this.options.repository.cleanupEpisodeIdentityEvidence(
       userId,
       episode.episodeId,
       occurredAt,
-      deferPending,
+      mode,
     );
     await this.options.assetService.deleteAssets(assets);
   }
@@ -729,7 +764,7 @@ export class AmbientCaptureCoordinator {
   ): Promise<void> {
     let failed = false;
     for (const closetItemId of committed.createdClosetItemIds) {
-      const proposalItem = proposal.items.find((item) => item.resolvedClosetItemId === closetItemId);
+      const proposalItem = proposal.items.find((item) => item.type === 'closet_item' && item.resolvedClosetItemId === closetItemId);
       if (!proposalItem) continue;
       const job = await this.options.repository.beginProductImageJob(proposal.userId, closetItemId, proposalItem.appearanceAsset.assetId);
       if (job.status === 'ready') continue;
@@ -963,35 +998,107 @@ function findTrackForGarment(
   return tracks.find((track) => track.slot === garment.slot && track.category === garment.category);
 }
 
-function hasNewEvidenceContent(
+const MEANINGFUL_PERCEPTUAL_DISTANCE = 8;
+
+function hasMeaningfullyNewEvidence(
   resolution: PendingIdentityResolution,
-  previousAssets: GarmentImageAsset[],
   currentAssets: GarmentImageAsset[],
   track: AmbientGarmentTrack | undefined,
 ): boolean {
   if (!track) return false;
-  const previousHashes = new Set(
-    resolution.currentEvidenceAssetIds.flatMap((assetId) => {
-      const asset = previousAssets.find((entry) => entry.assetId === assetId);
-      return asset?.contentHash ? [asset.contentHash] : [];
-    }),
-  );
   return track.identityEvidence.some((evidence) => {
+    if (resolution.currentEvidenceAssetIds.includes(evidence.assetId)) return false;
     const asset = currentAssets.find((entry) => entry.assetId === evidence.assetId);
-    return Boolean(asset?.contentHash && !previousHashes.has(asset.contentHash));
+    if (!asset) return false;
+    return resolution.evidenceSignatures.every((previous) => {
+      if (coverageRank(evidence.coverage) > coverageRank(previous.coverage)) return true;
+      if (descriptorVisibilityImproved(previous.descriptor, evidence.descriptor, resolution.occludedFeatures)) return true;
+      if (boundingBoxMeaningfullyChanged(previous.boundingBox, evidence.boundingBox)) return true;
+      const distance = perceptualHashDistance(previous.perceptualHash, asset.perceptualHash);
+      return distance !== undefined && distance >= MEANINGFUL_PERCEPTUAL_DISTANCE;
+    });
   });
 }
 
-function findPendingResolutionForTrack(
+export function findPendingResolutionForTrack(
   resolutions: PendingIdentityResolution[],
   episodeId: string,
   track: AmbientGarmentTrack,
+  candidateClosetItemIds: string[] = [],
 ): PendingIdentityResolution | undefined {
-  return resolutions.find((entry) => entry.episodeId === episodeId && entry.trackId === track.trackId) ??
-    resolutions.find((entry) =>
-      entry.state === 'deferred_until_next_episode' &&
-      entry.slot === track.slot &&
-      entry.category === track.category);
+  const exact = resolutions.find((entry) =>
+    entry.episodeId === episodeId &&
+    entry.trackId === track.trackId &&
+    entry.state !== 'resolved_existing' &&
+    entry.state !== 'resolved_new');
+  if (exact) return exact;
+  const sameEpisodeSlot = resolutions.filter((entry) =>
+    entry.episodeId === episodeId &&
+    entry.state !== 'resolved_existing' &&
+    entry.state !== 'resolved_new' &&
+    entry.slot === track.slot &&
+    entry.category === track.category);
+  if (sameEpisodeSlot.length === 1) return sameEpisodeSlot[0];
+  const sameEpisodeCompatible = resolutions.filter((entry) =>
+    entry.episodeId === episodeId &&
+    entry.state !== 'resolved_existing' &&
+    entry.state !== 'resolved_new' &&
+    entry.slot === track.slot &&
+    entry.category === track.category &&
+    trackDescriptorSimilarity(entry.lockedDescriptor, track.descriptor) >= TRACK_CONTINUITY_THRESHOLD &&
+    !hardAttributeExclusion(entry.lockedDescriptor, track.descriptor));
+  if (sameEpisodeCompatible.length === 1) return sameEpisodeCompatible[0];
+  const deferred = resolutions.filter((entry) =>
+    entry.state === 'deferred' &&
+    entry.slot === track.slot &&
+    entry.category === track.category &&
+    trackDescriptorSimilarity(entry.lockedDescriptor, track.descriptor) >= TRACK_CONTINUITY_THRESHOLD &&
+    !hardAttributeExclusion(entry.lockedDescriptor, track.descriptor) &&
+    candidateClosetItemIds.some((id) => entry.candidateClosetItemIds.includes(id)));
+  return deferred.length === 1 ? deferred[0] : undefined;
+}
+
+function coverageRank(coverage: WornOutfitObservation['coverage']): number {
+  const ranks: Record<string, number> = { none: 0, face_only: 0, head_shoulders: 1, upper_body: 2, three_quarter: 3, full_body: 4 };
+  return ranks[coverage] ?? 0;
+}
+
+function pendingIdentityHypothesis(
+  garment: WornOutfitObservation['garments'][number],
+  pending: PendingIdentityResolution,
+  reasonCode: string,
+): GarmentIdentityHypothesis {
+  return {
+    observationItemId: garment.observationItemId,
+    status: 'ambiguous',
+    appearanceFingerprint: appearanceFingerprint(descriptorFromObservation(garment)),
+    confidence: 0,
+    candidateItemIds: pending.candidateClosetItemIds,
+    reasonCodes: [...new Set([...pending.ambiguityReasonCodes, reasonCode])],
+  };
+}
+
+function descriptorVisibilityImproved(
+  previous: AmbientGarmentTrack['descriptor'],
+  current: AmbientGarmentTrack['descriptor'],
+  occludedFeatures: string[],
+): boolean {
+  const currentFeatures = new Set(current.distinctiveFeatures.map(normalizeDescriptorToken));
+  const previousFeatures = new Set(previous.distinctiveFeatures.map(normalizeDescriptorToken));
+  return occludedFeatures.some((feature) => {
+    const normalized = normalizeDescriptorToken(feature);
+    return currentFeatures.has(normalized) && !previousFeatures.has(normalized);
+  });
+}
+
+function boundingBoxMeaningfullyChanged(left: { x: number; y: number; width: number; height: number }, right: { x: number; y: number; width: number; height: number }): boolean {
+  const areaLeft = left.width * left.height;
+  const areaRight = right.width * right.height;
+  const overlapWidth = Math.max(0, Math.min(left.x + left.width, right.x + right.width) - Math.max(left.x, right.x));
+  const overlapHeight = Math.max(0, Math.min(left.y + left.height, right.y + right.height) - Math.max(left.y, right.y));
+  const union = areaLeft + areaRight - overlapWidth * overlapHeight;
+  const iou = union > 0 ? (overlapWidth * overlapHeight) / union : 0;
+  return iou < 0.82 || Math.abs(areaLeft - areaRight) > 0.12;
 }
 
 export const TRACK_CONTINUITY_THRESHOLD = 0.7;
@@ -1111,9 +1218,21 @@ function buildProposal(args: {
   state: Awaited<ReturnType<JsonUserWardrobeRepository['getState']>>;
   evidenceAsset: GarmentImageAsset;
   appearanceAssets: GarmentImageAsset[];
+  pendingByObservationItemId: Map<string, PendingIdentityResolution>;
 }): OutfitCaptureProposal {
   const items = args.observation.garments.map((observation, index) => {
     const identity = args.identities[index]!;
+    const pending = args.pendingByObservationItemId.get(observation.observationItemId);
+    if (identity.status === 'ambiguous' || identity.status === 'insufficient_evidence') {
+      if (!pending) throw new Error('PENDING_IDENTITY_RESOLUTION_MISSING');
+      return {
+        type: 'pending_identity' as const,
+        observation,
+        appearanceAsset: args.appearanceAssets[index]!,
+        identity,
+        pendingResolutionId: pending.resolutionId,
+      };
+    }
     const itemId = identity.matchedClosetItemId ?? `ambient_${createHash('sha256').update(`${args.packet.userId}:${identity.appearanceFingerprint}`).digest('hex').slice(0, 18)}`;
     const now = args.packet.capturedAt;
     const createItem: AmbientClosetItem | undefined = identity.status === 'new_to_closet'
@@ -1149,10 +1268,12 @@ function buildProposal(args: {
           updatedAt: now,
         }
       : undefined;
-    return { observation, appearanceAsset: args.appearanceAssets[index]!, identity, resolvedClosetItemId: itemId, createItem };
+    return { type: 'closet_item' as const, observation, appearanceAsset: args.appearanceAssets[index]!, identity, resolvedClosetItemId: itemId, createItem };
   });
   const outfitSignature = createHash('sha256')
-    .update(items.map((item) => item.resolvedClosetItemId).sort().join('|'))
+    .update(items.map((item) => item.type === 'closet_item'
+      ? item.resolvedClosetItemId
+      : `pending:${item.pendingResolutionId}`).sort().join('|'))
     .digest('hex')
     .slice(0, 24);
   return {
@@ -1188,13 +1309,13 @@ function completedEventFromCommit(
     episodeId: proposal.episodeId,
     newItemIds: commit.createdClosetItemIds,
     recognizedItemIds: commit.recognizedClosetItemIds,
-    itemSummaries: proposal.items.map((item, index) => {
+    itemSummaries: proposal.items.filter((item) => item.type === 'closet_item').map((item) => {
       const ambient = state.closetItems.find((entry) => entry.item.id === item.resolvedClosetItemId)?.item;
       const base = baseClosetItems.find((entry) => entry.id === item.resolvedClosetItemId);
       return {
         closetItemId: item.resolvedClosetItemId,
         slot: item.observation.slot,
-        label: observation.garments[index]?.description ?? item.observation.description,
+        label: item.observation.description,
         status: newIds.has(item.resolvedClosetItemId) ? 'new' : 'recognized',
         imageUrl: ambient?.imageStatus === 'ready' ? ambient.imageUrl : base?.imageUrl,
         imageStatus: ambient?.imageStatus ?? (newIds.has(item.resolvedClosetItemId) ? 'processing' : 'ready'),

@@ -127,8 +127,10 @@ mode on shared production deployments unless the photo-retention policy explicit
 Identity safety fixtures also verify that generic style similarity and VLM confidence cannot establish physical
 identity, metadata/continuity prior cannot establish a match, multiple safe candidates remain ambiguous, and a
 fallback candidate cannot auto-match. Multi-frame fixtures verify first-frame ephemeral retention, two-frame
-pairwise input, cross-frame consistency/mixed evidence, content-hash-gated recheck, the one-recheck limit,
-cross-episode deferral, and cleanup on episode end/privacy pause.
+pairwise input, cross-frame consistency/mixed evidence, perceptual/bounding-box/coverage-gated recheck, the
+one-recheck limit, cross-episode deferral, and cleanup on episode end/privacy pause. Progressive-commit fixtures
+also require that one ambiguous garment does not block resolved garments, that an OutfitCapture persists the
+pending item reference, and that later resolution migrates that reference and creates at most one WearEvent.
 
 Private real-camera cases can be summarized without committing photos:
 

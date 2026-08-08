@@ -74,16 +74,21 @@ uncertain. Only jointly visible
 instance-specific construction evidence can establish a safe match or difference; generic color, neckline, sleeve,
 pattern-family, fit, or silhouette similarity cannot prove physical identity. Catalog-only references use a stricter
 gate than historical real appearances. Recent wear and metadata prior only rank candidates and veto risky automatic
-creation; they never establish a match or choose among multiple safe matches. Ambiguous evidence writes no ClosetItem. The latest 200
-sanitized decision traces remain available to the signed browser identity for diagnostics.
+creation; they never establish a match or choose among multiple safe matches. Ambiguous evidence writes no
+ClosetItem for that garment, but it no longer blocks resolved garments in the same outfit. The capture records a
+durable `pending_identity` reference beside ordinary closet-item references, so later evidence or a future
+confirmation adapter can resolve only that slot. The latest 200 sanitized decision traces remain available to the
+signed browser identity for diagnostics.
 Duplicate overlay items can be repaired through a dry-run-first, atomic repository merge; the duplicate is
 archived as an alias and is excluded from recommendation without deleting its historical appearances or wear.
 
 The first reliable frame now retains ephemeral garment-track crops; the second reliable frame supplies a second
 view to the same pairwise identity check. Catalog-only matches require consistent instance-specific evidence across
-both current views. Occlusion-driven ambiguity waits for a genuinely new crop and may recheck once; otherwise it
-stays pending rather than silently matching or creating an item. Ephemeral evidence is removed on episode end or
-privacy pause. Local, photo-containing replay cases belong under the gitignored `.local/identity-eval/` directory;
+both current views. Occlusion-driven ambiguity waits for a meaningfully changed crop and may recheck once;
+otherwise it becomes `ready_to_ask` without PR8 initiating a conversation. Episode departure defers bounded
+garment-crop evidence; privacy pause discards it. Safe cross-episode reconnect additionally requires compatible
+descriptors and candidate overlap, and never arbitrarily chooses among multiple pending records. Local,
+photo-containing replay cases belong under the gitignored `.local/identity-eval/` directory;
 `npm run identity:eval` reports false-existing, false-new, precision, and automation coverage without committing media.
 
 After two similar frames are independently confirmed by the server as `NO_PERSON_PRESENT`, the browser keeps

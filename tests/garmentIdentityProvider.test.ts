@@ -525,7 +525,8 @@ function asset(assetId: string, closetItemId?: string): GarmentImageAsset {
 function capture(closetItemId: string, capturedAt: string): OutfitCapture {
   return {
     captureId: 'capture-previous', userId: 'identity-test-user', sessionId: 'session', episodeId: 'episode-previous',
-    observationId: 'observation-previous', closetItemIds: [closetItemId], outfitSignature: 'signature',
+    observationId: 'observation-previous', closetItemIds: [closetItemId],
+    items: [{ type: 'closet_item', closetItemId, slot: 'bottom' }], outfitSignature: 'signature',
     repeatedOutfit: false, evidenceImageUrl: '/capture.jpg', capturedAt, committedAt: capturedAt,
   };
 }

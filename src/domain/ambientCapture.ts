@@ -69,6 +69,7 @@ export interface GarmentImageAsset {
   verificationStatus: GarmentImageVerificationStatus;
   verification?: ProductImageVerification;
   contentHash: string;
+  perceptualHash?: string;
   createdAt: string;
 }
 
@@ -308,6 +309,18 @@ export interface GarmentIdentityDecisionTrace {
   createdAt: string;
 }
 
+export type OutfitItemRef =
+  | {
+      type: 'closet_item';
+      closetItemId: string;
+      slot: AmbientGarmentSlot;
+    }
+  | {
+      type: 'pending_identity';
+      resolutionId: string;
+      slot: AmbientGarmentSlot;
+    };
+
 export interface OutfitCapture {
   captureId: string;
   userId: string;
@@ -315,6 +328,7 @@ export interface OutfitCapture {
   episodeId: string;
   observationId: string;
   closetItemIds: string[];
+  items: OutfitItemRef[];
   outfitSignature: string;
   repeatedOutfit: boolean;
   evidenceImageUrl: string;
@@ -350,13 +364,33 @@ export interface TrackIdentityEvidence {
   assetId: string;
   capturedAt: string;
   descriptor: GarmentAppearanceDescriptor;
+  boundingBox: NormalizedBoundingBox;
+  coverage: WornOutfitObservation['coverage'];
   qualityScore?: number;
 }
 
 export type PendingIdentityResolutionState =
   | 'awaiting_evidence'
-  | 'pending_confirmation'
-  | 'deferred_until_next_episode';
+  | 'ready_to_ask'
+  | 'deferred'
+  | 'resolved_existing'
+  | 'resolved_new';
+
+export interface PendingIdentityCandidateSummary {
+  closetItemId: string;
+  label: string;
+  imageUrl: string;
+  priorRank: number;
+  identityReasonCodes: string[];
+}
+
+export interface PendingIdentityEvidenceSignature {
+  assetId: string;
+  perceptualHash?: string;
+  boundingBox: NormalizedBoundingBox;
+  descriptor: GarmentAppearanceDescriptor;
+  coverage: WornOutfitObservation['coverage'];
+}
 
 export interface PendingIdentityResolution {
   resolutionId: string;
@@ -366,8 +400,11 @@ export interface PendingIdentityResolution {
   observationItemId: string;
   slot?: AmbientGarmentSlot;
   category?: ClosetItem['category'];
+  lockedDescriptor: GarmentAppearanceDescriptor;
   currentEvidenceAssetIds: string[];
+  evidenceSignatures: PendingIdentityEvidenceSignature[];
   candidateClosetItemIds: string[];
+  candidateSummaries: PendingIdentityCandidateSummary[];
   ambiguityReasonCodes: string[];
   occludedFeatures: string[];
   automaticRecheckCount: number;
@@ -392,11 +429,20 @@ export interface AmbientOutfitEpisode {
 }
 
 export interface OutfitCaptureProposalItem {
+  type: 'closet_item';
   observation: WornGarmentObservation;
   appearanceAsset: GarmentImageAsset;
   identity: GarmentIdentityHypothesis;
   resolvedClosetItemId: string;
   createItem?: AmbientClosetItem;
+}
+
+export interface PendingOutfitCaptureProposalItem {
+  type: 'pending_identity';
+  observation: WornGarmentObservation;
+  appearanceAsset: GarmentImageAsset;
+  identity: GarmentIdentityHypothesis;
+  pendingResolutionId: string;
 }
 
 export interface OutfitCaptureProposal {
@@ -408,7 +454,7 @@ export interface OutfitCaptureProposal {
   packet: AmbientCapturePacket;
   evidenceAsset: GarmentImageAsset;
   evidenceImageUrl: string;
-  items: OutfitCaptureProposalItem[];
+  items: Array<OutfitCaptureProposalItem | PendingOutfitCaptureProposalItem>;
   outfitSignature: string;
   repeatedOutfit: boolean;
   idempotencyKey: string;

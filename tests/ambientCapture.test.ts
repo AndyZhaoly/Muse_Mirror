@@ -9,11 +9,16 @@ import type {
   GarmentIdentityDecisionTrace,
   GarmentIdentityHypothesis,
   GarmentImageAsset,
+  PendingIdentityResolution,
   ProductImageVerification,
   WornGarmentObservation,
   WornOutfitObservation,
 } from '../src/domain/ambientCapture.js';
-import { AmbientCaptureCoordinator, gateWornGarmentObservation } from '../src/runtime/ambientCaptureCoordinator.js';
+import {
+  AmbientCaptureCoordinator,
+  findPendingResolutionForTrack,
+  gateWornGarmentObservation,
+} from '../src/runtime/ambientCaptureCoordinator.js';
 import { GarmentImageAssetService } from '../src/services/garmentImageAssetService.js';
 import { VisualGarmentIdentityProvider, type GarmentIdentityInput } from '../src/services/garmentIdentityProvider.js';
 import {
@@ -399,7 +404,7 @@ test('OpenAI catalog provider uses source-image edit and never puts user identit
   assert.notEqual(result.asset.contentHash, sourceAppearance.contentHash);
 });
 
-test('ambiguous visual identity retains bounded track evidence and commits no business state', async () => {
+test('ambiguous visual identity persists pending refs without creating closet items', async () => {
   const fixture = await createFixture('ambiguous');
   await fixture.repository.setGrant(userId, true);
   const observed = outfit([
@@ -427,14 +432,14 @@ test('ambiguous visual identity retains bounded track evidence and commits no bu
   });
   await runtime.process(packet(fixture.framePath, 'ambiguous', 'a1'));
   const result = await runtime.process(packet(fixture.framePath, 'ambiguous', 'a2'));
-  assert.equal(result.status, 'ambiguous');
+  assert.equal(result.status, 'mixed');
   const state = await fixture.repository.getState(userId);
   assert.equal(state.closetItems.length, 0);
-  assert.equal(state.captures.length, 0);
-  assert.equal(state.assets.length, 4);
-  assert.ok(state.assets.every((asset) => asset.role === 'track_identity_evidence'));
+  assert.equal(state.captures.length, 1);
+  assert.equal(state.captures[0]?.items.filter((item) => item.type === 'pending_identity').length, 2);
+  assert.ok(state.assets.some((asset) => asset.role === 'track_identity_evidence'));
   assert.equal(state.pendingIdentityResolutions.length, 2);
-  assert.ok(state.pendingIdentityResolutions.every((resolution) => resolution.state === 'pending_confirmation'));
+  assert.ok(state.pendingIdentityResolutions.every((resolution) => resolution.state === 'ready_to_ask'));
   const bundles = await fixture.assetService.listDiagnosticCaptures(userId);
   assert.equal(bundles.length, 2);
   assert.equal(bundles[0]?.frameId, 'a2');
@@ -443,6 +448,67 @@ test('ambiguous visual identity retains bounded track evidence and commits no bu
   assert.equal(diagnostics.diagnosticCaptureRetentionEnabled, true);
   assert.equal(diagnostics.diagnosticCaptureCount, 2);
   assert.equal(diagnostics.latestDiagnosticCapture?.bundleId, bundles[0]?.bundleId);
+});
+
+test('one ambiguous garment does not block new and existing items in the same capture', async () => {
+  const fixture = await createFixture('progressive-per-item-commit');
+  await fixture.repository.setGrant(userId, true);
+  const shoes: WornGarmentObservation = {
+    ...garment('shoes', 'bottom', 'white', 'white sneakers'),
+    slot: 'shoes',
+    category: 'shoes',
+    boundingBox: { x: 0.3, y: 0.82, width: 0.4, height: 0.16 },
+  };
+  const observed = outfit([
+    garment('new-top', 'top', 'blue', 'blue overshirt'),
+    garment('pending-bottom', 'bottom', 'gray', 'gray shorts'),
+    shoes,
+  ]);
+  const runtime = new AmbientCaptureCoordinator({
+    observationProvider: queuedProvider([observed, observed]),
+    identityProvider: {
+      ready: true,
+      async resolve(input) {
+        if (input.garment.observationItemId === 'new-top') return {
+          observationItemId: input.garment.observationItemId,
+          status: 'new_to_closet' as const,
+          appearanceFingerprint: 'new-top-fingerprint', confidence: 0.91,
+          candidateItemIds: [], reasonCodes: ['FIXTURE_NEW'],
+        };
+        if (input.garment.observationItemId === 'shoes') return {
+          observationItemId: input.garment.observationItemId,
+          status: 'matched_existing' as const,
+          matchedClosetItemId: 'existing-shoes',
+          appearanceFingerprint: 'existing-shoes-fingerprint', confidence: 0.94,
+          candidateItemIds: ['existing-shoes'], reasonCodes: ['FIXTURE_MATCH'],
+        };
+        return {
+          observationItemId: input.garment.observationItemId,
+          status: 'ambiguous' as const,
+          appearanceFingerprint: 'pending-bottom-fingerprint', confidence: 0.6,
+          candidateItemIds: ['gray-shorts-a'], reasonCodes: ['INSUFFICIENT_INSTANCE_EVIDENCE'],
+        };
+      },
+    },
+    repository: fixture.repository,
+    baseClosetItems: () => [], assetService: fixture.assetService,
+    productImageProvider: new DisabledFakeProductProvider(),
+    productImageVerifier: new PassingProductVerifier(),
+  });
+
+  await runtime.process(packet(fixture.framePath, 'progressive', 'pc1'));
+  const outcome = await runtime.process(packet(fixture.framePath, 'progressive', 'pc2'));
+  const state = await fixture.repository.getState(userId);
+  assert.equal(outcome.status, 'committed_processing_images');
+  assert.equal(state.closetItems.length, 1);
+  assert.equal(state.pendingIdentityResolutions.length, 1);
+  assert.equal(state.captures.length, 1);
+  assert.deepEqual(state.captures[0]?.items.map((item) => item.type), [
+    'closet_item', 'pending_identity', 'closet_item',
+  ]);
+  assert.equal(state.wearEvents.length, 2);
+  assert.ok(state.wearEvents.some((event) => event.closetItemId === 'existing-shoes'));
+  assert.ok(!state.wearEvents.some((event) => event.closetItemId === 'gray-shorts-a'));
 });
 
 test('first reliable observation retains ephemeral crops and second observation resolves with both frames', async () => {
@@ -475,7 +541,7 @@ test('first reliable observation retains ephemeral crops and second observation 
   assert.equal(first.assets.filter((asset) => asset.role === 'track_identity_evidence').length, 1);
   assert.equal(first.episodes.at(-1)?.garmentTracks?.[0]?.identityEvidence.length, 1);
 
-  assert.equal((await runtime.process(packet(fixture.framePath, 'two-frame', 'tf2'))).status, 'ambiguous');
+  assert.equal((await runtime.process(packet(fixture.framePath, 'two-frame', 'tf2'))).status, 'mixed');
   assert.deepEqual(receivedFrameCounts, [2]);
   const second = await fixture.repository.getState(userId);
   assert.equal(second.assets.filter((asset) => asset.role === 'track_identity_evidence').length, 2);
@@ -487,9 +553,11 @@ test('occlusion ambiguity waits for one genuinely new frame and then stops autom
   const changedFrame = await writeFrame(path.join(fixture.directory, 'changed.jpg'), '#23375f', '#c5a66b');
   await fixture.repository.setGrant(userId, true);
   const observed = outfit([garment('occluded-top', 'top', 'navy', 'crew tee')]);
+  const observedWithBetterFraming = structuredClone(observed);
+  observedWithBetterFraming.garments[0]!.boundingBox = { x: 0.12, y: 0.15, width: 0.72, height: 0.74 };
   let identityCalls = 0;
   const runtime = new AmbientCaptureCoordinator({
-    observationProvider: queuedProvider([observed, observed, observed, observed]),
+    observationProvider: queuedProvider([observed, observed, observedWithBetterFraming, observedWithBetterFraming]),
     identityProvider: {
       ready: true,
       async resolve(input) {
@@ -504,21 +572,21 @@ test('occlusion ambiguity waits for one genuinely new frame and then stops autom
   });
 
   await runtime.process(packet(fixture.framePath, 'occlusion-recheck', 'or1'));
-  assert.equal((await runtime.process(packet(fixture.framePath, 'occlusion-recheck', 'or2'))).status, 'ambiguous');
+  assert.equal((await runtime.process(packet(fixture.framePath, 'occlusion-recheck', 'or2'))).status, 'mixed');
   let state = await fixture.repository.getState(userId);
   assert.equal(identityCalls, 1);
   assert.equal(state.pendingIdentityResolutions[0]?.state, 'awaiting_evidence');
   assert.equal(state.pendingIdentityResolutions[0]?.automaticRecheckCount, 0);
 
-  assert.equal((await runtime.process(packet(changedFrame, 'occlusion-recheck', 'or3'))).status, 'ambiguous');
+  assert.equal((await runtime.process(packet(changedFrame, 'occlusion-recheck', 'or3'))).status, 'already_committed');
   state = await fixture.repository.getState(userId);
   assert.equal(identityCalls, 2);
-  assert.equal(state.pendingIdentityResolutions[0]?.state, 'pending_confirmation');
+  assert.equal(state.pendingIdentityResolutions[0]?.state, 'ready_to_ask');
   assert.equal(state.pendingIdentityResolutions[0]?.automaticRecheckCount, 1);
   assert.equal(state.pendingIdentityResolutions[0]?.currentEvidenceAssetIds.length, 2);
   assert.equal(state.identityDecisionTraces.at(-1)?.automaticRecheckCount, 1);
 
-  assert.equal((await runtime.process(packet(changedFrame, 'occlusion-recheck', 'or4'))).status, 'ambiguous');
+  assert.equal((await runtime.process(packet(changedFrame, 'occlusion-recheck', 'or4'))).status, 'already_committed');
   assert.equal(identityCalls, 2, 'pending confirmation must block any further automatic verifier call');
 });
 
@@ -546,13 +614,12 @@ test('an identical crop cannot trigger an automatic identity recheck', async () 
   await runtime.process(packet(fixture.framePath, 'same-frame', 'sf2'));
   const result = await runtime.process(packet(fixture.framePath, 'same-frame', 'sf3'));
   const state = await fixture.repository.getState(userId);
-  assert.equal(result.status, 'ambiguous');
+  assert.equal(result.status, 'already_committed');
   assert.equal(identityCalls, 1);
-  assert.ok(result.reasonCodes.includes('AUTOMATIC_RECHECK_REQUIRES_NEW_EVIDENCE'));
-  assert.equal(state.pendingIdentityResolutions[0]?.state, 'pending_confirmation');
+  assert.equal(state.pendingIdentityResolutions[0]?.state, 'awaiting_evidence');
 });
 
-test('episode departure defers occluded identity and the next episode consumes its one recheck', async () => {
+test('episode departure retains deferred evidence but chroma-only changes do not consume its recheck', async () => {
   const fixture = await createFixture('deferred-recheck');
   const changedFrame = await writeFrame(path.join(fixture.directory, 'deferred-changed.jpg'), '#29436f', '#c5a66b');
   await fixture.repository.setGrant(userId, true);
@@ -575,8 +642,8 @@ test('episode departure defers occluded identity and the next episode consumes i
   assert.equal((await fixture.repository.getState(userId)).pendingIdentityResolutions[0]?.state, 'awaiting_evidence');
   await firstEpisode.endEpisode(userId, 'deferred-one');
   let state = await new JsonUserWardrobeRepository(path.join(fixture.directory, 'wardrobe.json')).getState(userId);
-  assert.equal(state.pendingIdentityResolutions[0]?.state, 'deferred_until_next_episode');
-  assert.equal(state.pendingIdentityResolutions[0]?.currentEvidenceAssetIds.length, 0);
+  assert.equal(state.pendingIdentityResolutions[0]?.state, 'deferred');
+  assert.ok((state.pendingIdentityResolutions[0]?.currentEvidenceAssetIds.length ?? 0) > 0);
 
   const nextEpisode = new AmbientCaptureCoordinator({
     observationProvider: queuedProvider([observed, observed]), identityProvider,
@@ -588,9 +655,35 @@ test('episode departure defers occluded identity and the next episode consumes i
   state = await fixture.repository.getState(userId);
   assert.equal(identityCalls, 2);
   assert.equal(state.pendingIdentityResolutions.length, 1);
-  assert.equal(state.pendingIdentityResolutions[0]?.state, 'pending_confirmation');
-  assert.equal(state.pendingIdentityResolutions[0]?.automaticRecheckCount, 1);
-  assert.equal(state.pendingIdentityResolutions[0]?.episodeId, state.episodes.at(-1)?.episodeId);
+  assert.equal(state.pendingIdentityResolutions[0]?.state, 'awaiting_evidence');
+  assert.equal(state.pendingIdentityResolutions[0]?.automaticRecheckCount, 0);
+});
+
+test('cross-episode pending reconnect requires candidate overlap and never guesses among multiple matches', () => {
+  const track = {
+    trackId: 'new-track', slot: 'bottom' as const, category: 'bottom' as const,
+    appearanceFingerprint: 'fingerprint', descriptor: {
+      slot: 'bottom' as const, category: 'bottom' as const, dominantColor: 'light gray', secondaryColors: [],
+      pattern: 'solid', silhouette: 'straight', fit: 'regular', distinctiveFeatures: ['shorts'],
+    },
+    firstObservationId: 'new-observation', latestObservationId: 'new-observation', consecutiveMatches: 2,
+    identityEvidence: [], maxEvidenceCount: 2,
+  };
+  const pending = (resolutionId: string, candidateClosetItemIds: string[]): PendingIdentityResolution => ({
+    resolutionId, userId, episodeId: 'old-episode', trackId: `old-${resolutionId}`,
+    observationItemId: `old-observation-${resolutionId}`, slot: 'bottom', category: 'bottom',
+    lockedDescriptor: structuredClone(track.descriptor), currentEvidenceAssetIds: [], evidenceSignatures: [],
+    candidateClosetItemIds, candidateSummaries: [], ambiguityReasonCodes: ['INSUFFICIENT_INSTANCE_EVIDENCE'],
+    occludedFeatures: [], automaticRecheckCount: 0, state: 'deferred',
+    createdAt: '2026-08-08T10:00:00.000Z', updatedAt: '2026-08-08T10:00:00.000Z',
+  });
+
+  assert.equal(findPendingResolutionForTrack(
+    [pending('no-overlap', ['pants-a'])], 'new-episode', track, ['pants-b']), undefined);
+  assert.equal(findPendingResolutionForTrack(
+    [pending('one', ['pants-a']), pending('two', ['pants-a'])], 'new-episode', track, ['pants-a']), undefined);
+  assert.equal(findPendingResolutionForTrack(
+    [pending('one', ['pants-a'])], 'new-episode', track, ['pants-a'])?.resolutionId, 'one');
 });
 
 test('episode end and privacy pause remove orphan track evidence', async () => {

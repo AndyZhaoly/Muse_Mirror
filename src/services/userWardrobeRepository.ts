@@ -13,6 +13,7 @@ import type {
   ClosetItemMergePreview,
   MergeClosetItemsResult,
   OutfitCapture,
+  OutfitItemRef,
   OutfitCaptureCommitResult,
   UserWardrobeState,
   WearEvent,
@@ -48,6 +49,13 @@ export interface WardrobeRepository {
     duplicateItemId: string;
   }): Promise<MergeClosetItemsResult>;
   resolveClosetItemId(userId: string, closetItemId: string): Promise<string>;
+  resolvePendingIdentity(input: {
+    userId: string;
+    resolutionId: string;
+    closetItemId: string;
+    state: 'resolved_existing' | 'resolved_new';
+    occurredAt?: string;
+  }): Promise<void>;
 }
 
 export class JsonUserWardrobeRepository implements WardrobeRepository {
@@ -137,6 +145,9 @@ export class JsonUserWardrobeRepository implements WardrobeRepository {
         if (!capture.closetItemIds.includes(duplicate.item.id)) continue;
         capture.closetItemIds = unique(capture.closetItemIds.map((itemId) =>
           itemId === duplicate.item.id ? canonical.item.id : itemId));
+        capture.items = capture.items.map((item) => item.type === 'closet_item' && item.closetItemId === duplicate.item.id
+          ? { ...item, closetItemId: canonical.item.id }
+          : item);
         capture.outfitSignature = outfitSignature(capture.closetItemIds);
       }
       for (const job of state.productImageJobs) {
@@ -266,6 +277,45 @@ export class JsonUserWardrobeRepository implements WardrobeRepository {
     });
   }
 
+  async resolvePendingIdentity(input: {
+    userId: string;
+    resolutionId: string;
+    closetItemId: string;
+    state: 'resolved_existing' | 'resolved_new';
+    occurredAt?: string;
+  }): Promise<void> {
+    await this.exclusive(async () => {
+      const file = await this.readFile();
+      const state = ensureUser(file, input.userId);
+      const occurredAt = input.occurredAt ?? new Date().toISOString();
+      const resolution = state.pendingIdentityResolutions.find((entry) => entry.resolutionId === input.resolutionId);
+      if (!resolution) throw new Error('PENDING_IDENTITY_RESOLUTION_NOT_FOUND');
+      resolution.state = input.state;
+      resolution.updatedAt = occurredAt;
+      for (const capture of state.captures) {
+        const pending = capture.items.find((item) => item.type === 'pending_identity' && item.resolutionId === input.resolutionId);
+        if (!pending) continue;
+        capture.items = capture.items.map((item) => item.type === 'pending_identity' && item.resolutionId === input.resolutionId
+          ? { type: 'closet_item' as const, closetItemId: input.closetItemId, slot: item.slot }
+          : item);
+        capture.closetItemIds = unique([...capture.closetItemIds, input.closetItemId]);
+        capture.outfitSignature = outfitReferenceSignature(capture.items);
+        if (!state.wearEvents.some((event) => event.captureId === capture.captureId && event.closetItemId === input.closetItemId)) {
+          state.wearEvents.push({
+            wearEventId: makeId('wear_event'),
+            userId: input.userId,
+            closetItemId: input.closetItemId,
+            captureId: capture.captureId,
+            episodeId: capture.episodeId,
+            wornAt: capture.capturedAt,
+          });
+        }
+      }
+      bump(state, occurredAt);
+      await this.writeFile(file);
+    });
+  }
+
   async removePendingIdentityResolutions(userId: string, resolutionIds: string[]): Promise<void> {
     if (!resolutionIds.length) return;
     await this.exclusive(async () => {
@@ -282,24 +332,42 @@ export class JsonUserWardrobeRepository implements WardrobeRepository {
     userId: string,
     episodeId: string,
     occurredAt = new Date().toISOString(),
-    deferPending = true,
+    mode: 'defer_pending' | 'preserve_pending' | 'discard_all' = 'defer_pending',
   ): Promise<GarmentImageAsset[]> {
     return this.exclusive(async () => {
       const file = await this.readFile();
       const state = ensureUser(file, userId);
       const episode = state.episodes.find((entry) => entry.episodeId === episodeId);
       const ids = new Set(episode?.garmentTracks?.flatMap((track) => track.identityEvidence.map((evidence) => evidence.assetId)) ?? []);
-      const removed = state.assets.filter((asset) => ids.has(asset.assetId) && asset.role === 'track_identity_evidence');
-      state.assets = state.assets.filter((asset) => !ids.has(asset.assetId) || asset.role !== 'track_identity_evidence');
+      const episodePending = state.pendingIdentityResolutions.filter((resolution) =>
+        resolution.episodeId === episodeId &&
+        resolution.state !== 'resolved_existing' &&
+        resolution.state !== 'resolved_new');
+      const retainedIds = mode === 'discard_all'
+        ? new Set<string>()
+        : new Set(episodePending.flatMap((resolution) => resolution.currentEvidenceAssetIds));
+      const removed = state.assets.filter((asset) =>
+        ids.has(asset.assetId) &&
+        !retainedIds.has(asset.assetId) &&
+        asset.role === 'track_identity_evidence');
+      state.assets = state.assets.filter((asset) =>
+        !ids.has(asset.assetId) || retainedIds.has(asset.assetId) || asset.role !== 'track_identity_evidence');
       if (episode?.garmentTracks) {
-        episode.garmentTracks = episode.garmentTracks.map((track) => ({ ...track, identityEvidence: [] }));
+        episode.garmentTracks = episode.garmentTracks.map((track) => ({
+          ...track,
+          identityEvidence: track.identityEvidence.filter((evidence) => retainedIds.has(evidence.assetId)),
+        }));
       }
-      state.pendingIdentityResolutions = deferPending
-        ? state.pendingIdentityResolutions.map((resolution) =>
-            resolution.episodeId === episodeId
-              ? { ...resolution, currentEvidenceAssetIds: [], state: 'deferred_until_next_episode', updatedAt: occurredAt }
-              : resolution)
-        : state.pendingIdentityResolutions.filter((resolution) => resolution.episodeId !== episodeId);
+      state.pendingIdentityResolutions = mode === 'discard_all'
+        ? state.pendingIdentityResolutions.filter((resolution) => resolution.episodeId !== episodeId)
+        : mode === 'defer_pending'
+          ? state.pendingIdentityResolutions.map((resolution) =>
+              resolution.episodeId === episodeId &&
+              resolution.state !== 'resolved_existing' &&
+              resolution.state !== 'resolved_new'
+                ? { ...resolution, state: 'deferred' as const, updatedAt: occurredAt }
+                : resolution)
+          : state.pendingIdentityResolutions;
       bump(state, occurredAt);
       await this.writeFile(file);
       return structuredClone(removed);
@@ -347,7 +415,8 @@ export class JsonUserWardrobeRepository implements WardrobeRepository {
       const captureId = makeId('outfit_capture');
       const createdClosetItemIds: string[] = [];
       const recognizedClosetItemIds: string[] = [];
-      for (const item of proposal.items) {
+      const resolvedItems = proposal.items.filter((item) => item.type === 'closet_item');
+      for (const item of resolvedItems) {
         const appearanceAsset = structuredClone(item.appearanceAsset);
         appearanceAsset.closetItemId = item.resolvedClosetItemId;
         const existingAssetIndex = state.assets.findIndex((asset) => asset.assetId === appearanceAsset.assetId);
@@ -399,14 +468,17 @@ export class JsonUserWardrobeRepository implements WardrobeRepository {
         sessionId: proposal.sessionId,
         episodeId: proposal.episodeId,
         observationId: proposal.observation.observationId,
-        closetItemIds: proposal.items.map((item) => item.resolvedClosetItemId),
+        closetItemIds: resolvedItems.map((item) => item.resolvedClosetItemId),
+        items: proposal.items.map((item) => item.type === 'closet_item'
+          ? { type: 'closet_item', closetItemId: item.resolvedClosetItemId, slot: item.observation.slot }
+          : { type: 'pending_identity', resolutionId: item.pendingResolutionId, slot: item.observation.slot }),
         outfitSignature: proposal.outfitSignature,
         repeatedOutfit: proposal.repeatedOutfit,
         evidenceImageUrl: proposal.evidenceAsset.imageUrl,
         capturedAt: proposal.packet.capturedAt,
         committedAt: now,
       };
-      const appearances: GarmentAppearance[] = proposal.items.map((item) => ({
+      const appearances: GarmentAppearance[] = resolvedItems.map((item) => ({
         appearanceId: makeId('garment_appearance'),
         userId: proposal.userId,
         closetItemId: item.resolvedClosetItemId,
@@ -419,7 +491,7 @@ export class JsonUserWardrobeRepository implements WardrobeRepository {
         confidence: item.observation.confidence,
         capturedAt: proposal.packet.capturedAt,
       }));
-      const wearEvents: WearEvent[] = proposal.items.map((item) => ({
+      const wearEvents: WearEvent[] = resolvedItems.map((item) => ({
         wearEventId: makeId('wear_event'),
         userId: proposal.userId,
         closetItemId: item.resolvedClosetItemId,
@@ -665,6 +737,38 @@ function normalizeUserState(state: UserWardrobeState): void {
   state.identityDecisionTraces ??= [];
   state.pendingIdentityResolutions ??= [];
   state.closetItemAliases ??= {};
+  for (const capture of state.captures) {
+    capture.items ??= capture.closetItemIds.map((closetItemId) => ({
+      type: 'closet_item' as const,
+      closetItemId,
+      slot: inferLegacySlot(state, closetItemId),
+    }));
+  }
+  state.pendingIdentityResolutions = state.pendingIdentityResolutions.map((resolution) => {
+    const legacyState = resolution.state as string;
+    const track = state.episodes.flatMap((episode) => episode.garmentTracks ?? [])
+      .find((candidate) => candidate.trackId === resolution.trackId);
+    const lockedDescriptor = resolution.lockedDescriptor ?? track?.descriptor ?? legacyDescriptor(resolution);
+    return {
+      ...resolution,
+      state: legacyState === 'pending_confirmation'
+        ? 'ready_to_ask'
+        : legacyState === 'deferred_until_next_episode' ? 'deferred' : resolution.state,
+      lockedDescriptor,
+      evidenceSignatures: resolution.evidenceSignatures ?? resolution.currentEvidenceAssetIds.flatMap((assetId) => {
+        const evidence = track?.identityEvidence.find((entry) => entry.assetId === assetId);
+        const asset = state.assets.find((entry) => entry.assetId === assetId);
+        return evidence ? [{
+          assetId,
+          perceptualHash: asset?.perceptualHash,
+          boundingBox: evidence.boundingBox ?? { x: 0, y: 0, width: 1, height: 1 },
+          descriptor: evidence.descriptor,
+          coverage: evidence.coverage ?? 'upper_body',
+        }] : [];
+      }),
+      candidateSummaries: resolution.candidateSummaries ?? [],
+    };
+  });
   for (const entry of state.closetItems) {
     const legacyStatus = entry.status as string;
     if (legacyStatus === 'provisional' || legacyStatus === 'confirmed') entry.status = 'active';
@@ -673,6 +777,25 @@ function normalizeUserState(state: UserWardrobeState): void {
       entry.item.ownershipStatus ??= 'unverified';
     }
   }
+}
+
+function inferLegacySlot(state: UserWardrobeState, closetItemId: string): 'top' | 'bottom' | 'outerwear' | 'shoes' | 'bag' | 'accessory' | 'dress' {
+  const category = state.closetItems.find((entry) => entry.item.id === closetItemId)?.item.category;
+  if (category === 'top' || category === 'bottom' || category === 'outerwear' || category === 'shoes' || category === 'bag' || category === 'accessory' || category === 'dress') return category;
+  return 'accessory';
+}
+
+function legacyDescriptor(resolution: PendingIdentityResolution): PendingIdentityResolution['lockedDescriptor'] {
+  return {
+    slot: resolution.slot ?? 'accessory',
+    category: resolution.category ?? 'accessory',
+    dominantColor: 'unknown',
+    secondaryColors: [],
+    pattern: 'other',
+    silhouette: 'unknown',
+    fit: 'unknown',
+    distinctiveFeatures: [],
+  };
 }
 
 function sanitizeIdentityTrace(trace: GarmentIdentityDecisionTrace): GarmentIdentityDecisionTrace {
@@ -782,6 +905,15 @@ function hasReadyPrimary(state: UserWardrobeState, entry: AmbientClosetItem): bo
 
 function outfitSignature(closetItemIds: string[]): string {
   return createHash('sha256').update([...closetItemIds].sort().join('|')).digest('hex').slice(0, 24);
+}
+
+function outfitReferenceSignature(items: OutfitItemRef[]): string {
+  return createHash('sha256')
+    .update(items.map((item) => item.type === 'closet_item'
+      ? item.closetItemId
+      : `pending:${item.resolutionId}`).sort().join('|'))
+    .digest('hex')
+    .slice(0, 24);
 }
 
 function migrateTraceItemId(trace: GarmentIdentityDecisionTrace, duplicateItemId: string, canonicalItemId: string): void {

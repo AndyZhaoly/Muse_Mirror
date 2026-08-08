@@ -378,9 +378,43 @@ export class GarmentImageAssetService {
       mimeType,
       verificationStatus: input.verificationStatus,
       contentHash: createHash('sha256').update(input.bytes).digest('hex'),
+      perceptualHash: await differenceHash(input.bytes),
       createdAt: input.createdAt ?? new Date().toISOString(),
     };
   }
+}
+
+export async function differenceHash(bytes: Buffer): Promise<string> {
+  const pixels = await sharp(bytes, { failOn: 'error' })
+    .resize(9, 8, { fit: 'fill' })
+    .grayscale()
+    .raw()
+    .toBuffer();
+  let bits = '';
+  for (let row = 0; row < 8; row += 1) {
+    for (let column = 0; column < 8; column += 1) {
+      const offset = row * 9 + column;
+      bits += (pixels[offset] ?? 0) > (pixels[offset + 1] ?? 0) ? '1' : '0';
+    }
+  }
+  return Array.from({ length: 16 }, (_, index) =>
+    Number.parseInt(bits.slice(index * 4, index * 4 + 4), 2).toString(16)).join('');
+}
+
+export function perceptualHashDistance(left: string | undefined, right: string | undefined): number | undefined {
+  if (!left || !right || left.length !== right.length) return undefined;
+  let distance = 0;
+  for (let index = 0; index < left.length; index += 1) {
+    const leftNibble = Number.parseInt(left[index]!, 16);
+    const rightNibble = Number.parseInt(right[index]!, 16);
+    if (!Number.isFinite(leftNibble) || !Number.isFinite(rightNibble)) return undefined;
+    let xor = leftNibble ^ rightNibble;
+    while (xor) {
+      distance += xor & 1;
+      xor >>>= 1;
+    }
+  }
+  return distance;
 }
 
 export async function deterministicCropQuality(bytes: Buffer): Promise<GarmentCropQuality> {
