@@ -76,10 +76,8 @@ export interface AppConfig {
   productImageVerifyConfidence: number;
   identityTopK: number;
   identityPairMatchConfidence: number;
-  identityVetoMinPrior: number;
   identityMaxVisualCandidates: number;
   identityBaseNewConfidence: number;
-  identityStrongPriorVeto: number;
   identityNewConfidenceCeiling: number;
   identityTraceLimit: number;
   identityStrongContinuityWindowMs: number;
@@ -408,10 +406,8 @@ export function loadConfig(): AppConfig {
     productImageVerifyConfidence: numberEnv('FASHION_AGENT_PRODUCT_IMAGE_VERIFY_CONFIDENCE', 0.84),
     identityTopK: Math.max(1, Math.round(numberEnv('FASHION_AGENT_IDENTITY_TOP_K', 4))),
     identityPairMatchConfidence: numberEnv('FASHION_AGENT_IDENTITY_PAIR_MATCH_CONFIDENCE', 0.88),
-    identityVetoMinPrior: numberEnv('FASHION_AGENT_IDENTITY_VETO_MIN_PRIOR', 0.6),
     identityMaxVisualCandidates: Math.max(1, Math.round(numberEnv('FASHION_AGENT_IDENTITY_MAX_VISUAL_CANDIDATES', 3))),
     identityBaseNewConfidence: numberEnv('FASHION_AGENT_IDENTITY_BASE_NEW_CONFIDENCE', 0.78),
-    identityStrongPriorVeto: numberEnv('FASHION_AGENT_IDENTITY_STRONG_PRIOR_VETO', 0.85),
     identityNewConfidenceCeiling: Math.min(
       0.99,
       Math.max(0, numberEnv('FASHION_AGENT_IDENTITY_NEW_CONFIDENCE_CEILING', 0.9)),

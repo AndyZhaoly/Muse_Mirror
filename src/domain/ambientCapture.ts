@@ -298,7 +298,7 @@ export interface GarmentIdentityDecisionTrace {
   thresholds: {
     matchConfidence: number;
     baseNewConfidence: number;
-    strongPriorVeto: number;
+    strongPriorVeto?: number;
     vetoMinPrior?: number;
   };
   finalDecision: GarmentIdentityStatus;

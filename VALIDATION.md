@@ -73,12 +73,11 @@ node --import tsx --test \
 ```
 
 The layered identity suite additionally verifies canonical English/Chinese sleeve, neckline, length, and
-material values; physical-only hard exclusions and soft color/length contradictions; locked-current descriptor
-sentinels; server-controlled class-level versus instance-specific evidence; strict historical and catalog-only
-Safe Same gates; the `0.60` weighted creation-veto floor; always-ambiguous multiple safe matches; and the `0.85`
-high-prior auto-create block. It also verifies that a `barely`
-visible slot is dropped while another clear garment completes capture. These thresholds are deterministic
-routing controls, not calibrated probabilities:
+material values; obvious core-tag contradictions; dominant/secondary palette overlap; tolerance for texture-label
+drift; locked-current descriptor sentinels; recent-wear core-tag reuse; pairwise visual fallback; fixed match/new
+thresholds; always-ambiguous multiple safe matches; and the rule that uncertainty never creates a garment. It also
+verifies that a `barely` visible slot is dropped while another clear garment completes capture. The confidence
+thresholds are deterministic routing controls, not calibrated probabilities:
 
 ```bash
 node --import tsx --test \
@@ -124,9 +123,10 @@ including when the final identity result is `ambiguous`. Deleting transient busi
 wardrobe reset must not remove these diagnostic copies. Keep the default rolling limit bounded and disable this
 mode on shared production deployments unless the photo-retention policy explicitly allows it.
 
-Identity safety fixtures also verify that generic style similarity and VLM confidence cannot establish physical
-identity, metadata/continuity prior cannot establish a match, multiple safe candidates remain ambiguous, and a
-fallback candidate cannot auto-match. Multi-frame fixtures verify first-frame ephemeral retention, two-frame
+Identity safety fixtures verify that an obvious category/color/pattern/sleeve/length/neckline contradiction can
+establish a new garment without a visual call, recent continuity plus three agreeing core tags can reuse the prior
+item, uncertain pairwise evidence cannot create a garment, multiple safe candidates remain ambiguous, and a fallback
+candidate cannot auto-match. Multi-frame fixtures verify first-frame ephemeral retention, two-frame
 pairwise input, cross-frame consistency/mixed evidence, perceptual/bounding-box/coverage-gated recheck, the
 one-recheck limit, cross-episode deferral, and cleanup on episode end/privacy pause. Progressive-commit fixtures
 also require that one ambiguous garment does not block resolved garments, that an OutfitCapture persists the

@@ -3,10 +3,43 @@ import test from 'node:test';
 import type { GarmentAppearanceDescriptor, PairwiseGarmentVerification } from '../src/domain/ambientCapture.js';
 import {
   attributeCompatibility,
+  compareCoreIdentityTags,
   hardAttributeExclusion,
   identityEvidenceClass,
   normalizePairwiseVerification,
 } from '../src/services/garmentIdentityEvidence.js';
+
+test('core tags directly distinguish an obviously different shirt', () => {
+  const comparison = compareCoreIdentityTags(
+    descriptor({ dominantColor: 'black', pattern: 'solid', sleeve: 'short', neckline: 'crew' }),
+    descriptor({ dominantColor: 'beige', pattern: 'graphic', sleeve: 'short', neckline: 'crew' }),
+  );
+  assert.deepEqual(comparison.contradictions.sort(), ['dominant_color', 'pattern_family']);
+  assert.ok(comparison.agreements.includes('category'));
+  assert.ok(comparison.agreements.includes('sleeve_length'));
+  assert.ok(comparison.agreements.includes('neckline_family'));
+});
+
+test('secondary color overlap prevents lighting drift from splitting the same shorts', () => {
+  const comparison = compareCoreIdentityTags(
+    descriptor({ slot: 'bottom', category: 'bottom', dominantColor: 'pink', pattern: 'solid', lengthClass: 'short' }),
+    descriptor({
+      slot: 'bottom', category: 'bottom', dominantColor: 'off_white', secondaryColors: ['pink'],
+      pattern: 'solid', lengthClass: 'medium',
+    }),
+  );
+  assert.deepEqual(comparison.contradictions, []);
+  assert.ok(comparison.agreements.includes('dominant_color'));
+  assert.ok(comparison.agreements.includes('pattern_family'));
+});
+
+test('texture wording drift is not treated as an obvious pattern contradiction', () => {
+  const comparison = compareCoreIdentityTags(
+    descriptor({ pattern: 'solid' }),
+    descriptor({ pattern: 'knit_texture' }),
+  );
+  assert.deepEqual(comparison.contradictions, []);
+});
 
 test('color pattern sleeve neckline and length contradictions are soft evidence', () => {
   assert.equal(hardAttributeExclusion(

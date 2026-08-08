@@ -67,14 +67,14 @@ and Chinese labels are normalized only at comparison time, while visually uncert
 neckline, length, and material stay
 `unknown` and contribute no identity similarity.
 
-Identity resolution keeps recall broad, removes only physically impossible slot/category candidates, and then
-verifies at most three surviving ClosetItems one at a time. The current descriptor is locked before each visual
-comparison, and a verifier that changes its reading of the current color/sleeve/neckline is downgraded to
-uncertain. Only jointly visible
-instance-specific construction evidence can establish a safe match or difference; generic color, neckline, sleeve,
-pattern-family, fit, or silhouette similarity cannot prove physical identity. Catalog-only references use a stricter
-gate than historical real appearances. Recent wear and metadata prior only rank candidates and veto risky automatic
-creation; they never establish a match or choose among multiple safe matches. Ambiguous evidence writes no
+Identity resolution keeps recall broad, then compares a small set of visually stable core tags: physical category,
+color palette, stable pattern family, sleeve length, coarse garment length, and neckline family. An obvious core-tag
+contradiction removes that candidate without spending a visual-model call. A candidate worn in the immediately
+previous capture can be reused when at least three visible core tags agree and none contradict. Remaining plausible
+candidates are compared one ClosetItem at a time by the pairwise visual verifier. A confident pairwise `same` reuses
+the item; a new item is created only when every remaining candidate is confidently `different`; uncertainty never
+becomes `new`. Multiple valid matches remain ambiguous. This deliberately avoids dynamic prior vetoes and special
+catalog-only identity gates. Ambiguous evidence writes no
 ClosetItem for that garment, but it no longer blocks resolved garments in the same outfit. The capture records a
 durable `pending_identity` reference beside ordinary closet-item references, so later evidence or a future
 confirmation adapter can resolve only that slot. The latest 200 sanitized decision traces remain available to the
@@ -87,8 +87,7 @@ Duplicate overlay items can be repaired through a dry-run-first, atomic reposito
 archived as an alias and is excluded from recommendation without deleting its historical appearances or wear.
 
 The first reliable frame now retains ephemeral garment-track crops; the second reliable frame supplies a second
-view to the same pairwise identity check. Catalog-only matches require consistent instance-specific evidence across
-both current views. Occlusion-driven ambiguity waits for a meaningfully changed crop and may recheck once;
+view to the same pairwise identity check. Occlusion-driven ambiguity waits for a meaningfully changed crop and may recheck once;
 otherwise it becomes `ready_to_ask` without PR8 initiating a conversation. Episode departure defers bounded
 garment-crop evidence; privacy pause discards it. Safe cross-episode reconnect additionally requires compatible
 descriptors and candidate overlap, and never arbitrarily chooses among multiple pending records. Local,
@@ -219,12 +218,8 @@ OPENAI_PRODUCT_IMAGE_SIZE=1024x1024
 FASHION_AGENT_PRODUCT_IMAGE_VERIFY_CONFIDENCE=0.84
 FASHION_AGENT_IDENTITY_TOP_K=4
 FASHION_AGENT_IDENTITY_PAIR_MATCH_CONFIDENCE=0.88
-FASHION_AGENT_IDENTITY_SAFE_SAME_MIN_PRIOR=0.55
-FASHION_AGENT_IDENTITY_VETO_MIN_PRIOR=0.60
-FASHION_AGENT_IDENTITY_MULTIPLE_SAFE_MATCH_MARGIN=0.15
 FASHION_AGENT_IDENTITY_MAX_VISUAL_CANDIDATES=3
 FASHION_AGENT_IDENTITY_BASE_NEW_CONFIDENCE=0.78
-FASHION_AGENT_IDENTITY_STRONG_PRIOR_VETO=0.85
 FASHION_AGENT_IDENTITY_NEW_CONFIDENCE_CEILING=0.9
 FASHION_AGENT_IDENTITY_TRACE_LIMIT=200
 FASHION_AGENT_IDENTITY_STRONG_CONTINUITY_WINDOW_MS=3600000

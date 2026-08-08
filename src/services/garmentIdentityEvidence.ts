@@ -12,6 +12,7 @@ import {
   canonicalizeLengthClass,
   canonicalizeNeckline,
   canonicalizePattern,
+  canonicalizeSleeve,
   colorSimilarity,
   sleeveClassDistance,
 } from './garmentVocabulary.js';
@@ -48,6 +49,19 @@ export interface SafeSameAssessment {
   temporalEvidenceConsistency: TemporalEvidenceConsistency;
 }
 
+export type CoreIdentityTag =
+  | 'category'
+  | 'dominant_color'
+  | 'pattern_family'
+  | 'sleeve_length'
+  | 'garment_length'
+  | 'neckline_family';
+
+export interface CoreIdentityTagComparison {
+  agreements: CoreIdentityTag[];
+  contradictions: CoreIdentityTag[];
+}
+
 export type HardAttributeExclusionReason = 'PHYSICAL_CATEGORY_OR_SLOT_CONTRADICTION';
 
 export interface AttributeCompatibilityResult {
@@ -70,11 +84,10 @@ export function isClassLevelFeature(feature: GarmentIdentityFeature): boolean {
 }
 
 export function requiredDifferentConfidence(
-  effectivePrior: number,
+  _effectivePrior: number,
   baseNewConfidence = 0.78,
 ): number {
-  const priorPenalty = Math.max(0, effectivePrior - 0.6) * 0.5;
-  return Math.min(0.95, baseNewConfidence + priorPenalty);
+  return baseNewConfidence;
 }
 
 export function normalizePairwiseVerification(
@@ -128,7 +141,7 @@ export function assessSafeSame(
   candidate: GarmentIdentityCandidate,
   verification: PairwiseGarmentVerification,
   thresholds: Pick<IdentityEvidenceThresholds, 'matchConfidence'>,
-  currentEvidenceCount = 1,
+  _currentEvidenceCount = 1,
 ): SafeSameAssessment {
   const rejectReasons: string[] = [];
   const jointlyVisibleEvidence = verification.featureComparisons.filter(jointlyVisible);
@@ -137,10 +150,6 @@ export function assessSafeSame(
     isClassLevelFeature(comparison.feature)));
   const instanceSpecific = same.filter((comparison) => isInstanceSpecificFeature(comparison.feature));
   const instanceSpecificSameFeatures = uniqueFeatures(instanceSpecific);
-  const strongInstanceFeatures = uniqueFeatures(instanceSpecific.filter((comparison) =>
-    comparison.discriminativeStrength === 'strong'));
-  const mediumOrStrongInstanceFeatures = uniqueFeatures(instanceSpecific.filter((comparison) =>
-    comparison.discriminativeStrength === 'medium' || comparison.discriminativeStrength === 'strong'));
   const hasStrongContradiction = jointlyVisibleEvidence.some((comparison) =>
     comparison.relation === 'different' &&
     comparison.discriminativeStrength === 'strong' &&
@@ -152,18 +161,6 @@ export function assessSafeSame(
   if (verification.confidence < thresholds.matchConfidence) rejectReasons.push('MATCH_CONFIDENCE_BELOW_THRESHOLD');
   if (hasStrongContradiction) rejectReasons.push('STRONG_INSTANCE_CONTRADICTION');
 
-  if (candidate.referenceEvidenceType === 'historical_appearance') {
-    if (strongInstanceFeatures.length < 1 && mediumOrStrongInstanceFeatures.length < 2) {
-      rejectReasons.push('INSUFFICIENT_HISTORICAL_INSTANCE_EVIDENCE');
-    }
-  } else {
-    if (strongInstanceFeatures.length < 1 || mediumOrStrongInstanceFeatures.length < 2) {
-      rejectReasons.push('INSUFFICIENT_CATALOG_INSTANCE_EVIDENCE');
-    }
-    if (currentEvidenceCount >= 2 && temporalEvidenceConsistency !== 'consistent') {
-      rejectReasons.push('CATALOG_MATCH_REQUIRES_CROSS_FRAME_CONSISTENCY');
-    }
-  }
   if (temporalEvidenceConsistency === 'mixed') rejectReasons.push('MIXED_TEMPORAL_EVIDENCE');
 
   return {
@@ -190,15 +187,75 @@ export function isSafeDifferent(
   thresholds: Pick<IdentityEvidenceThresholds, 'baseNewConfidence'>,
 ): boolean {
   if (candidate.tier === 'fallback' || verification.verdict !== 'different' ||
-      verification.confidence < requiredDifferentConfidence(candidate.effectivePrior, thresholds.baseNewConfidence)) {
+      verification.confidence < thresholds.baseNewConfidence) {
     return false;
   }
-  if (candidate.effectivePrior >= 0.7 && verification.occlusions.length > 0) return false;
   return verification.featureComparisons.some((comparison) =>
     jointlyVisible(comparison) &&
     comparison.relation === 'different' &&
-    comparison.discriminativeStrength !== 'weak' &&
-    isInstanceSpecificFeature(comparison.feature));
+    comparison.discriminativeStrength !== 'weak');
+}
+
+/**
+ * Compares only coarse, visually stable garment tags. A contradiction is
+ * useful for proving two garments are different; agreements are supporting
+ * evidence and never prove identity on their own without continuity or VLM.
+ */
+export function compareCoreIdentityTags(
+  current: GarmentAppearanceDescriptor,
+  candidate: GarmentAppearanceDescriptor,
+): CoreIdentityTagComparison {
+  const agreements: CoreIdentityTag[] = [];
+  const contradictions: CoreIdentityTag[] = [];
+
+  if (current.slot === candidate.slot && samePhysicalCategory(current.category, candidate.category)) {
+    agreements.push('category');
+  } else {
+    contradictions.push('category');
+  }
+
+  const currentColors = identityPalette(current);
+  const candidateColors = identityPalette(candidate);
+  if (currentColors.length && candidateColors.length) {
+    const similarities = currentColors.flatMap((left) =>
+      candidateColors.map((right) => colorSimilarity(left, right)));
+    if (similarities.some((similarity) => similarity > 0)) agreements.push('dominant_color');
+    else contradictions.push('dominant_color');
+  }
+
+  const currentPattern = canonicalizePattern(current.pattern);
+  const candidatePattern = canonicalizePattern(candidate.pattern);
+  if (currentPattern !== 'other' && candidatePattern !== 'other') {
+    if (currentPattern === candidatePattern) agreements.push('pattern_family');
+    else if (obviousPatternContradiction(currentPattern, candidatePattern)) contradictions.push('pattern_family');
+  }
+
+  const currentSleeve = canonicalizeSleeve(current.sleeve);
+  const candidateSleeve = canonicalizeSleeve(candidate.sleeve);
+  if (currentSleeve !== 'unknown' && candidateSleeve !== 'unknown') {
+    if (currentSleeve === candidateSleeve) agreements.push('sleeve_length');
+    else if (obviousSleeveContradiction(currentSleeve, candidateSleeve)) contradictions.push('sleeve_length');
+  }
+
+  const currentLength = canonicalizeLengthClass(current.lengthClass);
+  const candidateLength = canonicalizeLengthClass(candidate.lengthClass);
+  if (currentLength !== 'unknown' && candidateLength !== 'unknown') {
+    if (currentLength === candidateLength) agreements.push('garment_length');
+    else if (new Set([currentLength, candidateLength]).has('short') &&
+      new Set([currentLength, candidateLength]).has('long')) contradictions.push('garment_length');
+  }
+
+  const currentNeckline = canonicalizeNeckline(current.neckline);
+  const candidateNeckline = canonicalizeNeckline(candidate.neckline);
+  if (currentNeckline !== 'unknown' && candidateNeckline !== 'unknown') {
+    if (currentNeckline === candidateNeckline) agreements.push('neckline_family');
+    else if (obviousNecklineContradiction(currentNeckline, candidateNeckline)) contradictions.push('neckline_family');
+  }
+
+  return {
+    agreements: [...new Set(agreements)],
+    contradictions: [...new Set(contradictions)],
+  };
 }
 
 export function attributeCompatibility(
@@ -234,6 +291,32 @@ export function attributeCompatibility(
     softContradictions.push('LENGTH_CLASS_CONTRADICTION');
   }
   return { softContradictions };
+}
+
+function identityPalette(descriptor: GarmentAppearanceDescriptor): string[] {
+  return [...new Set([descriptor.dominantColor, ...descriptor.secondaryColors]
+    .map(canonicalizeColor)
+    .filter((color) => color !== 'unknown' && color !== 'multicolor'))];
+}
+
+function obviousPatternContradiction(left: string, right: string): boolean {
+  if (left === right) return false;
+  const stableFamilies = new Set(['stripe', 'check', 'floral', 'print', 'graphic', 'colorblock']);
+  if (left === 'solid' || right === 'solid') {
+    return stableFamilies.has(left === 'solid' ? right : left);
+  }
+  return stableFamilies.has(left) && stableFamilies.has(right);
+}
+
+function obviousSleeveContradiction(left: string, right: string): boolean {
+  if (left === right || left === 'three_quarter' || right === 'three_quarter') return false;
+  return true;
+}
+
+function obviousNecklineContradiction(left: string, right: string): boolean {
+  if (left === right) return false;
+  const stableFamilies = new Set(['crew', 'v', 'collar', 'turtleneck', 'hooded']);
+  return stableFamilies.has(left) && stableFamilies.has(right);
 }
 
 export function hardAttributeExclusion(

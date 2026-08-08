@@ -17,7 +17,7 @@ import {
   canonicalizeSleeve,
 } from './garmentVocabulary.js';
 
-export const GARMENT_PAIRWISE_PROMPT_VERSION = 'garment-pairwise-v3-instance-taxonomy';
+export const GARMENT_PAIRWISE_PROMPT_VERSION = 'garment-pairwise-v4-simple-visual-identity';
 
 export interface GarmentPairwiseVerificationInput {
   currentAppearances: GarmentImageAsset[];
@@ -84,16 +84,18 @@ export class OpenAIGarmentVisualVerifier implements GarmentPairwiseVerifier {
           })}`,
           'Treat the locked current descriptor as the canonical reading of the current garment. Do not reinterpret the current image to resemble the reference.',
           'Repeat your own current-image color, sleeve, and neckline readings in the structured currentColor/currentSleeve/currentNeckline fields.',
-          'Color, category family, sleeve length, neckline family, texture family, fit, silhouette, length, and general shape are class-level style evidence. They can never establish that two physical garments are the same item.',
+          'Make the same practical judgment a careful person would make from two photos of one garment.',
+          'Use the complete jointly visible appearance: category, color palette, stable pattern or graphic, sleeve length, neckline, garment length, overall silhouette, and any distinctive construction details.',
+          'When those visible characteristics agree and there is no meaningful contradiction, you may return same even if the garment has no unique logo, pocket, or stitching detail.',
           'Use only regions and features that are jointly visible in the current and reference images.',
           'A feature visible in one image but occluded, covered, or cropped out in the other is unknown, never different.',
           'For example, when a shirt covers a trouser waistband or drawstring, absence of that detail is not identity evidence.',
           'Length, fit, looseness, and silhouette are affected by crop, distance, wearer pose, and body position. They may be weak supporting evidence but can never alone decide different.',
           'Lighting and white balance can change apparent color. Slight color drift is not decisive.',
-          'Physical identity requires jointly visible instance-specific construction details: pattern/print/logo placement, pocket geometry, drawstring construction, closure/button/zipper layout, unique decoration, stitching layout, waistband/hem/cuff construction, unique texture details, or distinctive hardware.',
-          'Use pattern_family only for the broad pattern type. Use pattern_placement or print_placement for location-specific evidence. Use pocket_geometry, button_layout, and the other construction-specific enum values rather than generic pocket or button labels.',
+          'Distinctive construction details such as print placement, pockets, drawstrings, closures, stitching, waistbands, hems, cuffs, texture, and hardware are especially useful when available, but are not mandatory for a same verdict.',
+          'Use pattern_family for broad pattern agreement and pattern_placement or print_placement when placement is visible.',
           'Ignore the wearer, face, body shape, pose, and background.',
-          'Return per-current-frame structured evidence. Temporal consistency is consistent only when the same instance-specific detail supports identity across both current frames, mixed when strong evidence conflicts, and insufficient otherwise.',
+          'Return per-current-frame structured evidence. Temporal consistency is consistent when the visible identity evidence agrees across current frames, mixed when material evidence conflicts, and insufficient when the frames add too little information.',
           'Return uncertain whenever jointly visible discriminative evidence is insufficient.',
           'Use high confidence only when the structured evidence supports it.',
         ].join('\n'),

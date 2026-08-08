@@ -19,7 +19,7 @@ import { makeId } from '../utils/ids.js';
 import {
   assessSafeSame,
   attributeCompatibility,
-  hardAttributeExclusion,
+  compareCoreIdentityTags,
   isSafeDifferent,
   isSafeSame,
   normalizePairwiseVerification,
@@ -115,8 +115,6 @@ export class VisualGarmentIdentityProvider implements GarmentIdentityProvider {
       matchConfidence?: number;
       baseNewConfidence?: number;
       newConfidence?: number;
-      strongPriorVeto?: number;
-      vetoMinPrior?: number;
       maxVisualCandidates?: number;
       newConfidenceCeiling?: number;
       strongContinuityWindowMs?: number;
@@ -139,8 +137,6 @@ export class VisualGarmentIdentityProvider implements GarmentIdentityProvider {
     const thresholds = {
       matchConfidence: this.options.matchConfidence ?? 0.88,
       baseNewConfidence: this.options.baseNewConfidence ?? this.options.newConfidence ?? 0.78,
-      strongPriorVeto: this.options.strongPriorVeto ?? 0.85,
-      vetoMinPrior: this.options.vetoMinPrior ?? 0.6,
     };
     const traceBase = {
       traceId: makeId('identity_trace'),
@@ -177,16 +173,49 @@ export class VisualGarmentIdentityProvider implements GarmentIdentityProvider {
         ...recall.evidence,
       ], recall);
     }
+    const coreComparisons = new Map(decisionCandidates.map((candidate) => [
+      candidate.closetItemId,
+      compareCoreIdentityTags(descriptor, candidate.descriptor),
+    ]));
     const excludedResults = decisionCandidates.flatMap((candidate) => {
-      const reason = hardAttributeExclusion(descriptor, candidate.descriptor);
-      return reason ? [excludedVerificationRecord(candidate, descriptor, reason)] : [];
+      const contradictions = coreComparisons.get(candidate.closetItemId)?.contradictions ?? [];
+      return contradictions.length
+        ? [excludedVerificationRecord(candidate, descriptor, `CORE_TAG_CONTRADICTION:${contradictions.join(',')}`)]
+        : [];
     });
     const excludedIds = new Set(excludedResults.map((result) => result.candidate.closetItemId));
     const survivors = decisionCandidates.filter((candidate) => !excludedIds.has(candidate.closetItemId));
-    const vetoSet = survivors.filter((candidate) => candidate.effectivePrior >= thresholds.vetoMinPrior);
-    const topPrior = decisionCandidates[0]?.effectivePrior ?? 0;
 
-    if (!this.options.verifier.ready && vetoSet.length > 0) {
+    const strongContinuityWeight = this.options.strongContinuityWeight ?? 0.08;
+    const continuityMatches = survivors.filter((candidate) => {
+      const comparison = coreComparisons.get(candidate.closetItemId);
+      return candidate.continuityPrior >= strongContinuityWeight &&
+        (comparison?.agreements.length ?? 0) >= 3;
+    });
+    if (continuityMatches.length === 1) {
+      const match = continuityMatches[0]!;
+      return this.finalize(input, fingerprint, selected, excludedResults, traceBase, 'matched_existing',
+        Math.max(thresholds.matchConfidence, match.effectivePrior), [
+          'RECENT_WEAR_CORE_TAG_MATCH',
+          `CORE_TAG_AGREEMENTS:${coreComparisons.get(match.closetItemId)?.agreements.join(',') ?? ''}`,
+          `RECALL_STRATEGY_${recall.strategy.toUpperCase()}`,
+        ], recall, match.closetItemId);
+    }
+    if (continuityMatches.length > 1) {
+      return this.finalize(input, fingerprint, selected, excludedResults, traceBase, 'ambiguous', 0, [
+        'MULTIPLE_RECENT_CORE_TAG_MATCHES',
+      ], recall);
+    }
+
+    if (survivors.length === 0) {
+      return this.finalize(input, fingerprint, selected, excludedResults, traceBase, 'new_to_closet',
+        newIdentityConfidence(input, input.garment.confidence, this.options.newConfidenceCeiling), [
+          'ALL_COMPATIBLE_CANDIDATES_HAVE_CORE_TAG_CONTRADICTIONS',
+          `RECALL_STRATEGY_${recall.strategy.toUpperCase()}`,
+        ], recall);
+    }
+
+    if (!this.options.verifier.ready) {
       return this.finalize(input, fingerprint, selected, excludedResults, traceBase, 'ambiguous', 0, [
         'REAL_VISUAL_VERIFIER_UNAVAILABLE',
         ...recall.evidence,
@@ -195,9 +224,9 @@ export class VisualGarmentIdentityProvider implements GarmentIdentityProvider {
 
     const candidatesWithReferences = survivors.filter((candidate) =>
       candidate.referenceAppearances.length > 0 || candidate.catalogFallbackImage);
-    const missingVetoReferences = vetoSet.filter((candidate) =>
+    const missingReferences = survivors.filter((candidate) =>
       candidate.referenceAppearances.length === 0 && !candidate.catalogFallbackImage);
-    const missingReferenceReasonCodes = missingVetoReferences.flatMap((candidate) => [
+    const missingReferenceReasonCodes = missingReferences.flatMap((candidate) => [
       'NO_VISUAL_REFERENCE_FOR_POTENTIAL_MATCH',
       `MISSING_VISUAL_REFERENCE:${candidate.closetItemId}`,
     ]);
@@ -237,23 +266,14 @@ export class VisualGarmentIdentityProvider implements GarmentIdentityProvider {
         ], recall);
     }
 
-    if (topPrior >= thresholds.strongPriorVeto) {
-      return this.finalize(input, fingerprint, selected, results, traceBase, 'ambiguous',
-        verifiedResults[0]?.normalized.confidence ?? 0,
-        [
-          'HIGH_PRIOR_CANDIDATE_BLOCKS_NEW_ITEM',
-          'STRONG_PRIOR_AUTO_CREATE_VETO',
-          ...missingReferenceReasonCodes,
-        ], recall);
-    }
-
     const verifiedById = new Map(verifiedResults.map((result) => [result.candidate.closetItemId, result]));
-    const allVetoCandidatesSafelyDifferent = missingVetoReferences.length === 0 && vetoSet.every((candidate) => {
+    const allSurvivorsSafelyDifferent = survivors.length > 0 && missingReferences.length === 0 &&
+      survivors.every((candidate) => {
       const result = verifiedById.get(candidate.closetItemId);
       return Boolean(result && isSafeDifferent(candidate, result.normalized, thresholds));
     });
-    if (allVetoCandidatesSafelyDifferent) {
-      const differentConfidences = vetoSet.flatMap((candidate) => {
+    if (allSurvivorsSafelyDifferent) {
+      const differentConfidences = survivors.flatMap((candidate) => {
         const result = verifiedById.get(candidate.closetItemId);
         return result ? [result.normalized.confidence] : [];
       });
@@ -262,7 +282,7 @@ export class VisualGarmentIdentityProvider implements GarmentIdentityProvider {
         differentConfidences.length ? Math.min(...differentConfidences) : input.garment.confidence,
         this.options.newConfidenceCeiling,
       ), [
-        vetoSet.length ? 'REAL_VISUAL_VETO_CANDIDATES_DIFFERENT' : 'NO_MATERIAL_VETO_CANDIDATES',
+        'ALL_REMAINING_CANDIDATES_VISUALLY_DIFFERENT',
         `RECALL_STRATEGY_${recall.strategy.toUpperCase()}`,
       ], recall);
     }
@@ -344,7 +364,7 @@ export class VisualGarmentIdentityProvider implements GarmentIdentityProvider {
           result.candidate.effectivePrior,
           traceBase.thresholds.baseNewConfidence,
         ),
-        autoCreateVeto: result.candidate.effectivePrior >= traceBase.thresholds.strongPriorVeto,
+        autoCreateVeto: false,
         referenceEvidenceType: result.candidate.referenceEvidenceType,
         evidenceTaxonomyVersion: 1,
         classLevelSameFeatures: gate.classLevelSameFeatures,

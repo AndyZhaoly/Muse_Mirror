@@ -196,12 +196,12 @@ closet card.
 
 `OutfitObservationProvider` reports visual facts only. Its strict schema uses one canonical vocabulary for
 color, pattern, fit, sleeve, neckline, length class, and material class; uncertain or legacy values normalize
-to `unknown` and cannot trigger a contradiction. Identity uses wide metadata recall, then assigns each
-candidate a `strong`, `plausible`, or `fallback` tier. Before spending a visual call, deterministic rules
-exclude only physically impossible slot/category combinations. Color, pattern, sleeve, neckline, length, and
-material drift are soft contradictions used for ranking and diagnostics, never hard identity exclusions.
-Excluded candidates remain visible in the trace, but a total effective prior of
-`0.85` or more still blocks silent item creation. Every visual request compares the current real crop with
+to `unknown` and do not create contradictions. Identity uses wide metadata recall, then compares a deliberately
+small set of stable core tags: physical category, the combined dominant/secondary color palette, stable pattern
+family, sleeve length, coarse short-versus-long garment length, and neckline family. Obvious contradictions exclude
+a candidate before a visual call. Texture wording, neighboring colors, three-quarter sleeves, medium-length crops,
+and other unstable readings are not hard contradictions. Excluded candidates remain visible in the trace. Every
+visual request compares the current real crop with
 exactly one ClosetItem and at most two of that item's recent real appearances. Different ClosetItems are never
 sent in the same verifier request, so unrelated fallback candidates cannot change a strong candidate's verdict.
 Base fixture items may use their verified catalog image only when no real appearance exists; generated product
@@ -219,28 +219,21 @@ fixtures or product images. The flag defaults to `false` and is intended only fo
 The pairwise verifier receives the canonical current descriptor as locked input and repeats its own current
 color, sleeve, and neckline reading in strict structured output. A far contradiction between that reading and
 the locked descriptor invalidates the verdict as `VERIFIER_INCONSISTENT_CURRENT_READ`. It otherwise returns
-structured feature visibility and relations. Server-owned taxonomy separates class-level similarity (color,
-pattern family, neckline family, sleeve length, texture family, fit, silhouette, and length) from instance-specific
-construction evidence such as pocket geometry, print placement, drawstring construction, and stitching layout.
-Class-level evidence can never establish physical identity, even when the verifier labels it strong. Server
-normalization treats covered or cropped details as `unknown` and requires jointly visible instance-specific
-evidence for a safe match or difference. An AI confidence value is a routing signal, not a calibrated probability.
-The default match threshold remains `0.88`. Historical real appearances require one strong or two independent
-medium instance-specific matches. Catalog-only references require at least two instance-specific matches, including
-one strong match. At most three surviving candidates receive visual verification. Multiple safe matches always
-resolve as ambiguous; metadata or continuity prior never selects a physical-identity winner. The required different threshold rises
-from `0.78` with the candidate's effective prior. A candidate seen in the immediately previous same-slot capture
-within 60 minutes receives a `0.08` continuity prior; a 12-hour WearEvent receives `0.02`. These priors affect
-ranking and auto-create safety only, never establish a match. Only surviving candidates with an effective prior
-of at least `0.60` can veto creation; lower-prior uncertainty cannot indefinitely block a clearly new garment.
-An effective prior of at least `0.85` prevents
-silent auto-creation and yields `ambiguous`. `uncertain` never creates an item, and fallback candidates cannot
-decide whether a garment is new.
+structured feature visibility and relations. It may judge two ordinary garments as the same from their complete
+jointly visible appearance; a unique logo, pocket, or seam is useful but no longer mandatory. Covered or cropped
+details normalize to `unknown` rather than `different`, and crop/pose-only length, fit, or silhouette differences
+remain weak evidence. The default pairwise match threshold is `0.88`; the fixed different threshold is `0.78`.
+A candidate from the immediately previous same-slot capture within 60 minutes receives a `0.08` continuity prior.
+Exactly one such candidate can be reused without a visual call when at least three core tags agree and none
+contradict. Otherwise the prior only affects ranking. At most three surviving candidates receive pairwise visual
+verification. One safe match is reused; multiple safe matches are ambiguous; a new item is created only when every
+surviving candidate is safely different. `uncertain` and missing references never create an item, and fallback
+candidates cannot decide whether a garment is new.
 
 The first reliable observation creates one ephemeral crop per garment track. The second reliable observation
 adds a second crop and identity resolution sends both current frames, but still compares them with exactly one
-ClosetItem at a time. Track buffers retain at most two assets. Catalog-only matches with two current frames must
-show consistent instance-specific support across both; mixed strong evidence can never be averaged into a match.
+ClosetItem at a time. Track buffers retain at most two assets. Mixed strong evidence across frames cannot be
+averaged into a match.
 Each crop is bound through the track's exact `latestObservationItemId`. Slot/category lookup is never used as a
 fallback because two garments may legitimately share both values; if the exact observation item is absent, the
 runtime skips that crop instead of attaching another garment's evidence.
