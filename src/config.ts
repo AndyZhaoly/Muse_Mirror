@@ -86,6 +86,7 @@ export interface AppConfig {
   identityWeakContinuityWindowMs: number;
   identityStrongContinuityWeight: number;
   identityWeakContinuityWeight: number;
+  ambientIgnoreBaseCloset: boolean;
   ambientCaptureRetainDiagnostics: boolean;
   ambientCaptureDiagnosticLimit: number;
   skillsDir: string;
@@ -100,8 +101,16 @@ export interface EmptySceneConfig {
   forceProbeMs: number;
 }
 
+export interface AmbientIdentityConfig {
+  ignoreBaseCloset: boolean;
+}
+
 function boolEnv(name: string, fallback: boolean): boolean {
-  const value = process.env[name];
+  return boolFromEnv(process.env, name, fallback);
+}
+
+function boolFromEnv(env: NodeJS.ProcessEnv, name: string, fallback: boolean): boolean {
+  const value = env[name];
   if (value === undefined) return fallback;
   return ['1', 'true', 'yes', 'on'].includes(value.toLowerCase());
 }
@@ -125,6 +134,12 @@ export function loadEmptySceneConfig(env: NodeJS.ProcessEnv = process.env): Empt
     threshold: Math.min(1, Math.max(0.001, numberFromEnv(env, 'FASHION_AGENT_EMPTY_SCENE_THRESHOLD', 0.03))),
     confirmations: Math.max(2, Math.round(numberFromEnv(env, 'FASHION_AGENT_EMPTY_SCENE_CONFIRMATIONS', 2))),
     forceProbeMs: Math.max(10_000, Math.round(numberFromEnv(env, 'FASHION_AGENT_EMPTY_SCENE_FORCE_PROBE_MS', 90_000))),
+  };
+}
+
+export function loadAmbientIdentityConfig(env: NodeJS.ProcessEnv = process.env): AmbientIdentityConfig {
+  return {
+    ignoreBaseCloset: boolFromEnv(env, 'FASHION_AGENT_AMBIENT_IGNORE_BASE_CLOSET', false),
   };
 }
 
@@ -311,6 +326,7 @@ export function loadConfig(): AppConfig {
       ]),
   );
   const emptyScene = loadEmptySceneConfig();
+  const ambientIdentity = loadAmbientIdentityConfig();
   const trace = boolEnv('FASHION_AGENT_TRACE', false);
 
   return {
@@ -402,6 +418,7 @@ export function loadConfig(): AppConfig {
     identityWeakContinuityWindowMs: numberEnv('FASHION_AGENT_IDENTITY_WEAK_CONTINUITY_WINDOW_MS', 12 * 60 * 60 * 1000),
     identityStrongContinuityWeight: numberEnv('FASHION_AGENT_IDENTITY_STRONG_CONTINUITY_WEIGHT', 0.08),
     identityWeakContinuityWeight: numberEnv('FASHION_AGENT_IDENTITY_WEAK_CONTINUITY_WEIGHT', 0.02),
+    ambientIgnoreBaseCloset: ambientIdentity.ignoreBaseCloset,
     ambientCaptureRetainDiagnostics: boolEnv('FASHION_AGENT_AMBIENT_CAPTURE_RETAIN_DIAGNOSTICS', trace),
     ambientCaptureDiagnosticLimit: Math.max(1, Math.round(numberEnv('FASHION_AGENT_AMBIENT_CAPTURE_DIAGNOSTIC_LIMIT', 100))),
     skillsDir: path.resolve(process.env.FASHION_AGENT_SKILLS_DIR ?? './skills'),

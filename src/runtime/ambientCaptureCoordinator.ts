@@ -46,6 +46,7 @@ export class AmbientCaptureCoordinator {
       identityProvider: GarmentIdentityProvider;
       repository: JsonUserWardrobeRepository;
       baseClosetItems: () => ClosetItem[];
+      ignoreBaseClosetCandidates?: boolean;
       assetService: GarmentImageAssetService;
       productImageProvider: ProductImageProvider;
       productImageVerifier: ProductImageVerifier;
@@ -247,7 +248,10 @@ export class AmbientCaptureCoordinator {
     await this.retainDiagnosticCapture(packet, episode, observation, evidenceAsset, appearanceAssets);
 
     const freshState = await this.options.repository.getState(packet.userId);
-    const baseCatalogAssets = await this.options.baseCatalogAssets?.() ?? new Map<string, GarmentImageAsset>();
+    const baseClosetItems = this.identityBaseClosetItems();
+    const baseCatalogAssets = baseClosetItems.length > 0
+      ? await this.options.baseCatalogAssets?.() ?? new Map<string, GarmentImageAsset>()
+      : new Map<string, GarmentImageAsset>();
     const currentAppearanceGroups = observation.garments.map((garment) => {
       const track = findTrackForGarment(garmentTracks, garment);
       const current = (track?.identityEvidence ?? []).flatMap((evidence) => {
@@ -281,7 +285,7 @@ export class AmbientCaptureCoordinator {
       capturedAt: packet.capturedAt,
       garment,
       currentAppearances: currentAppearanceGroups[index]!,
-      baseClosetItems: this.options.baseClosetItems(),
+      baseClosetItems,
       userClosetItems: freshState.closetItems,
       appearances: freshState.appearances,
       assets: freshState.assets,
@@ -423,7 +427,7 @@ export class AmbientCaptureCoordinator {
           committed,
           observation,
           await this.options.repository.getState(packet.userId),
-          this.options.baseClosetItems(),
+          this.identityBaseClosetItems(),
         )
       : undefined;
     if (completedEvent) await this.options.repository.setPendingCompletionEvent(packet.userId, completedEvent);
@@ -720,7 +724,7 @@ export class AmbientCaptureCoordinator {
         ? automaticRecheckCount >= 1 || existing.state === 'ready_to_ask' ? 'ready_to_ask' : 'awaiting_evidence'
         : occludedFeatures.length > 0 ? 'awaiting_evidence' : 'ready_to_ask';
       const now = input.packet.capturedAt;
-      const allClosetItems = this.options.baseClosetItems();
+      const allClosetItems = this.identityBaseClosetItems();
       const userItems = (await this.options.repository.getState(input.packet.userId)).closetItems.map((entry) => entry.item);
       const currentCandidateClosetItemIds = [...new Set(identity.candidateItemIds)].slice(0, 8);
       const currentCandidateSummaries = currentCandidateClosetItemIds.flatMap((closetItemId, index) => {
@@ -802,6 +806,10 @@ export class AmbientCaptureCoordinator {
   private async pruneOrphanIdentityEvidence(userId: string, occurredAt: string): Promise<void> {
     const assets = await this.options.repository.pruneOrphanTrackIdentityEvidence(userId, occurredAt);
     await this.options.assetService.deleteAssets(assets);
+  }
+
+  private identityBaseClosetItems(): ClosetItem[] {
+    return this.options.ignoreBaseClosetCandidates ? [] : this.options.baseClosetItems();
   }
 
   private async processCatalogImages(

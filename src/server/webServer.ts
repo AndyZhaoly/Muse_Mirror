@@ -115,6 +115,7 @@ const ambientCaptureCoordinator = new AmbientCaptureCoordinator({
   }),
   repository: wardrobeRepository,
   baseClosetItems: () => sharedServices.closet.allItems(),
+  ignoreBaseClosetCandidates: config.ambientIgnoreBaseCloset,
   assetService: garmentAssetService,
   productImageProvider,
   productImageVerifier,

@@ -21,7 +21,11 @@ import {
   updateGarmentTracks,
 } from '../src/runtime/ambientCaptureCoordinator.js';
 import { GarmentImageAssetService } from '../src/services/garmentImageAssetService.js';
-import { VisualGarmentIdentityProvider, type GarmentIdentityInput } from '../src/services/garmentIdentityProvider.js';
+import {
+  VisualGarmentIdentityProvider,
+  type GarmentIdentityInput,
+  type GarmentIdentityProvider,
+} from '../src/services/garmentIdentityProvider.js';
 import {
   OpenAIGarmentVisualVerifier,
   type GarmentVisualVerifier,
@@ -175,6 +179,92 @@ test('three rounds create verified products, recognize real appearances, then ad
   assert.equal(sandBottom?.item.primaryImageAssetId, originalPrimaryIds.get('sand'));
   assert.equal(round3State.pendingCompletionEvent?.newItemIds.length, 1);
   assert.equal(round3State.pendingCompletionEvent?.recognizedItemIds.length, 1);
+});
+
+test('demo base-closet exclusion is reversible and keeps ambient recognition and product images', async () => {
+  const fixture = await createFixture('ignore-base-closet');
+  await fixture.repository.setGrant(userId, true);
+  const observed = outfit([garment('demo-top', 'top', 'navy', 'navy short sleeve tee')]);
+  const baseItem: ClosetItem = {
+    id: 'base-demo-navy-tee', name: 'Base demo navy tee', category: 'top', color: 'navy', fit: 'regular',
+    styleTags: ['navy short sleeve tee'], formality: 'casual', imageUrl: '/base/navy-tee.jpg', marketedFor: 'unisex',
+  };
+  const originalBase = structuredClone(baseItem);
+  const productCalls: ProductImageGenerationInput[] = [];
+  const identityInputs: Array<{ baseIds: string[]; userIds: string[] }> = [];
+  const identityProvider: GarmentIdentityProvider = {
+    ready: true,
+    async resolve(input) {
+      identityInputs.push({
+        baseIds: input.baseClosetItems.map((item) => item.id),
+        userIds: input.userClosetItems.map((entry) => entry.item.id),
+      });
+      const existing = input.userClosetItems.find((entry) => entry.status === 'active');
+      return existing ? {
+        observationItemId: input.garment.observationItemId,
+        status: 'matched_existing',
+        matchedClosetItemId: existing.item.id,
+        appearanceFingerprint: 'demo-navy-top',
+        confidence: 0.95,
+        candidateItemIds: [existing.item.id],
+        reasonCodes: ['FIXTURE_AMBIENT_MATCH'],
+      } : {
+        observationItemId: input.garment.observationItemId,
+        status: 'new_to_closet',
+        appearanceFingerprint: 'demo-navy-top',
+        confidence: 0.92,
+        candidateItemIds: [],
+        reasonCodes: ['FIXTURE_DEMO_NEW'],
+      };
+    },
+  };
+  let baseCatalogLoads = 0;
+  const runtime = (ignoreBaseClosetCandidates: boolean) => new AmbientCaptureCoordinator({
+    observationProvider: queuedProvider([observed, observed]),
+    identityProvider,
+    repository: fixture.repository,
+    baseClosetItems: () => [baseItem],
+    ignoreBaseClosetCandidates,
+    baseCatalogAssets: async () => {
+      baseCatalogLoads += 1;
+      return new Map();
+    },
+    assetService: fixture.assetService,
+    productImageProvider: new EditingFakeProductProvider(fixture.assetService, productCalls),
+    productImageVerifier: new PassingProductVerifier(),
+  });
+
+  const firstWear = runtime(true);
+  assert.equal((await firstWear.process(packet(fixture.framePath, 'demo-first', 'demo-first-1'))).status, 'observing');
+  assert.equal((await firstWear.process(packet(fixture.framePath, 'demo-first', 'demo-first-2'))).status, 'committed_processing_images');
+  const firstState = await waitForImages(fixture.repository, userId, 1);
+  const ambientItemId = firstState.closetItems[0]?.item.id;
+  assert.ok(ambientItemId);
+  assert.equal(firstState.closetItems[0]?.item.imageStatus, 'ready');
+  assert.equal(productCalls.length, 1);
+  assert.deepEqual(identityInputs.at(-1), { baseIds: [], userIds: [] });
+  assert.equal(baseCatalogLoads, 0);
+  await firstWear.acknowledge(userId);
+  await firstWear.endEpisode(userId, 'demo-first');
+
+  const secondWear = runtime(true);
+  assert.equal((await secondWear.process(packet(fixture.framePath, 'demo-second', 'demo-second-1'))).status, 'observing');
+  const secondResult = await secondWear.process(packet(fixture.framePath, 'demo-second', 'demo-second-2'));
+  assert.equal(secondResult.status, 'recognized');
+  assert.deepEqual(secondResult.completedEvent?.recognizedItemIds, [ambientItemId]);
+  assert.deepEqual(identityInputs.at(-1), { baseIds: [], userIds: [ambientItemId] });
+  assert.equal(productCalls.length, 1, 'repeat recognition must reuse the first product card');
+  assert.equal(baseCatalogLoads, 0);
+  await secondWear.acknowledge(userId);
+  await secondWear.endEpisode(userId, 'demo-second');
+
+  const normalMode = runtime(false);
+  assert.equal((await normalMode.process(packet(fixture.framePath, 'normal-mode', 'normal-mode-1'))).status, 'observing');
+  assert.equal((await normalMode.process(packet(fixture.framePath, 'normal-mode', 'normal-mode-2'))).status, 'recognized');
+  assert.deepEqual(identityInputs.at(-1), { baseIds: [baseItem.id], userIds: [ambientItemId] });
+  assert.equal(baseCatalogLoads, 1, 'disabling demo mode must restore base catalog participation');
+  assert.equal(productCalls.length, 1);
+  assert.deepEqual(baseItem, originalBase, 'retrieval filtering must never mutate the base wardrobe');
 });
 
 test('a verified empty observation ends the episode with a bounded client backoff', async () => {

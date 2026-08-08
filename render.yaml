@@ -43,6 +43,8 @@ services:
         value: /app/out/muse-memory-v1.json
       - key: FASHION_AGENT_AMBIENT_WARDROBE_DATA
         value: /app/out/ambient-wardrobe-v1.json
+      - key: FASHION_AGENT_AMBIENT_IGNORE_BASE_CLOSET
+        value: "true"
       - key: OPENAI_AGENT_MODEL
         value: gpt-5.4
       - key: OPENAI_VISION_MODEL

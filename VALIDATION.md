@@ -137,7 +137,10 @@ candidate windows, one-to-one track assignment, and truthful partial-completion 
 regressions additionally assert that same-slot/same-category tracks receive their exact observation crops, a
 delayed catalog-image job cannot overwrite a newer resolved capture or `lastOutcome`, resolved/expired pending
 records release cross-episode raw identity evidence, and `NEW + PENDING` remains partial in repository events and
-runtime diagnostics after catalog-image success.
+runtime diagnostics after catalog-image success. Demo-isolation fixtures verify that Base Closet candidates and
+catalog assets are absent only while the explicit flag is enabled, ambient-captured appearances still recognize on
+repeat wear without another product-image call, disabling the flag restores Base Closet participation, and the
+preloaded wardrobe object remains unchanged.
 
 Private real-camera cases can be summarized without committing photos:
 

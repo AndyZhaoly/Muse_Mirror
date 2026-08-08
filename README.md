@@ -207,6 +207,7 @@ FASHION_AGENT_DEMO2_PRODUCT_IMAGE_DIR=./data/demo2-product-images
 FASHION_AGENT_OUTPUT_DIR=./out
 FASHION_AGENT_MEMORY_DATA=./out/muse-memory-v1.json
 FASHION_AGENT_AMBIENT_WARDROBE_DATA=./out/ambient-wardrobe-v1.json
+FASHION_AGENT_AMBIENT_IGNORE_BASE_CLOSET=false
 FASHION_AGENT_EMPTY_SCENE_THRESHOLD=0.03
 FASHION_AGENT_EMPTY_SCENE_CONFIRMATIONS=2
 FASHION_AGENT_EMPTY_SCENE_FORCE_PROBE_MS=90000
@@ -237,6 +238,13 @@ FASHION_AGENT_TTS_PROVIDER=disabled
 MUSE_TEAM_DEMO_ACCESS_CODE=
 MUSE_TEAM_DEMO_SESSION_SECRET=
 ```
+
+For an isolated investor-demo wardrobe-learning run, set
+`FASHION_AGENT_AMBIENT_IGNORE_BASE_CLOSET=true`. This removes preloaded Base Closet items only from ambient
+garment identity candidate retrieval. The seed wardrobe, its product images, ordinary closet browsing, and
+recommendation remain unchanged. Ambient-captured user items and their real appearance evidence still participate,
+and switching the value back to `false` immediately restores normal Base + Ambient identity retrieval without a
+data migration. Product-image generation for newly recorded garments remains enabled independently.
 
 `FASHION_AGENT_VISUAL_QC=false` reproduces the time-constrained demo behavior in which image QC does not block a generated result. Set it to `true` when you want failed visual checks to block artifacts.
 

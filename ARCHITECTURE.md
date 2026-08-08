@@ -207,6 +207,11 @@ sent in the same verifier request, so unrelated fallback candidates cannot chang
 Base fixture items may use their verified catalog image only when no real appearance exists; generated product
 images are never the sole identity ground truth for a user item.
 
+The demo-only `FASHION_AGENT_AMBIENT_IGNORE_BASE_CLOSET` flag filters Base Closet records and catalog assets at
+the ambient identity-input boundary. It defaults to `false` and never mutates seed data, product images,
+`ClosetService`, recommendation, or the user overlay. When enabled, ambient-captured items continue to participate
+through their real garment appearances; disabling it restores normal Base + Ambient recall immediately.
+
 The pairwise verifier receives the canonical current descriptor as locked input and repeats its own current
 color, sleeve, and neckline reading in strict structured output. A far contradiction between that reading and
 the locked descriptor invalidates the verdict as `VERIFIER_INCONSISTENT_CURRENT_READ`. It otherwise returns
