@@ -122,6 +122,8 @@ const ambientCaptureCoordinator = new AmbientCaptureCoordinator({
   productImageVerifier,
   productImageVerifyConfidence: config.productImageVerifyConfidence,
   identityTraceLimit: config.identityTraceLimit,
+  retainDiagnosticCaptures: config.ambientCaptureRetainDiagnostics,
+  diagnosticCaptureLimit: config.ambientCaptureDiagnosticLimit,
   baseCatalogAssets: () => buildBaseCatalogAssets(sharedServices.closet.allItems(), {
     publicDir,
     demo2ProductImageDir: config.demo2ProductImageDir,

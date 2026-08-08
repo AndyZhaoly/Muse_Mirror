@@ -228,6 +228,13 @@ reason codes. The repository retains the latest 200 traces per browser user with
 absolute paths, or user IDs. `FASHION_AGENT_TRACE=true` emits the same redacted decision summary to server logs.
 The signed-browser diagnostics route exposes only the current user's traces.
 
+When ambient diagnostic retention is enabled (implicitly by `FASHION_AGENT_TRACE=true`, unless explicitly
+overridden), the asset service copies each stable identity-attempt frame and its garment crops into an isolated,
+per-browser reproduction bundle before business-state resolution. A redacted manifest links frame, observation,
+bounding box, and opaque asset IDs without storing raw user IDs or absolute paths. The normal transient assets
+are still deleted on ambiguous/failed outcomes; diagnostic copies are separately capped by
+`FASHION_AGENT_AMBIENT_CAPTURE_DIAGNOSTIC_LIMIT` and intentionally survive wardrobe reset for local replay.
+
 Observation, garment-track continuity, and identity recall use the same canonical appearance vocabulary.
 The structured vision schema includes explicit `unknown` values for color, fit, sleeve, neckline, length, and
 material instead of forcing weak

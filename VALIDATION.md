@@ -116,6 +116,13 @@ garment. Round 2 should reuse each Round 1 item, normally with one pairwise call
 `ambiguous` when evidence is genuinely insufficient; the safety requirement is zero silent duplicate creation
 and zero false merge, not a fabricated zero-ambiguity claim.
 
+For a reproducible local camera run, start the server with `FASHION_AGENT_TRACE=true`. After each stable frame
+that enters identity resolution, inspect `out/diagnostics/ambient-captures/<browser-hash>/<capture>/manifest.json`.
+The same directory must contain one normalized full-frame image and one image per successfully cropped garment,
+including when the final identity result is `ambiguous`. Deleting transient business assets or using the developer
+wardrobe reset must not remove these diagnostic copies. Keep the default rolling limit bounded and disable this
+mode on shared production deployments unless the photo-retention policy explicitly allows it.
+
 If items were recorded while the product-image provider was disabled, use the visible “生成衣橱单品图” action.
 The browser-scoped backfill processes only that user's active mirror-captured items, keeps failed verification
 results hidden, and exposes each verified result as soon as it is ready. Confirm the card says “AI 整理图” and

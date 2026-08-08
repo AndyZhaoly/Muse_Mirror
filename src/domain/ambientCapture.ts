@@ -517,5 +517,14 @@ export interface AmbientCaptureDiagnostics {
   assetCounts: Record<GarmentImageRole, number>;
   processingImageCount: number;
   needsReviewImageCount: number;
+  diagnosticCaptureRetentionEnabled: boolean;
+  diagnosticCaptureCount: number;
+  latestDiagnosticCapture?: {
+    bundleId: string;
+    relativeDirectory: string;
+    frameId: string;
+    observationId: string;
+    createdAt: string;
+  };
   lastOutcome?: AmbientCaptureOutcome;
 }

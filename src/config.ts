@@ -88,6 +88,8 @@ export interface AppConfig {
   identityWeakContinuityWindowMs: number;
   identityStrongContinuityWeight: number;
   identityWeakContinuityWeight: number;
+  ambientCaptureRetainDiagnostics: boolean;
+  ambientCaptureDiagnosticLimit: number;
   skillsDir: string;
   trace: boolean;
   visualQcEnabled: boolean;
@@ -311,6 +313,7 @@ export function loadConfig(): AppConfig {
       ]),
   );
   const emptyScene = loadEmptySceneConfig();
+  const trace = boolEnv('FASHION_AGENT_TRACE', false);
 
   return {
     runtimeProvider: runtimeProviderEnv(process.env.FASHION_AGENT_RUNTIME),
@@ -403,8 +406,10 @@ export function loadConfig(): AppConfig {
     identityWeakContinuityWindowMs: numberEnv('FASHION_AGENT_IDENTITY_WEAK_CONTINUITY_WINDOW_MS', 12 * 60 * 60 * 1000),
     identityStrongContinuityWeight: numberEnv('FASHION_AGENT_IDENTITY_STRONG_CONTINUITY_WEIGHT', 0.08),
     identityWeakContinuityWeight: numberEnv('FASHION_AGENT_IDENTITY_WEAK_CONTINUITY_WEIGHT', 0.02),
+    ambientCaptureRetainDiagnostics: boolEnv('FASHION_AGENT_AMBIENT_CAPTURE_RETAIN_DIAGNOSTICS', trace),
+    ambientCaptureDiagnosticLimit: Math.max(1, Math.round(numberEnv('FASHION_AGENT_AMBIENT_CAPTURE_DIAGNOSTIC_LIMIT', 100))),
     skillsDir: path.resolve(process.env.FASHION_AGENT_SKILLS_DIR ?? './skills'),
-    trace: boolEnv('FASHION_AGENT_TRACE', false),
+    trace,
     visualQcEnabled: boolEnv('FASHION_AGENT_VISUAL_QC', true),
     voice: loadVoiceConfig(),
   };

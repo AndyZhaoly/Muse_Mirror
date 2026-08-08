@@ -43,6 +43,8 @@ export class AmbientCaptureCoordinator {
       productImageVerifyConfidence?: number;
       identityTraceLimit?: number;
       baseCatalogAssets?: () => Promise<Map<string, GarmentImageAsset>>;
+      retainDiagnosticCaptures?: boolean;
+      diagnosticCaptureLimit?: number;
     },
   ) {}
 
@@ -178,7 +180,7 @@ export class AmbientCaptureCoordinator {
         sourceFrameId: packet.frameId,
         capturedAt: packet.capturedAt,
       });
-      appearanceAssets = await Promise.all(observation.garments.map(async (garment) => (
+      const cropResults = await Promise.allSettled(observation.garments.map(async (garment) => (
         await this.options.assetService.cropGarment({
           userId: packet.userId,
           sourceFramePath: packet.imagePath,
@@ -189,7 +191,15 @@ export class AmbientCaptureCoordinator {
           capturedAt: packet.capturedAt,
         })
       ).asset));
+      appearanceAssets = cropResults.flatMap((result) => result.status === 'fulfilled' ? [result.value] : []);
+      const failedCrop = cropResults.find((result) => result.status === 'rejected');
+      if (failedCrop?.status === 'rejected') throw failedCrop.reason;
+      appearanceAssets = cropResults.map((result) => {
+        if (result.status === 'rejected') throw result.reason;
+        return result.value;
+      });
     } catch (error) {
+      await this.retainDiagnosticCapture(packet, episode, observation, evidenceAsset, appearanceAssets);
       await this.options.assetService.deleteAssets([...(evidenceAsset ? [evidenceAsset] : []), ...appearanceAssets]);
       return this.remember(packet.userId, {
         status: 'insufficient_evidence',
@@ -199,6 +209,8 @@ export class AmbientCaptureCoordinator {
         retryAfterMs: 5_000,
       });
     }
+
+    await this.retainDiagnosticCapture(packet, episode, observation, evidenceAsset, appearanceAssets);
 
     const freshState = await this.options.repository.getState(packet.userId);
     const baseCatalogAssets = await this.options.baseCatalogAssets?.() ?? new Map<string, GarmentImageAsset>();
@@ -364,6 +376,10 @@ export class AmbientCaptureCoordinator {
 
   async diagnostics(userId: string): Promise<AmbientCaptureDiagnostics> {
     const state = await this.options.repository.getState(userId);
+    const diagnosticCaptures = this.options.retainDiagnosticCaptures
+      ? await this.options.assetService.listDiagnosticCaptures(userId, this.options.diagnosticCaptureLimit ?? 100)
+      : [];
+    const latestDiagnosticCapture = diagnosticCaptures[0];
     return {
       enabled: true,
       providerReady: this.options.observationProvider.ready,
@@ -383,8 +399,56 @@ export class AmbientCaptureCoordinator {
       processingImageCount: state.closetItems.filter((entry) => entry.status === 'active' && entry.item.imageStatus === 'processing').length,
       needsReviewImageCount: state.closetItems.filter((entry) => entry.status === 'active' &&
         (entry.item.imageStatus === 'needs_review' || entry.item.imageStatus === 'failed')).length,
+      diagnosticCaptureRetentionEnabled: Boolean(this.options.retainDiagnosticCaptures),
+      diagnosticCaptureCount: diagnosticCaptures.length,
+      latestDiagnosticCapture: latestDiagnosticCapture ? {
+        bundleId: latestDiagnosticCapture.bundleId,
+        relativeDirectory: latestDiagnosticCapture.relativeDirectory,
+        frameId: latestDiagnosticCapture.frameId,
+        observationId: latestDiagnosticCapture.observationId,
+        createdAt: latestDiagnosticCapture.createdAt,
+      } : undefined,
       lastOutcome: this.lastOutcomes.get(userId),
     };
+  }
+
+  private async retainDiagnosticCapture(
+    packet: AmbientCapturePacket,
+    episode: AmbientOutfitEpisode,
+    observation: WornOutfitObservation,
+    evidenceAsset: GarmentImageAsset | undefined,
+    appearanceAssets: GarmentImageAsset[],
+  ): Promise<void> {
+    if (!this.options.retainDiagnosticCaptures) return;
+    try {
+      const bundle = await this.options.assetService.storeDiagnosticCapture({
+        userId: packet.userId,
+        episodeId: episode.episodeId,
+        observationId: observation.observationId,
+        frameId: packet.frameId,
+        capturedAt: packet.capturedAt,
+        evidenceAsset,
+        appearanceAssets,
+        garments: observation.garments,
+        retentionLimit: this.options.diagnosticCaptureLimit ?? 100,
+      });
+      if (bundle) {
+        console.info('[AmbientCaptureDiagnostic]', {
+          bundleId: bundle.bundleId,
+          relativeDirectory: bundle.relativeDirectory,
+          frameId: bundle.frameId,
+          observationId: bundle.observationId,
+          assetIds: bundle.assetIds,
+        });
+      }
+    } catch (error) {
+      console.warn('[AmbientCaptureDiagnostic]', {
+        status: 'failed',
+        frameId: packet.frameId,
+        observationId: observation.observationId,
+        code: safeErrorCode(error),
+      });
+    }
   }
 
   private async processCatalogImages(

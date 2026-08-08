@@ -237,6 +237,58 @@ test('crop service stores separate evidence and appearance assets and rejects in
   await assert.rejects(() => fs.access(top.cropPath));
 });
 
+test('diagnostic capture bundles preserve a reproducible frame and crops after transient assets are deleted', async () => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'muse-ambient-diagnostics-'));
+  const rootDirectory = path.join(directory, 'out');
+  const framePath = await writeFrame(path.join(directory, 'frame.jpg'), '#1d3159', '#d2af73');
+  const service = new GarmentImageAssetService({ rootDirectory });
+  const topGarment = garment('diagnostic-top', 'top', 'navy', 'tee');
+  const evidence = await service.storeEvidence({
+    userId,
+    sourceFramePath: framePath,
+    sourceFrameId: 'frame-diagnostic',
+    capturedAt: '2026-08-08T04:00:00.000Z',
+  });
+  const top = await service.cropGarment({
+    userId,
+    sourceFramePath: framePath,
+    sourceFrameId: 'frame-diagnostic',
+    observationItemId: topGarment.observationItemId,
+    boundingBox: topGarment.boundingBox,
+    slot: topGarment.slot,
+    capturedAt: '2026-08-08T04:00:00.000Z',
+  });
+  const bundle = await service.storeDiagnosticCapture({
+    userId,
+    episodeId: 'episode-diagnostic',
+    observationId: 'observation-diagnostic',
+    frameId: 'frame-diagnostic',
+    capturedAt: '2026-08-08T04:00:00.000Z',
+    evidenceAsset: evidence,
+    appearanceAssets: [top.asset],
+    garments: [topGarment],
+    retentionLimit: 10,
+  });
+  assert.ok(bundle);
+  await service.deleteAssets([evidence, top.asset]);
+
+  const manifestPath = path.join(rootDirectory, bundle.relativeDirectory, bundle.manifestFile);
+  const manifestText = await fs.readFile(manifestPath, 'utf8');
+  const manifest = JSON.parse(manifestText) as {
+    assets: Array<{ fileName: string; assetId: string }>;
+    garments: Array<{ appearanceAssetId?: string }>;
+  };
+  assert.equal(manifest.assets.length, 2);
+  assert.equal(manifest.garments[0]?.appearanceAssetId, top.asset.assetId);
+  assert.doesNotMatch(manifestText, new RegExp(userId));
+  assert.doesNotMatch(manifestText, new RegExp(directory.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  for (const asset of manifest.assets) {
+    await fs.access(path.join(rootDirectory, bundle.relativeDirectory, asset.fileName));
+  }
+  await assert.rejects(() => fs.access(top.cropPath), 'working asset should still follow normal cleanup');
+  assert.deepEqual((await service.listDiagnosticCaptures(userId)).map((entry) => entry.bundleId), [bundle.bundleId]);
+});
+
 test('visual identity uses metadata only for recall and can match a base catalog image', async () => {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'muse-ambient-base-reid-'));
   const service = new GarmentImageAssetService({ rootDirectory: path.join(directory, 'out') });
@@ -362,6 +414,8 @@ test('ambiguous visual identity deletes transient crops and commits no partial b
     baseClosetItems: () => [], assetService: fixture.assetService,
     productImageProvider: new DisabledFakeProductProvider(),
     productImageVerifier: new PassingProductVerifier(),
+    retainDiagnosticCaptures: true,
+    diagnosticCaptureLimit: 10,
   });
   await runtime.process(packet(fixture.framePath, 'ambiguous', 'a1'));
   const result = await runtime.process(packet(fixture.framePath, 'ambiguous', 'a2'));
@@ -370,6 +424,14 @@ test('ambiguous visual identity deletes transient crops and commits no partial b
   assert.equal(state.closetItems.length, 0);
   assert.equal(state.captures.length, 0);
   assert.equal(state.assets.length, 0);
+  const bundles = await fixture.assetService.listDiagnosticCaptures(userId);
+  assert.equal(bundles.length, 1);
+  assert.equal(bundles[0]?.frameId, 'a2');
+  assert.equal(bundles[0]?.assetIds.length, 3);
+  const diagnostics = await runtime.diagnostics(userId);
+  assert.equal(diagnostics.diagnosticCaptureRetentionEnabled, true);
+  assert.equal(diagnostics.diagnosticCaptureCount, 1);
+  assert.equal(diagnostics.latestDiagnosticCapture?.bundleId, bundles[0]?.bundleId);
 });
 
 test('capture without product providers commits evidence but never promotes a crop as primary image', async () => {

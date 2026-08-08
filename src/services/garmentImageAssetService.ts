@@ -6,6 +6,7 @@ import type {
   AmbientGarmentSlot,
   GarmentImageAsset,
   NormalizedBoundingBox,
+  WornGarmentObservation,
 } from '../domain/ambientCapture.js';
 import { makeId } from '../utils/ids.js';
 
@@ -30,6 +31,54 @@ export interface GarmentCropQuality {
   bodyDominance: 'low' | 'medium' | 'high';
   confidence: number;
   issues: string[];
+}
+
+export interface AmbientCaptureDiagnosticBundleInput {
+  userId: string;
+  episodeId: string;
+  observationId: string;
+  frameId: string;
+  capturedAt: string;
+  evidenceAsset?: GarmentImageAsset;
+  appearanceAssets: GarmentImageAsset[];
+  garments: WornGarmentObservation[];
+  retentionLimit?: number;
+}
+
+export interface AmbientCaptureDiagnosticBundle {
+  bundleId: string;
+  relativeDirectory: string;
+  manifestFile: string;
+  createdAt: string;
+  frameId: string;
+  observationId: string;
+  assetIds: string[];
+}
+
+interface AmbientCaptureDiagnosticManifest extends AmbientCaptureDiagnosticBundle {
+  schemaVersion: 1;
+  episodeId: string;
+  assets: Array<{
+    assetId: string;
+    role: GarmentImageAsset['role'];
+    fileName: string;
+    sourceFrameId?: string;
+    observationItemId?: string;
+    width: number;
+    height: number;
+    mimeType: GarmentImageAsset['mimeType'];
+    contentHash: string;
+  }>;
+  garments: Array<{
+    observationItemId: string;
+    slot: WornGarmentObservation['slot'];
+    category: WornGarmentObservation['category'];
+    dominantColor: string;
+    pattern: string;
+    boundingBox: NormalizedBoundingBox;
+    confidence: number;
+    appearanceAssetId?: string;
+  }>;
 }
 
 const MIN_CROP_WIDTH = 160;
@@ -151,6 +200,142 @@ export class GarmentImageAssetService {
     }));
   }
 
+  async storeDiagnosticCapture(
+    input: AmbientCaptureDiagnosticBundleInput,
+  ): Promise<AmbientCaptureDiagnosticBundle | undefined> {
+    const assets = [
+      ...(input.evidenceAsset ? [input.evidenceAsset] : []),
+      ...input.appearanceAssets,
+    ].filter((asset, index, all) => all.findIndex((candidate) => candidate.assetId === asset.assetId) === index);
+    if (!assets.length) return undefined;
+
+    const bundleId = makeId('ambient_capture_debug');
+    const relativeDirectory = path.join(
+      'diagnostics',
+      'ambient-captures',
+      userKey(input.userId),
+      `${sortableTimestamp(input.capturedAt)}_${safePathSegment(input.frameId)}_${bundleId}`,
+    );
+    const directory = path.join(this.options.rootDirectory, relativeDirectory);
+    await fs.mkdir(directory, { recursive: true });
+
+    try {
+      const manifestAssets: AmbientCaptureDiagnosticManifest['assets'] = [];
+      for (const [index, asset] of assets.entries()) {
+        if (!asset.storagePath || !isWithin(this.options.rootDirectory, asset.storagePath)) {
+          throw new Error('DIAGNOSTIC_CAPTURE_ASSET_OUTSIDE_ROOT');
+        }
+        const extension = extensionForMimeType(asset.mimeType);
+        const descriptor = asset.role === 'capture_evidence'
+          ? 'frame'
+          : safePathSegment(asset.observationItemId ?? `garment-${index}`);
+        const fileName = `${String(index + 1).padStart(2, '0')}_${descriptor}_${safePathSegment(asset.assetId)}.${extension}`;
+        await fs.copyFile(asset.storagePath, path.join(directory, fileName));
+        manifestAssets.push({
+          assetId: asset.assetId,
+          role: asset.role,
+          fileName,
+          sourceFrameId: asset.sourceFrameId,
+          observationItemId: asset.observationItemId,
+          width: asset.width,
+          height: asset.height,
+          mimeType: asset.mimeType,
+          contentHash: asset.contentHash,
+        });
+      }
+
+      const appearanceByObservation = new Map(
+        input.appearanceAssets.flatMap((asset) => asset.observationItemId ? [[asset.observationItemId, asset.assetId] as const] : []),
+      );
+      const manifestFile = 'manifest.json';
+      const manifest: AmbientCaptureDiagnosticManifest = {
+        schemaVersion: 1,
+        bundleId,
+        relativeDirectory,
+        manifestFile,
+        createdAt: input.capturedAt,
+        frameId: input.frameId,
+        observationId: input.observationId,
+        episodeId: input.episodeId,
+        assetIds: manifestAssets.map((asset) => asset.assetId),
+        assets: manifestAssets,
+        garments: input.garments.map((garment) => ({
+          observationItemId: garment.observationItemId,
+          slot: garment.slot,
+          category: garment.category,
+          dominantColor: garment.dominantColor,
+          pattern: garment.pattern,
+          boundingBox: garment.boundingBox,
+          confidence: garment.confidence,
+          appearanceAssetId: appearanceByObservation.get(garment.observationItemId),
+        })),
+      };
+      const temporaryManifest = path.join(directory, `${manifestFile}.tmp`);
+      await fs.writeFile(temporaryManifest, `${JSON.stringify(manifest, null, 2)}\n`, { flag: 'wx' });
+      await fs.rename(temporaryManifest, path.join(directory, manifestFile));
+      await this.pruneDiagnosticCaptures(input.userId, input.retentionLimit ?? 100);
+      return {
+        bundleId,
+        relativeDirectory,
+        manifestFile,
+        createdAt: input.capturedAt,
+        frameId: input.frameId,
+        observationId: input.observationId,
+        assetIds: manifest.assetIds,
+      };
+    } catch (error) {
+      await fs.rm(directory, { recursive: true, force: true }).catch(() => undefined);
+      throw error;
+    }
+  }
+
+  async listDiagnosticCaptures(userId: string, limit = 50): Promise<AmbientCaptureDiagnosticBundle[]> {
+    const root = this.diagnosticUserDirectory(userId);
+    const entries = await fs.readdir(root, { withFileTypes: true }).catch(() => []);
+    const directories = await Promise.all(entries.filter((entry) => entry.isDirectory()).map(async (entry) => ({
+      name: entry.name,
+      modifiedAt: (await fs.stat(path.join(root, entry.name))).mtimeMs,
+    })));
+    const results: AmbientCaptureDiagnosticBundle[] = [];
+    for (const entry of directories.sort((left, right) => right.modifiedAt - left.modifiedAt).slice(0, Math.max(0, limit))) {
+      try {
+        const parsed = JSON.parse(await fs.readFile(path.join(root, entry.name, 'manifest.json'), 'utf8')) as AmbientCaptureDiagnosticManifest;
+        if (parsed.schemaVersion !== 1 || !parsed.bundleId || !Array.isArray(parsed.assetIds)) continue;
+        results.push({
+          bundleId: parsed.bundleId,
+          relativeDirectory: parsed.relativeDirectory,
+          manifestFile: parsed.manifestFile,
+          createdAt: parsed.createdAt,
+          frameId: parsed.frameId,
+          observationId: parsed.observationId,
+          assetIds: parsed.assetIds,
+        });
+      } catch {
+        // A partially written or manually damaged diagnostic bundle is ignored,
+        // never rewritten, so the remaining evidence can still be inspected.
+      }
+    }
+    return results;
+  }
+
+  private diagnosticUserDirectory(userId: string): string {
+    return path.join(this.options.rootDirectory, 'diagnostics', 'ambient-captures', userKey(userId));
+  }
+
+  private async pruneDiagnosticCaptures(userId: string, limit: number): Promise<void> {
+    const root = this.diagnosticUserDirectory(userId);
+    const entries = await fs.readdir(root, { withFileTypes: true }).catch(() => []);
+    const directories = await Promise.all(entries.filter((entry) => entry.isDirectory()).map(async (entry) => ({
+      name: entry.name,
+      modifiedAt: (await fs.stat(path.join(root, entry.name))).mtimeMs,
+    })));
+    const retained = Math.max(1, Math.round(limit));
+    await Promise.all(directories
+      .sort((left, right) => right.modifiedAt - left.modifiedAt)
+      .slice(retained)
+      .map((entry) => fs.rm(path.join(root, entry.name), { recursive: true, force: true })));
+  }
+
   private async writeAsset(input: {
     userId: string;
     role: GarmentImageAsset['role'];
@@ -254,6 +439,24 @@ function cropPixels(
 
 function userKey(userId: string): string {
   return createHash('sha256').update(userId).digest('hex').slice(0, 24);
+}
+
+function extensionForMimeType(mimeType: GarmentImageAsset['mimeType']): string {
+  if (mimeType === 'image/webp') return 'webp';
+  if (mimeType === 'image/png') return 'png';
+  return 'jpg';
+}
+
+function safePathSegment(value: string): string {
+  const normalized = value.replace(/[^a-zA-Z0-9._-]+/g, '-').replace(/^-+|-+$/g, '');
+  return normalized.slice(0, 96) || 'capture';
+}
+
+function sortableTimestamp(value: string): string {
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed)
+    ? new Date(parsed).toISOString().replace(/[:.]/g, '-')
+    : new Date().toISOString().replace(/[:.]/g, '-');
 }
 
 function isWithin(root: string, candidate: string): boolean {
