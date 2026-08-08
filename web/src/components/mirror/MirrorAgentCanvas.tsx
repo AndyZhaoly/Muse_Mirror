@@ -134,14 +134,26 @@ export function MirrorAgentCanvas({
             <section className="ambient-capture-complete" aria-label="自动穿搭记录完成">
               <span className="eyebrow">WARDROBE</span>
               <strong>
-                {state.ambientCaptureEvent.repeatedOutfit
+                {state.ambientCaptureEvent.completionStatus === 'partially_resolved'
+                  ? '✓ 已记录清楚的单品'
+                  : state.ambientCaptureEvent.repeatedOutfit
                   ? '✓ 这套我已经认识了'
                   : state.ambientCaptureEvent.newItemIds.length
                     ? '✓ 今天这套我记下了'
                     : '✓ 已记录今天的穿着'}
               </strong>
               <p className="ambient-capture-summary">
-                {state.ambientCaptureEvent.repeatedOutfit
+                {state.ambientCaptureEvent.completionStatus === 'partially_resolved'
+                  ? [
+                      state.ambientCaptureEvent.newItemIds.length
+                        ? `新加入 ${state.ambientCaptureEvent.newItemIds.length} 件`
+                        : undefined,
+                      state.ambientCaptureEvent.recognizedItemIds.length
+                        ? `已识别 ${state.ambientCaptureEvent.recognizedItemIds.length} 件`
+                        : undefined,
+                      `待更多证据 ${state.ambientCaptureEvent.pendingItems.length} 件`,
+                    ].filter(Boolean).join(' · ')
+                  : state.ambientCaptureEvent.repeatedOutfit
                   ? '已记录今天的穿着'
                   : [
                       state.ambientCaptureEvent.newItemIds.length
@@ -162,6 +174,11 @@ export function MirrorAgentCanvas({
                   </span>
                 ))}
               </div>
+              {state.ambientCaptureEvent.pendingItems.length > 0 && (
+                <p className="ambient-capture-pending">
+                  仍在收集更多画面：{state.ambientCaptureEvent.pendingItems.map((item) => item.label).join('、')}
+                </p>
+              )}
               {state.ambientCaptureEvent.newItemIds.length > 0 && (
                 <p className="ambient-capture-footnote">之后推荐时会一起考虑</p>
               )}

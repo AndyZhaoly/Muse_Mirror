@@ -90,6 +90,7 @@ test('resolving persisted pending identity migrates capture refs and creates one
     },
     currentEvidenceAssetIds: ['pending-crop'], evidenceSignatures: [],
     candidateClosetItemIds: ['shorts-first'],
+    candidateHistoryClosetItemIds: ['shorts-first'],
     candidateSummaries: [{
       closetItemId: 'shorts-first', label: 'Light gray shorts', imageUrl: '/assets/canonical-appearance',
       priorRank: 1, identityReasonCodes: ['INSUFFICIENT_INSTANCE_EVIDENCE'],
@@ -176,6 +177,7 @@ function userState(userId: string): UserWardrobeState {
     pendingCompletionEvent: userId === 'user-a' ? {
       eventId: 'completion', type: 'outfit_capture_completed', userId, sessionId: 'session', captureId: 'capture-second',
       episodeId: 'episode', newItemIds: ['shorts-duplicate'], recognizedItemIds: [],
+      completionStatus: 'fully_resolved', pendingItems: [],
       itemSummaries: [{ closetItemId: 'shorts-duplicate', slot: 'bottom', label: 'Gray shorts', status: 'new' }],
       repeatedOutfit: false, committedAt: '2026-08-06T20:46:00.000Z',
     } : undefined,

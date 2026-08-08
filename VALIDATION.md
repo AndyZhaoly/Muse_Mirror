@@ -131,6 +131,9 @@ pairwise input, cross-frame consistency/mixed evidence, perceptual/bounding-box/
 one-recheck limit, cross-episode deferral, and cleanup on episode end/privacy pause. Progressive-commit fixtures
 also require that one ambiguous garment does not block resolved garments, that an OutfitCapture persists the
 pending item reference, and that later resolution migrates that reference and creates at most one WearEvent.
+They additionally cover unique physical item IDs for equal fingerprints, atomic pending/capture reconciliation,
+same-slot garment replacement, recheck-budget preservation after episode departure, pending expiry, bounded live
+candidate windows, one-to-one track assignment, and truthful partial-completion UI copy.
 
 Private real-camera cases can be summarized without committing photos:
 

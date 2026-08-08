@@ -242,11 +242,21 @@ crop difference, bounding-box or coverage change, or improved visibility of an o
 JPEG SHA alone. A second ambiguous result enters `ready_to_ask`. Leaving the episode changes unresolved work to
 `deferred` while retaining only bounded garment-crop evidence. Privacy pause discards unresolved evidence.
 
+`ClosetItem.id` is a unique physical-record identifier and is never derived from the semantic
+`appearanceFingerprint`. Two distinct garments may intentionally share the same fingerprint and still create two
+independent closet records. Track assignment is deterministic and one-to-one within an observation, so layered or
+multiple accessory slots cannot consume the same previous track twice.
+
 A deferred resolution reconnects across episodes only when slot and category are compatible, descriptors remain
-compatible without a hard contradiction, and candidate sets overlap. If zero or multiple deferred resolutions
-satisfy those constraints, runtime does not guess. Successful later resolution atomically replaces historical
-`pending_identity` capture references with the canonical `closet_item` reference and adds any missing WearEvent
-exactly once. TTS, ASR, confirmation wording, and user-answer parsing are intentionally deferred to PR9.
+compatible without a hard contradiction, and the current candidate window overlaps. Candidate history is retained
+only as a bounded audit field and never expands live reconnect eligibility. If zero or multiple deferred resolutions
+satisfy those constraints, runtime does not guess. The runtime expires a pending resolution at `deadlineAt`; expired
+records remain auditable but cannot reconnect. Cheap candidate recall happens before the bounded recheck decision,
+so a deferred `ready_to_ask` record cannot silently consume a new pairwise-verifier call in another episode.
+Successful later resolution and the current capture commit occur under one repository lock: historical
+`pending_identity` references are replaced with the canonical `closet_item`, equivalent logical captures are
+canonicalized, and at most one WearEvent exists for a closet item in a continuous episode. TTS, ASR, confirmation
+wording, and user-answer parsing are intentionally deferred to PR9.
 
 Each resolution persists a bounded, sanitized `GarmentIdentityDecisionTrace` containing recall scores, tiers,
 reference evidence type, soft contradictions, class-level and instance-specific match features, Safe Same reject
@@ -282,6 +292,10 @@ independent product-image jobs so a restart or developer retry cannot duplicate 
 The recommendation runtime reads the same signed-browser overlay as ambient capture. A new-item completion
 card displays product images only after all required jobs are verified; repeat recognition reuses existing
 primary images without another generation call.
+
+Completion events explicitly distinguish `fully_resolved`, `fully_recognized`, and `partially_resolved` results.
+Partial events include their unresolved garment references, allowing the Mirror Canvas to acknowledge recorded
+items while saying that another garment still needs evidence instead of claiming the whole outfit is finalized.
 
 Duplicate repair is an explicit repository transaction, never a direct JSON edit. `previewClosetItemMerge()`
 reports every affected reference before mutation. `mergeClosetItems()` is per-user, atomic, and idempotent;

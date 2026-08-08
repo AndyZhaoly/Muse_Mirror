@@ -621,6 +621,13 @@ export interface AmbientCaptureCompletedEvent {
   episodeId: string;
   newItemIds: string[];
   recognizedItemIds: string[];
+  completionStatus: 'fully_resolved' | 'partially_resolved' | 'fully_recognized';
+  pendingItems: Array<{
+    resolutionId: string;
+    slot: 'top' | 'bottom' | 'dress' | 'outerwear' | 'shoes' | 'bag' | 'accessory';
+    label: string;
+    state: 'awaiting_evidence' | 'ready_to_ask' | 'deferred';
+  }>;
   itemSummaries: Array<{
     closetItemId: string;
     slot: 'top' | 'bottom' | 'dress' | 'outerwear' | 'shoes' | 'bag' | 'accessory';

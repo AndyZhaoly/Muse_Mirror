@@ -347,6 +347,7 @@ export interface WearEvent {
 
 export interface AmbientGarmentTrack {
   trackId: string;
+  latestObservationItemId?: string;
   slot: AmbientGarmentSlot;
   category: ClosetItem['category'];
   appearanceFingerprint: string;
@@ -373,6 +374,7 @@ export type PendingIdentityResolutionState =
   | 'awaiting_evidence'
   | 'ready_to_ask'
   | 'deferred'
+  | 'expired'
   | 'resolved_existing'
   | 'resolved_new';
 
@@ -403,7 +405,10 @@ export interface PendingIdentityResolution {
   lockedDescriptor: GarmentAppearanceDescriptor;
   currentEvidenceAssetIds: string[];
   evidenceSignatures: PendingIdentityEvidenceSignature[];
+  /** Current candidate window used for live reconnect decisions. */
   candidateClosetItemIds: string[];
+  /** Bounded audit history; never used directly for reconnect. */
+  candidateHistoryClosetItemIds: string[];
   candidateSummaries: PendingIdentityCandidateSummary[];
   ambiguityReasonCodes: string[];
   occludedFeatures: string[];
@@ -462,6 +467,11 @@ export interface OutfitCaptureProposal {
 
 export interface CommitOutfitCaptureCommand {
   proposal: OutfitCaptureProposal;
+  pendingResolutions?: Array<{
+    resolutionId: string;
+    closetItemId: string;
+    state: 'resolved_existing' | 'resolved_new';
+  }>;
 }
 
 export interface OutfitCaptureCommitResult {
@@ -586,6 +596,13 @@ export interface OutfitCaptureCompletedEvent {
   episodeId: string;
   newItemIds: string[];
   recognizedItemIds: string[];
+  completionStatus: 'fully_resolved' | 'partially_resolved' | 'fully_recognized';
+  pendingItems: Array<{
+    resolutionId: string;
+    slot: AmbientGarmentSlot;
+    label: string;
+    state: 'awaiting_evidence' | 'ready_to_ask' | 'deferred';
+  }>;
   itemSummaries: Array<{
     closetItemId: string;
     slot: AmbientGarmentSlot;

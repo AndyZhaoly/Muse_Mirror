@@ -13,6 +13,9 @@ test('ambient capture UI exposes explicit grant, real completion, and developer 
   assert.match(canvas, /outfit_capture_completed|ambientCaptureEvent/);
   assert.match(canvas, /新加入/);
   assert.match(canvas, /已识别/);
+  assert.match(canvas, /已记录清楚的单品/);
+  assert.match(canvas, /待更多证据/);
+  assert.match(canvas, /仍在收集更多画面/);
   assert.match(canvas, /item\.imageStatus === 'ready' && item\.imageUrl/);
   assert.match(canvas, /正在整理衣橱单品图/);
   assert.match(canvas, /未通过校验的图片不会展示/);

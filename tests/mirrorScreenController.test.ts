@@ -152,6 +152,8 @@ test('ambient capture completion owns the passive canvas instead of stale conver
       episodeId: 'episode-1',
       newItemIds: ['top-1'],
       recognizedItemIds: ['bottom-1'],
+      completionStatus: 'fully_resolved',
+      pendingItems: [],
       itemSummaries: [
         { closetItemId: 'top-1', slot: 'top', label: '蓝色上衣', status: 'new' },
         { closetItemId: 'bottom-1', slot: 'bottom', label: '米色长裤', status: 'recognized' },
@@ -183,6 +185,8 @@ test('active assistant turn hides an older ambient completion event', () => {
       episodeId: 'episode-1',
       newItemIds: [],
       recognizedItemIds: [],
+      completionStatus: 'fully_recognized',
+      pendingItems: [],
       itemSummaries: [],
       repeatedOutfit: true,
       committedAt: '2026-08-05T00:00:00.000Z',

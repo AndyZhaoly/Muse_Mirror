@@ -56,6 +56,7 @@ export interface GarmentIdentityInput {
 
 export interface GarmentIdentityProvider {
   readonly ready?: boolean;
+  recall?(input: GarmentIdentityInput): GarmentRecallResult;
   resolve(input: GarmentIdentityInput): Promise<GarmentIdentityHypothesis>;
 }
 
@@ -126,6 +127,10 @@ export class VisualGarmentIdentityProvider implements GarmentIdentityProvider {
     },
   ) {
     this.ready = options.verifier.ready;
+  }
+
+  recall(input: GarmentIdentityInput): GarmentRecallResult {
+    return recallGarmentIdentityCandidates(input, this.options.topK ?? 4);
   }
 
   async resolve(input: GarmentIdentityInput): Promise<GarmentIdentityHypothesis> {

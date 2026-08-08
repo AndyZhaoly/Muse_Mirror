@@ -18,6 +18,7 @@ import {
   AmbientCaptureCoordinator,
   findPendingResolutionForTrack,
   gateWornGarmentObservation,
+  updateGarmentTracks,
 } from '../src/runtime/ambientCaptureCoordinator.js';
 import { GarmentImageAssetService } from '../src/services/garmentImageAssetService.js';
 import { VisualGarmentIdentityProvider, type GarmentIdentityInput } from '../src/services/garmentIdentityProvider.js';
@@ -509,6 +510,104 @@ test('one ambiguous garment does not block new and existing items in the same ca
   assert.equal(state.wearEvents.length, 2);
   assert.ok(state.wearEvents.some((event) => event.closetItemId === 'existing-shoes'));
   assert.ok(!state.wearEvents.some((event) => event.closetItemId === 'gray-shorts-a'));
+
+  const settled = await waitForJobsToSettle(fixture.repository, userId, 1);
+  assert.equal(settled.pendingCompletionEvent?.completionStatus, 'partially_resolved');
+  assert.deepEqual(settled.pendingCompletionEvent?.pendingItems.map((item) => item.label), ['gray shorts']);
+  assert.equal(settled.pendingCompletionEvent?.newItemIds.length, 1);
+  assert.equal(settled.pendingCompletionEvent?.recognizedItemIds.length, 1);
+});
+
+test('different physical garments with the same appearance fingerprint receive unique closet item IDs', async () => {
+  const fixture = await createFixture('unique-physical-item-id');
+  await fixture.repository.setGrant(userId, true);
+  const first = outfit([garment('black-tee-a', 'top', 'black', 'plain black crew tee')]);
+  const second = outfit([garment('black-tee-b', 'top', 'black', 'plain black crew tee')]);
+  const identityProvider = {
+    ready: true,
+    async resolve(input: GarmentIdentityInput): Promise<GarmentIdentityHypothesis> {
+      return {
+        observationItemId: input.garment.observationItemId,
+        status: 'new_to_closet',
+        appearanceFingerprint: 'same-semantic-fingerprint',
+        confidence: 0.94,
+        candidateItemIds: input.userClosetItems.map((entry) => entry.item.id),
+        reasonCodes: ['PAIRWISE_CONFIRMED_DIFFERENT'],
+      };
+    },
+  };
+  const firstRuntime = new AmbientCaptureCoordinator({
+    observationProvider: queuedProvider([first, first]), identityProvider,
+    repository: fixture.repository, baseClosetItems: () => [], assetService: fixture.assetService,
+    productImageProvider: new DisabledFakeProductProvider(), productImageVerifier: new PassingProductVerifier(),
+  });
+  await firstRuntime.process(packet(fixture.framePath, 'physical-a', 'physical-a-1'));
+  await firstRuntime.process(packet(fixture.framePath, 'physical-a', 'physical-a-2'));
+  await waitForJobsToSettle(fixture.repository, userId, 1);
+  await firstRuntime.endEpisode(userId, 'physical-a');
+
+  const secondRuntime = new AmbientCaptureCoordinator({
+    observationProvider: queuedProvider([second, second]), identityProvider,
+    repository: fixture.repository, baseClosetItems: () => [], assetService: fixture.assetService,
+    productImageProvider: new DisabledFakeProductProvider(), productImageVerifier: new PassingProductVerifier(),
+  });
+  await secondRuntime.process(packet(fixture.framePath, 'physical-b', 'physical-b-1'));
+  await secondRuntime.process(packet(fixture.framePath, 'physical-b', 'physical-b-2'));
+  const state = await waitForJobsToSettle(fixture.repository, userId, 2);
+  assert.equal(state.closetItems.length, 2);
+  assert.equal(new Set(state.closetItems.map((entry) => entry.item.id)).size, 2);
+  assert.ok(state.closetItems.every((entry) => entry.appearanceFingerprint === 'same-semantic-fingerprint'));
+});
+
+test('pending resolution and current capture reconcile atomically without duplicate wear or capture', async () => {
+  const fixture = await createFixture('atomic-pending-reconciliation');
+  const changedFrame = await writeFrame(path.join(fixture.directory, 'changed.jpg'), '#263a63', '#c5a66b');
+  await fixture.repository.setGrant(userId, true);
+  const initial = outfit([
+    garment('pending-top', 'top', 'navy', 'navy crew tee'),
+    garment('known-pants', 'bottom', 'sand', 'straight trousers'),
+  ]);
+  const improved = structuredClone(initial);
+  improved.garments[0]!.boundingBox = { x: 0.12, y: 0.14, width: 0.72, height: 0.7 };
+  let topChecks = 0;
+  const identityProvider = {
+    ready: true,
+    async resolve(input: GarmentIdentityInput): Promise<GarmentIdentityHypothesis> {
+      if (input.garment.slot === 'bottom') return {
+        observationItemId: input.garment.observationItemId,
+        status: 'matched_existing', matchedClosetItemId: 'base-pants',
+        appearanceFingerprint: 'pants', confidence: 0.96,
+        candidateItemIds: ['base-pants'], reasonCodes: ['FIXTURE_MATCH'],
+      };
+      topChecks += 1;
+      if (topChecks === 1) return ambiguousIdentity(input, true);
+      return {
+        observationItemId: input.garment.observationItemId,
+        status: 'new_to_closet', appearanceFingerprint: 'resolved-top', confidence: 0.94,
+        candidateItemIds: [], reasonCodes: ['FIXTURE_NEW_AFTER_RECHECK'],
+      };
+    },
+  };
+  const runtime = new AmbientCaptureCoordinator({
+    observationProvider: queuedProvider([initial, initial, improved]), identityProvider,
+    repository: fixture.repository,
+    baseClosetItems: () => [{
+      id: 'base-pants', name: 'Sand trousers', category: 'bottom', color: 'sand', fit: 'straight',
+      styleTags: ['solid'], formality: 'casual', imageUrl: '/agent-assets/pants.jpg', marketedFor: 'unisex',
+    }],
+    assetService: fixture.assetService,
+    productImageProvider: new DisabledFakeProductProvider(), productImageVerifier: new PassingProductVerifier(),
+  });
+  await runtime.process(packet(fixture.framePath, 'atomic-pending', 'atomic-1'));
+  assert.equal((await runtime.process(packet(fixture.framePath, 'atomic-pending', 'atomic-2'))).status, 'mixed');
+  assert.equal((await runtime.process(packet(changedFrame, 'atomic-pending', 'atomic-3'))).status, 'committed_processing_images');
+  const state = await waitForJobsToSettle(fixture.repository, userId, 1);
+  const resolvedTop = state.closetItems.find((entry) => entry.appearanceFingerprint === 'resolved-top');
+  assert.ok(resolvedTop);
+  assert.equal(state.captures.filter((capture) => capture.episodeId === state.episodes[0]?.episodeId).length, 1);
+  assert.equal(state.captures[0]?.items.filter((item) => item.type === 'pending_identity').length, 0);
+  assert.equal(state.wearEvents.filter((wear) => wear.closetItemId === resolvedTop.item.id).length, 1);
+  assert.equal(state.wearEvents.filter((wear) => wear.closetItemId === 'base-pants').length, 1);
 });
 
 test('first reliable observation retains ephemeral crops and second observation resolves with both frames', async () => {
@@ -673,7 +772,8 @@ test('cross-episode pending reconnect requires candidate overlap and never guess
     resolutionId, userId, episodeId: 'old-episode', trackId: `old-${resolutionId}`,
     observationItemId: `old-observation-${resolutionId}`, slot: 'bottom', category: 'bottom',
     lockedDescriptor: structuredClone(track.descriptor), currentEvidenceAssetIds: [], evidenceSignatures: [],
-    candidateClosetItemIds, candidateSummaries: [], ambiguityReasonCodes: ['INSUFFICIENT_INSTANCE_EVIDENCE'],
+    candidateClosetItemIds, candidateHistoryClosetItemIds: candidateClosetItemIds,
+    candidateSummaries: [], ambiguityReasonCodes: ['INSUFFICIENT_INSTANCE_EVIDENCE'],
     occludedFeatures: [], automaticRecheckCount: 0, state: 'deferred',
     createdAt: '2026-08-08T10:00:00.000Z', updatedAt: '2026-08-08T10:00:00.000Z',
   });
@@ -684,6 +784,127 @@ test('cross-episode pending reconnect requires candidate overlap and never guess
     [pending('one', ['pants-a']), pending('two', ['pants-a'])], 'new-episode', track, ['pants-a']), undefined);
   assert.equal(findPendingResolutionForTrack(
     [pending('one', ['pants-a'])], 'new-episode', track, ['pants-a'])?.resolutionId, 'one');
+  const historyOnly = pending('history-only', ['pants-current']);
+  historyOnly.candidateHistoryClosetItemIds = ['pants-current', 'pants-historical'];
+  assert.equal(findPendingResolutionForTrack(
+    [historyOnly], 'new-episode', track, ['pants-historical']), undefined,
+  'audit history must never expand the live reconnect candidate window');
+});
+
+test('same-slot garment replacement cannot inherit an incompatible pending resolution', () => {
+  const oldDescriptor = {
+    slot: 'top' as const, category: 'top' as const, dominantColor: 'black', secondaryColors: [],
+    pattern: 'solid', silhouette: 'fitted crew tee', fit: 'regular', distinctiveFeatures: ['plain crew neck'],
+  };
+  const pending: PendingIdentityResolution = {
+    resolutionId: 'pending-black-tee', userId, episodeId: 'same-episode', trackId: 'old-track',
+    observationItemId: 'old-black-tee', slot: 'top', category: 'top', lockedDescriptor: oldDescriptor,
+    currentEvidenceAssetIds: [], evidenceSignatures: [], candidateClosetItemIds: ['black-tee-a'],
+    candidateHistoryClosetItemIds: ['black-tee-a'], candidateSummaries: [],
+    ambiguityReasonCodes: ['INSUFFICIENT_INSTANCE_EVIDENCE'], occludedFeatures: [], automaticRecheckCount: 0,
+    state: 'awaiting_evidence', createdAt: '2026-08-08T10:00:00.000Z', updatedAt: '2026-08-08T10:00:00.000Z',
+  };
+  const replacementTrack = {
+    trackId: 'new-track', latestObservationItemId: 'striped-white-tee', slot: 'top' as const, category: 'top' as const,
+    appearanceFingerprint: 'replacement', descriptor: {
+      ...oldDescriptor, dominantColor: 'white', pattern: 'striped', silhouette: 'boxy oversized tee',
+      fit: 'oversized', distinctiveFeatures: ['wide blue stripes', 'chest pocket'],
+    },
+    firstObservationId: 'replacement-observation', latestObservationId: 'replacement-observation',
+    consecutiveMatches: 2, identityEvidence: [], maxEvidenceCount: 2,
+  };
+  assert.equal(findPendingResolutionForTrack([pending], 'same-episode', replacementTrack, ['different-candidate']), undefined);
+});
+
+test('exhausted automatic recheck budget survives leaving and returning in a new episode', async () => {
+  const fixture = await createFixture('recheck-budget-cross-episode');
+  await fixture.repository.setGrant(userId, true);
+  const observed = outfit([garment('budget-top', 'top', 'navy', 'navy crew tee')]);
+  let identityCalls = 0;
+  const identityProvider = {
+    ready: true,
+    async resolve(input: GarmentIdentityInput) {
+      identityCalls += 1;
+      return ambiguousIdentity(input, true);
+    },
+  };
+  const baseItem: ClosetItem = {
+    id: 'fixture-candidate', name: 'Navy crew tee', category: 'top', color: 'navy', fit: 'regular',
+    styleTags: ['solid', 'navy crew tee'], formality: 'casual', imageUrl: '/agent-assets/navy.jpg', marketedFor: 'unisex',
+  };
+  const firstRuntime = new AmbientCaptureCoordinator({
+    observationProvider: queuedProvider([observed, observed]), identityProvider,
+    repository: fixture.repository, baseClosetItems: () => [baseItem], assetService: fixture.assetService,
+    productImageProvider: new DisabledFakeProductProvider(), productImageVerifier: new PassingProductVerifier(),
+  });
+  await firstRuntime.process(packet(fixture.framePath, 'budget-first', 'budget-1'));
+  await firstRuntime.process(packet(fixture.framePath, 'budget-first', 'budget-2'));
+  let state = await fixture.repository.getState(userId);
+  const exhausted = state.pendingIdentityResolutions[0]!;
+  await fixture.repository.upsertPendingIdentityResolution(userId, {
+    ...exhausted, automaticRecheckCount: 1, state: 'ready_to_ask', updatedAt: new Date().toISOString(),
+  });
+  await firstRuntime.endEpisode(userId, 'budget-first');
+  assert.equal((await fixture.repository.getState(userId)).pendingIdentityResolutions[0]?.state, 'deferred');
+
+  const secondRuntime = new AmbientCaptureCoordinator({
+    observationProvider: queuedProvider([observed, observed]), identityProvider,
+    repository: fixture.repository, baseClosetItems: () => [baseItem], assetService: fixture.assetService,
+    productImageProvider: new DisabledFakeProductProvider(), productImageVerifier: new PassingProductVerifier(),
+  });
+  await secondRuntime.process(packet(fixture.framePath, 'budget-second', 'budget-3'));
+  await secondRuntime.process(packet(fixture.framePath, 'budget-second', 'budget-4'));
+  state = await fixture.repository.getState(userId);
+  assert.equal(identityCalls, 1, 'cheap recall must reconnect before deciding whether another verifier pass is allowed');
+  assert.equal(state.pendingIdentityResolutions.length, 1);
+  assert.equal(state.pendingIdentityResolutions[0]?.automaticRecheckCount, 1);
+  assert.equal(state.pendingIdentityResolutions[0]?.state, 'ready_to_ask');
+});
+
+test('expired pending identity remains auditable but cannot reconnect', async () => {
+  const fixture = await createFixture('pending-expiration');
+  const descriptor = {
+    slot: 'bottom' as const, category: 'bottom' as const, dominantColor: 'gray', secondaryColors: [],
+    pattern: 'solid', silhouette: 'straight shorts', fit: 'straight', distinctiveFeatures: ['stitched hem'],
+  };
+  const pending: PendingIdentityResolution = {
+    resolutionId: 'expired-pending', userId, episodeId: 'old-episode', trackId: 'old-track',
+    observationItemId: 'old-shorts', slot: 'bottom', category: 'bottom', lockedDescriptor: descriptor,
+    currentEvidenceAssetIds: [], evidenceSignatures: [], candidateClosetItemIds: ['gray-shorts'],
+    candidateHistoryClosetItemIds: ['gray-shorts'], candidateSummaries: [], ambiguityReasonCodes: ['INSUFFICIENT_INSTANCE_EVIDENCE'],
+    occludedFeatures: [], automaticRecheckCount: 0, state: 'deferred',
+    createdAt: '2026-08-08T10:00:00.000Z', updatedAt: '2026-08-08T10:00:00.000Z',
+    deadlineAt: '2026-08-08T10:05:00.000Z',
+  };
+  await fixture.repository.upsertPendingIdentityResolution(userId, pending);
+  assert.equal(await fixture.repository.expirePendingIdentityResolutions(userId, '2026-08-08T10:06:00.000Z'), 1);
+  const state = await fixture.repository.getState(userId);
+  assert.equal(state.pendingIdentityResolutions[0]?.state, 'expired');
+  const track = {
+    trackId: 'new-track', latestObservationItemId: 'new-shorts', slot: 'bottom' as const, category: 'bottom' as const,
+    appearanceFingerprint: 'gray-shorts', descriptor, firstObservationId: 'new-observation', latestObservationId: 'new-observation',
+    consecutiveMatches: 2, identityEvidence: [], maxEvidenceCount: 2,
+  };
+  assert.equal(findPendingResolutionForTrack(state.pendingIdentityResolutions, 'new-episode', track, ['gray-shorts'], '2026-08-08T10:06:00.000Z'), undefined);
+});
+
+test('garment track assignment consumes each prior track at most once', () => {
+  const descriptor = {
+    slot: 'accessory' as const, category: 'accessory' as const, dominantColor: 'silver', secondaryColors: [],
+    pattern: 'solid', silhouette: 'small metal accessory', fit: 'unknown', distinctiveFeatures: ['metal band'],
+  };
+  const previousTracks = ['track-a', 'track-b'].map((trackId) => ({
+    trackId, slot: 'accessory' as const, category: 'accessory' as const, appearanceFingerprint: 'same', descriptor,
+    firstObservationId: trackId, latestObservationId: trackId, consecutiveMatches: 1, identityEvidence: [], maxEvidenceCount: 2,
+  }));
+  const accessory = (observationItemId: string, x: number): WornGarmentObservation => ({
+    ...garment(observationItemId, 'top', 'silver', 'small metal accessory'),
+    observationItemId, slot: 'accessory', category: 'accessory', pattern: 'solid', silhouette: 'small metal accessory',
+    fit: 'unknown', distinctiveFeatures: ['metal band'], boundingBox: { x, y: 0.3, width: 0.12, height: 0.12 },
+  });
+  const tracks = updateGarmentTracks(previousTracks, outfit([accessory('watch', 0.2), accessory('bracelet', 0.65)]));
+  assert.deepEqual(new Set(tracks.map((track) => track.trackId)), new Set(['track-a', 'track-b']));
+  assert.equal(new Set(tracks.map((track) => track.latestObservationItemId)).size, 2);
 });
 
 test('episode end and privacy pause remove orphan track evidence', async () => {

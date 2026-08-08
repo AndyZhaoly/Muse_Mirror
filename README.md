@@ -79,6 +79,10 @@ ClosetItem for that garment, but it no longer blocks resolved garments in the sa
 durable `pending_identity` reference beside ordinary closet-item references, so later evidence or a future
 confirmation adapter can resolve only that slot. The latest 200 sanitized decision traces remain available to the
 signed browser identity for diagnostics.
+Physical closet-record IDs are generated independently from reusable appearance fingerprints. Pending resolution
+and capture reconciliation run atomically, preserving one logical capture and at most one WearEvent per garment in
+a continuous episode. Pending records expire from live reconnect at their deadline, and their bounded candidate
+history remains diagnostic-only. Mirror completion state explicitly marks mixed outfits as partially resolved.
 Duplicate overlay items can be repaired through a dry-run-first, atomic repository merge; the duplicate is
 archived as an alias and is excluded from recommendation without deleting its historical appearances or wear.
 

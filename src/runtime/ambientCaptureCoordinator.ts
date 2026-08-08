@@ -20,7 +20,12 @@ import { decideMirrorSituation } from '../policy/mirrorSituationPolicy.js';
 import type { ClosetItem } from '../types.js';
 import { makeId } from '../utils/ids.js';
 import type { GarmentIdentityProvider } from '../services/garmentIdentityProvider.js';
-import { appearanceFingerprint, descriptorFromObservation } from '../services/garmentIdentityProvider.js';
+import {
+  appearanceFingerprint,
+  descriptorFromObservation,
+  recallGarmentIdentityCandidates,
+  type GarmentIdentityInput,
+} from '../services/garmentIdentityProvider.js';
 import { canonicalizePattern, colorSimilarity } from '../services/garmentVocabulary.js';
 import { hardAttributeExclusion } from '../services/garmentIdentityEvidence.js';
 import type { OutfitObservationProvider } from '../services/outfitObservationProvider.js';
@@ -56,7 +61,7 @@ export class AmbientCaptureCoordinator {
   }
 
   private async processLocked(packet: AmbientCapturePacket): Promise<AmbientCaptureOutcome> {
-    const state = await this.options.repository.getState(packet.userId);
+    let state = await this.options.repository.getState(packet.userId);
     if (!activeGrant(state.grant)) return this.remember(packet.userId, { status: 'disabled', reasonCodes: ['AUTO_CAPTURE_GRANT_MISSING'] });
     if (!this.options.observationProvider.ready) return this.remember(packet.userId, { status: 'unavailable', reasonCodes: ['REAL_VISION_PROVIDER_UNAVAILABLE'], retryAfterMs: 15_000 });
     if (!validStability(packet)) return this.remember(packet.userId, { status: 'observing', reasonCodes: ['LOCAL_FRAME_NOT_STABLE'], retryAfterMs: 1_500 });
@@ -64,6 +69,8 @@ export class AmbientCaptureCoordinator {
     if (!Number.isFinite(capturedAt) || Date.now() - capturedAt > 20_000 || capturedAt - Date.now() > 5_000) {
       return this.remember(packet.userId, { status: 'insufficient_evidence', reasonCodes: ['CAPTURE_PACKET_STALE'] });
     }
+    await this.options.repository.expirePendingIdentityResolutions(packet.userId, packet.capturedAt);
+    state = await this.options.repository.getState(packet.userId);
 
     let episode = currentEpisode(state.episodes, packet.sessionId) ?? newEpisode(packet);
     if (episode.lastFrameId === packet.frameId) {
@@ -141,11 +148,7 @@ export class AmbientCaptureCoordinator {
       ? updateGarmentTracks(episode.garmentTracks ?? [], observation)
       : [];
     const tracksStable = reliable && observation.garments.every((garment) =>
-      garmentTracks.some((track) =>
-        track.slot === garment.slot &&
-        track.category === garment.category &&
-        track.consecutiveMatches >= 2
-      )
+      (findTrackForGarment(garmentTracks, garment)?.consecutiveMatches ?? 0) >= 2
     );
     episode = {
       ...episode,
@@ -250,7 +253,7 @@ export class AmbientCaptureCoordinator {
         return asset ? [asset] : [];
       });
       const pending = track
-        ? findPendingResolutionForTrack(freshState.pendingIdentityResolutions, episode.episodeId, track)
+        ? findPendingResolutionForTrack(freshState.pendingIdentityResolutions, episode.episodeId, track, [], packet.capturedAt)
         : undefined;
       const retained = pending?.currentEvidenceAssetIds.flatMap((assetId) => {
         const asset = freshState.assets.find((entry) => entry.assetId === assetId);
@@ -270,42 +273,51 @@ export class AmbientCaptureCoordinator {
         retryAfterMs: 5_000,
       });
     }
+    const identityInputs: GarmentIdentityInput[] = observation.garments.map((garment, index) => ({
+      userId: packet.userId,
+      episodeId: episode.episodeId,
+      capturedAt: packet.capturedAt,
+      garment,
+      currentAppearances: currentAppearanceGroups[index]!,
+      baseClosetItems: this.options.baseClosetItems(),
+      userClosetItems: freshState.closetItems,
+      appearances: freshState.appearances,
+      assets: freshState.assets,
+      captures: freshState.captures,
+      wearEvents: freshState.wearEvents,
+      baseCatalogAssets,
+    }));
+    const recalls = identityInputs.map((input) =>
+      this.options.identityProvider.recall?.(input) ?? recallGarmentIdentityCandidates(input));
     const automaticRechecks = new Set<string>();
     const identities = await Promise.all(observation.garments.map(async (garment, index) => {
       const track = findTrackForGarment(garmentTracks, garment);
+      const recallCandidateIds = recalls[index]!.candidates.map((candidate) => candidate.closetItemId);
       const pending = track
-        ? findPendingResolutionForTrack(freshState.pendingIdentityResolutions, episode.episodeId, track)
+        ? findPendingResolutionForTrack(
+            freshState.pendingIdentityResolutions,
+            episode.episodeId,
+            track,
+            recallCandidateIds,
+            packet.capturedAt,
+          )
         : undefined;
       const meaningfulEvidence = pending
         ? hasMeaningfullyNewEvidence(pending, freshState.assets, track)
         : false;
-      const crossEpisodeEvidenceReady = pending?.ambiguityReasonCodes.includes('CROSS_EPISODE_EVIDENCE_ATTACHED') ?? false;
       if (pending && (
         pending.state === 'ready_to_ask' ||
         pending.automaticRecheckCount >= 1 ||
-        (pending.state === 'awaiting_evidence' && !meaningfulEvidence && !crossEpisodeEvidenceReady)
+        !meaningfulEvidence
       )) {
         return pendingIdentityHypothesis(garment, pending, meaningfulEvidence
           ? 'AUTOMATIC_RECHECK_LIMIT_REACHED'
           : 'AUTOMATIC_RECHECK_REQUIRES_MEANINGFUL_EVIDENCE');
       }
-      if (pending?.state === 'awaiting_evidence' && (meaningfulEvidence || crossEpisodeEvidenceReady)) {
+      if (pending && meaningfulEvidence) {
         automaticRechecks.add(pending.resolutionId);
       }
-      return this.options.identityProvider.resolve({
-        userId: packet.userId,
-        episodeId: episode.episodeId,
-        capturedAt: packet.capturedAt,
-        garment,
-        currentAppearances: currentAppearanceGroups[index]!,
-        baseClosetItems: this.options.baseClosetItems(),
-        userClosetItems: freshState.closetItems,
-        appearances: freshState.appearances,
-        assets: freshState.assets,
-        captures: freshState.captures,
-        wearEvents: freshState.wearEvents,
-        baseCatalogAssets,
-      });
+      return this.options.identityProvider.resolve(identityInputs[index]!);
     }));
     const resolvedPending = new Map<string, Awaited<ReturnType<GarmentIdentityProvider['resolve']>>>();
     for (const [index, identity] of identities.entries()) {
@@ -313,7 +325,13 @@ export class AmbientCaptureCoordinator {
       if (!garment) continue;
       const track = findTrackForGarment(garmentTracks, garment);
       const pending = track
-        ? findPendingResolutionForTrack(freshState.pendingIdentityResolutions, episode.episodeId, track, identity.candidateItemIds)
+        ? findPendingResolutionForTrack(
+            freshState.pendingIdentityResolutions,
+            episode.episodeId,
+            track,
+            identity.candidateItemIds,
+            packet.capturedAt,
+          )
         : undefined;
       if (!pending) continue;
       if (identity.decisionTrace) {
@@ -377,7 +395,17 @@ export class AmbientCaptureCoordinator {
     });
     let committed: Awaited<ReturnType<JsonUserWardrobeRepository['commitCapture']>>;
     try {
-      committed = await this.options.repository.commitCapture({ proposal });
+      committed = await this.options.repository.commitCapture({
+        proposal,
+        pendingResolutions: [...resolvedPending.entries()].flatMap(([resolutionId, identity]) => {
+          const proposalItem = proposal.items.find((item) => item.identity === identity);
+          return proposalItem?.type === 'closet_item' ? [{
+            resolutionId,
+            closetItemId: proposalItem.resolvedClosetItemId,
+            state: identity.status === 'matched_existing' ? 'resolved_existing' as const : 'resolved_new' as const,
+          }] : [];
+        }),
+      });
     } catch (error) {
       await this.options.assetService.deleteAssets([evidenceAsset]);
       await this.cleanupEpisodeEvidence(packet.userId, episode, observation.analyzedAt, 'defer_pending');
@@ -385,19 +413,6 @@ export class AmbientCaptureCoordinator {
     }
     if (committed.status === 'already_committed') {
       await this.options.assetService.deleteAssets([evidenceAsset]);
-    }
-    for (const [resolutionId, identity] of resolvedPending) {
-      const existing = freshState.pendingIdentityResolutions.find((entry) => entry.resolutionId === resolutionId);
-      if (!existing) continue;
-      const proposalItem = proposal.items.find((item) => item.identity === identity);
-      if (!proposalItem || proposalItem.type !== 'closet_item') continue;
-      await this.options.repository.resolvePendingIdentity({
-        userId: packet.userId,
-        resolutionId,
-        closetItemId: proposalItem.resolvedClosetItemId,
-        state: identity.status === 'matched_existing' ? 'resolved_existing' : 'resolved_new',
-        occurredAt: packet.capturedAt,
-      });
     }
     await this.cleanupEpisodeEvidence(packet.userId, episode, observation.analyzedAt, 'preserve_pending');
     if (committed.status === 'committed' && committed.createdClosetItemIds.length) {
@@ -663,6 +678,7 @@ export class AmbientCaptureCoordinator {
         input.episode.episodeId,
         track,
         identity.candidateItemIds,
+        input.packet.capturedAt,
       );
       const currentEvidenceAssetIds = [...new Set([
         ...(existing?.currentEvidenceAssetIds ?? []),
@@ -683,6 +699,17 @@ export class AmbientCaptureCoordinator {
       const now = input.packet.capturedAt;
       const allClosetItems = this.options.baseClosetItems();
       const userItems = (await this.options.repository.getState(input.packet.userId)).closetItems.map((entry) => entry.item);
+      const currentCandidateClosetItemIds = [...new Set(identity.candidateItemIds)].slice(0, 8);
+      const currentCandidateSummaries = currentCandidateClosetItemIds.flatMap((closetItemId, index) => {
+        const item = [...allClosetItems, ...userItems].find((entry) => entry.id === closetItemId);
+        return item ? [{
+          closetItemId,
+          label: item.name,
+          imageUrl: item.imageUrl,
+          priorRank: index + 1,
+          identityReasonCodes: identity.reasonCodes,
+        }] : [];
+      });
       const resolution: PendingIdentityResolution = {
         resolutionId,
         userId: input.packet.userId,
@@ -706,21 +733,12 @@ export class AmbientCaptureCoordinator {
             }] : [];
           }),
         ].filter((entry, index, all) => all.findIndex((candidate) => candidate.assetId === entry.assetId) === index).slice(-2),
-        candidateClosetItemIds: [...new Set([...(existing?.candidateClosetItemIds ?? []), ...identity.candidateItemIds])],
-        candidateSummaries: [
-          ...(existing?.candidateSummaries ?? []),
-          ...identity.candidateItemIds.flatMap((closetItemId, index) => {
-            const item = [...allClosetItems, ...userItems].find((entry) => entry.id === closetItemId);
-            return item ? [{
-              closetItemId,
-              label: item.name,
-              imageUrl: item.imageUrl,
-              priorRank: index + 1,
-              identityReasonCodes: identity.reasonCodes,
-            }] : [];
-          }),
-        ].filter((entry, index, all) =>
-          all.findIndex((candidate) => candidate.closetItemId === entry.closetItemId) === index),
+        candidateClosetItemIds: currentCandidateClosetItemIds,
+        candidateHistoryClosetItemIds: [...new Set([
+          ...(existing?.candidateHistoryClosetItemIds ?? existing?.candidateClosetItemIds ?? []),
+          ...currentCandidateClosetItemIds,
+        ])].slice(-24),
+        candidateSummaries: currentCandidateSummaries,
         ambiguityReasonCodes: [...new Set([
           ...identity.reasonCodes,
           ...(existing && existing.episodeId !== input.episode.episodeId ? ['CROSS_EPISODE_EVIDENCE_ATTACHED'] : []),
@@ -730,7 +748,7 @@ export class AmbientCaptureCoordinator {
         state,
         createdAt: existing?.createdAt ?? now,
         updatedAt: now,
-        deadlineAt: new Date(Date.parse(now) + 5 * 60_000).toISOString(),
+        deadlineAt: existing?.deadlineAt ?? new Date(Date.parse(now) + 5 * 60_000).toISOString(),
       };
       if (trace) {
         trace.pendingResolutionId = resolutionId;
@@ -807,17 +825,19 @@ export class AmbientCaptureCoordinator {
       }
     }
     const state = await this.options.repository.getState(proposal.userId);
+    const completedEvent = completedEventFromCommit(proposal, committed, observation, state, this.options.baseClosetItems());
     if (failed) {
+      await this.options.repository.setPendingCompletionEvent(proposal.userId, completedEvent);
       this.remember(proposal.userId, {
         status: 'image_needs_review',
         reasonCodes: ['CAPTURE_RECORDED', 'CATALOG_IMAGE_NEEDS_REVIEW'],
         episodeId: proposal.episodeId,
         observationId: proposal.observation.observationId,
+        completedEvent,
         retryAfterMs: 15_000,
       });
       return;
     }
-    const completedEvent = completedEventFromCommit(proposal, committed, observation, state, this.options.baseClosetItems());
     await this.options.repository.setPendingCompletionEvent(proposal.userId, completedEvent);
     this.remember(proposal.userId, {
       status: committed.recognizedClosetItemIds.length ? 'mixed_ready' : 'ready',
@@ -964,20 +984,26 @@ export function gateWornGarmentObservation(observation: WornOutfitObservation): 
   };
 }
 
-function updateGarmentTracks(
+export function updateGarmentTracks(
   previousTracks: AmbientGarmentTrack[],
   observation: WornOutfitObservation,
 ): AmbientGarmentTrack[] {
+  const assignedTrackIds = new Set<string>();
   return observation.garments.map((garment) => {
     const descriptor = descriptorFromObservation(garment);
     const fingerprint = appearanceFingerprint(descriptor);
-    const previous = previousTracks.find((track) =>
-      track.slot === garment.slot &&
-      track.category === garment.category &&
-      trackDescriptorSimilarity(track.descriptor, descriptor) >= TRACK_CONTINUITY_THRESHOLD
-    );
+    const previous = previousTracks
+      .filter((track) =>
+        !assignedTrackIds.has(track.trackId) &&
+        track.slot === garment.slot &&
+        track.category === garment.category)
+      .map((track) => ({ track, similarity: trackDescriptorSimilarity(track.descriptor, descriptor) }))
+      .filter((candidate) => candidate.similarity >= TRACK_CONTINUITY_THRESHOLD)
+      .sort((left, right) => right.similarity - left.similarity || left.track.trackId.localeCompare(right.track.trackId))[0]?.track;
+    if (previous) assignedTrackIds.add(previous.trackId);
     return {
       trackId: previous?.trackId ?? makeId('garment_track'),
+      latestObservationItemId: garment.observationItemId,
       slot: garment.slot,
       category: garment.category,
       appearanceFingerprint: fingerprint,
@@ -995,7 +1021,13 @@ function findTrackForGarment(
   tracks: AmbientGarmentTrack[],
   garment: WornOutfitObservation['garments'][number],
 ): AmbientGarmentTrack | undefined {
-  return tracks.find((track) => track.slot === garment.slot && track.category === garment.category);
+  const exact = tracks.find((track) => track.latestObservationItemId === garment.observationItemId);
+  if (exact) return exact;
+  const descriptor = descriptorFromObservation(garment);
+  return tracks
+    .filter((track) => track.slot === garment.slot && track.category === garment.category)
+    .map((track) => ({ track, similarity: trackDescriptorSimilarity(track.descriptor, descriptor) }))
+    .sort((left, right) => right.similarity - left.similarity || left.track.trackId.localeCompare(right.track.trackId))[0]?.track;
 }
 
 const MEANINGFUL_PERCEPTUAL_DISTANCE = 8;
@@ -1025,24 +1057,22 @@ export function findPendingResolutionForTrack(
   episodeId: string,
   track: AmbientGarmentTrack,
   candidateClosetItemIds: string[] = [],
+  observedAt = new Date().toISOString(),
 ): PendingIdentityResolution | undefined {
+  const observedAtMs = Date.parse(observedAt);
+  const eligible = (entry: PendingIdentityResolution): boolean =>
+    entry.state !== 'resolved_existing' &&
+    entry.state !== 'resolved_new' &&
+    entry.state !== 'expired' &&
+    (!entry.deadlineAt || !Number.isFinite(observedAtMs) || Date.parse(entry.deadlineAt) > observedAtMs);
   const exact = resolutions.find((entry) =>
     entry.episodeId === episodeId &&
     entry.trackId === track.trackId &&
-    entry.state !== 'resolved_existing' &&
-    entry.state !== 'resolved_new');
+    eligible(entry));
   if (exact) return exact;
-  const sameEpisodeSlot = resolutions.filter((entry) =>
-    entry.episodeId === episodeId &&
-    entry.state !== 'resolved_existing' &&
-    entry.state !== 'resolved_new' &&
-    entry.slot === track.slot &&
-    entry.category === track.category);
-  if (sameEpisodeSlot.length === 1) return sameEpisodeSlot[0];
   const sameEpisodeCompatible = resolutions.filter((entry) =>
     entry.episodeId === episodeId &&
-    entry.state !== 'resolved_existing' &&
-    entry.state !== 'resolved_new' &&
+    eligible(entry) &&
     entry.slot === track.slot &&
     entry.category === track.category &&
     trackDescriptorSimilarity(entry.lockedDescriptor, track.descriptor) >= TRACK_CONTINUITY_THRESHOLD &&
@@ -1050,6 +1080,7 @@ export function findPendingResolutionForTrack(
   if (sameEpisodeCompatible.length === 1) return sameEpisodeCompatible[0];
   const deferred = resolutions.filter((entry) =>
     entry.state === 'deferred' &&
+    eligible(entry) &&
     entry.slot === track.slot &&
     entry.category === track.category &&
     trackDescriptorSimilarity(entry.lockedDescriptor, track.descriptor) >= TRACK_CONTINUITY_THRESHOLD &&
@@ -1233,7 +1264,7 @@ function buildProposal(args: {
         pendingResolutionId: pending.resolutionId,
       };
     }
-    const itemId = identity.matchedClosetItemId ?? `ambient_${createHash('sha256').update(`${args.packet.userId}:${identity.appearanceFingerprint}`).digest('hex').slice(0, 18)}`;
+    const itemId = identity.matchedClosetItemId ?? makeId('ambient_item');
     const now = args.packet.capturedAt;
     const createItem: AmbientClosetItem | undefined = identity.status === 'new_to_closet'
       ? {
@@ -1300,6 +1331,17 @@ function completedEventFromCommit(
   baseClosetItems: ClosetItem[],
 ): OutfitCaptureCompletedEvent {
   const newIds = new Set(commit.createdClosetItemIds);
+  const pendingItems = proposal.items.flatMap((item) => {
+    if (item.type !== 'pending_identity') return [];
+    const pending = state.pendingIdentityResolutions.find((entry) => entry.resolutionId === item.pendingResolutionId);
+    if (!pending || pending.state === 'resolved_existing' || pending.state === 'resolved_new' || pending.state === 'expired') return [];
+    return [{
+      resolutionId: item.pendingResolutionId,
+      slot: item.observation.slot,
+      label: item.observation.description,
+      state: pending.state,
+    }];
+  });
   return {
     eventId: makeId('outfit_capture_event'),
     type: 'outfit_capture_completed',
@@ -1309,6 +1351,10 @@ function completedEventFromCommit(
     episodeId: proposal.episodeId,
     newItemIds: commit.createdClosetItemIds,
     recognizedItemIds: commit.recognizedClosetItemIds,
+    completionStatus: pendingItems.length > 0
+      ? 'partially_resolved'
+      : commit.createdClosetItemIds.length === 0 ? 'fully_recognized' : 'fully_resolved',
+    pendingItems,
     itemSummaries: proposal.items.filter((item) => item.type === 'closet_item').map((item) => {
       const ambient = state.closetItems.find((entry) => entry.item.id === item.resolvedClosetItemId)?.item;
       const base = baseClosetItems.find((entry) => entry.id === item.resolvedClosetItemId);
