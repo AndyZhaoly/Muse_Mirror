@@ -56,6 +56,13 @@ export function MirrorAgentCanvas({
     .filter((entry) => entry.item.imageStatus === 'ready' && entry.item.imageUrl)
     .slice(-6)
     .reverse();
+  const processingProductItems = state.ambientClosetItems
+    .filter((entry) => entry.status === 'active' && entry.item.imageStatus === 'processing')
+    .slice(-3)
+    .reverse();
+  const showProductImageProgress =
+    state.ambientCaptureStatus === 'committed_processing_images' ||
+    state.ambientProductImageBackfillPending;
 
   return (
     <aside
@@ -161,15 +168,50 @@ export function MirrorAgentCanvas({
             </section>
           )}
 
-          {!state.ambientCaptureEvent && state.ambientCaptureStatus === 'committed_processing_images' && (
-            <section className="ambient-capture-complete is-processing" aria-label="正在整理衣橱图片" aria-live="polite">
-              <span className="eyebrow">WARDROBE</span>
-              <strong>正在整理衣橱图片</strong>
-              <p className="ambient-capture-summary">穿着记录已经保存，验证后的单品图准备好后会在这里出现。</p>
+          {showProductImageProgress && (
+            <section className="ambient-image-progress" aria-label="正在整理衣橱单品图" aria-live="polite">
+              <div className="ambient-image-progress-heading">
+                <span className="eyebrow">WARDROBE IMAGES</span>
+                <strong>
+                  {state.ambientProductImageBackfillPending ? '正在逐件生成单品图' : '正在整理衣橱单品图'}
+                </strong>
+                <small>
+                  {processingProductItems.length > 0
+                    ? `${processingProductItems.length} 件正在生成和检查`
+                    : '正在准备图片服务'}
+                </small>
+              </div>
+              <div
+                className="ambient-image-progress-track"
+                role="progressbar"
+                aria-label="单品图生成进度"
+                aria-valuetext="生成和视觉检查进行中"
+              >
+                <i />
+              </div>
+              <div className="ambient-image-progress-stages" aria-hidden="true">
+                <span className="is-complete"><i />穿搭已记录</span>
+                <span className="is-active"><i />生成并检查图片</span>
+                <span><i />加入衣橱展示</span>
+              </div>
+              {processingProductItems.length > 0 && (
+                <div className="ambient-image-progress-items">
+                  {processingProductItems.map((entry) => (
+                    <span key={entry.item.id}>
+                      <i />
+                      <b>{entry.item.name}</b>
+                      <small>{closetCategoryLabel(entry.item.category)}</small>
+                    </span>
+                  ))}
+                </div>
+              )}
+              <p>图片通过视觉检查后会逐件出现在下方，不影响你继续使用镜子。</p>
             </section>
           )}
 
-          {!state.ambientCaptureEvent && state.ambientCaptureStatus === 'image_needs_review' && (
+          {!state.ambientCaptureEvent &&
+            !state.ambientProductImageBackfillPending &&
+            state.ambientCaptureStatus === 'image_needs_review' && (
             <section className="ambient-capture-complete is-limited" aria-label="衣橱图片尚未完成">
               <span className="eyebrow">WARDROBE</span>
               <strong>今日穿搭已记录</strong>

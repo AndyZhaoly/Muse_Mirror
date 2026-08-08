@@ -229,8 +229,27 @@ button:focus-visible, input:focus-visible { outline: 3px solid rgba(102, 112, 90
 .ambient-capture-items i.is-known { background: #565d50; }
 .ambient-capture-items b { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
 .ambient-capture-items small { grid-column: 3; color: var(--subtle); font-size: 9px; }
-.ambient-capture-complete.is-processing > strong::after { content: ''; display: inline-block; width: 7px; height: 7px; margin-left: 9px; border-radius: 50%; background: #8ea07e; animation: ambient-pulse 1.4s ease-in-out infinite; }
 .ambient-capture-complete.is-limited { color: var(--muted); }
+.ambient-image-progress { border: 1px solid #cbd2c2; background: rgba(244,247,239,.78); padding: 14px; display: grid; gap: 11px; }
+.ambient-image-progress-heading { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 3px 12px; align-items: end; }
+.ambient-image-progress-heading > .eyebrow { grid-column: 1 / -1; }
+.ambient-image-progress-heading > strong { min-width: 0; font-family: var(--serif); font-size: 18px; font-weight: 500; }
+.ambient-image-progress-heading > small { color: #68735f; font-size: 9px; }
+.ambient-image-progress-track { height: 4px; overflow: hidden; background: #dfe4d8; position: relative; }
+.ambient-image-progress-track > i { position: absolute; inset: 0 auto 0 0; width: 36%; background: #7f9472; animation: ambient-progress-travel 1.8s ease-in-out infinite; }
+.ambient-image-progress-stages { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; color: var(--subtle); font-size: 8px; }
+.ambient-image-progress-stages > span { min-width: 0; display: flex; align-items: center; gap: 5px; }
+.ambient-image-progress-stages i { flex: 0 0 auto; width: 6px; height: 6px; border: 1px solid #aaa; border-radius: 50%; background: transparent; }
+.ambient-image-progress-stages .is-complete { color: #65715c; }
+.ambient-image-progress-stages .is-complete i { border-color: #7f9472; background: #7f9472; }
+.ambient-image-progress-stages .is-active { color: var(--ink); font-weight: 600; }
+.ambient-image-progress-stages .is-active i { border-color: #7f9472; background: #7f9472; box-shadow: 0 0 0 3px rgba(127,148,114,.14); animation: ambient-pulse 1.4s ease-in-out infinite; }
+.ambient-image-progress-items { display: grid; gap: 5px; }
+.ambient-image-progress-items > span { min-width: 0; display: grid; grid-template-columns: 8px minmax(0, 1fr) auto; align-items: center; gap: 7px; color: var(--muted); font-size: 9px; }
+.ambient-image-progress-items i { width: 7px; height: 7px; border: 1px solid #8b9780; border-top-color: transparent; border-radius: 50%; animation: ambient-spin .9s linear infinite; }
+.ambient-image-progress-items b { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
+.ambient-image-progress-items small { color: var(--subtle); font-size: 8px; }
+.ambient-image-progress > p { margin: 0; color: var(--muted); font-size: 9px; line-height: 1.5; }
 .ambient-product-action { justify-self: start; border: 1px solid var(--ink); background: var(--ink); color: #fff; min-height: 34px; padding: 7px 12px; cursor: pointer; font-size: 10px; }
 .ambient-product-action:disabled { cursor: wait; opacity: .58; }
 .ambient-product-gallery { border-top: 1px solid var(--line); padding-top: 18px; display: grid; gap: 12px; }
@@ -245,7 +264,14 @@ button:focus-visible, input:focus-visible { outline: 3px solid rgba(102, 112, 90
 .ambient-product-card strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10px; font-weight: 600; }
 .ambient-product-card small { color: var(--subtle); font-size: 8px; }
 @keyframes ambient-pulse { 0%, 100% { opacity: .35; } 50% { opacity: 1; } }
-@media (prefers-reduced-motion: reduce) { .ambient-capture-complete.is-processing > strong::after { animation: none; opacity: 1; } }
+@keyframes ambient-progress-travel { 0% { transform: translateX(-100%); } 55% { transform: translateX(145%); } 100% { transform: translateX(280%); } }
+@keyframes ambient-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+  .ambient-image-progress-track > i,
+  .ambient-image-progress-stages .is-active i,
+  .ambient-image-progress-items i { animation: none; opacity: 1; }
+  .ambient-image-progress-track > i { left: 32%; }
+}
 
 .outfit-stage { height: 100%; min-height: 450px; padding: 30px; background: linear-gradient(135deg, #f4f0e7 0%, #e8e1d5 100%); position: relative; overflow: hidden; }
 .outfit-stage::before { content: ""; position: absolute; width: 360px; height: 360px; border: 1px solid rgba(93,81,65,.09); border-radius: 50%; top: -120px; right: -90px; }

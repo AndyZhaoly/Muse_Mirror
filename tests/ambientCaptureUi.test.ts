@@ -14,11 +14,15 @@ test('ambient capture UI exposes explicit grant, real completion, and developer 
   assert.match(canvas, /新加入/);
   assert.match(canvas, /已识别/);
   assert.match(canvas, /item\.imageStatus === 'ready' && item\.imageUrl/);
-  assert.match(canvas, /正在整理衣橱图片/);
+  assert.match(canvas, /正在整理衣橱单品图/);
   assert.match(canvas, /未通过校验的图片不会展示/);
   assert.match(canvas, /生成衣橱单品图/);
   assert.match(canvas, /AI 整理图/);
   assert.match(canvas, /通过视觉检查/);
+  assert.match(canvas, /正在逐件生成单品图/);
+  assert.match(canvas, /生成并检查图片/);
+  assert.match(canvas, /图片通过视觉检查后会逐件出现在下方/);
+  assert.match(canvas, /role="progressbar"/);
   assert.match(app, /backfillAmbientProductImages/);
   assert.match(app, /needsReviewImageCount/);
   assert.match(app, /acknowledgeAmbientCapture/);
