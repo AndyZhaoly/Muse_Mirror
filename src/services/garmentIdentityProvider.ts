@@ -16,6 +16,7 @@ import type {
 import type { ClosetItem } from '../types.js';
 import { makeId } from '../utils/ids.js';
 import {
+  hardAttributeExclusion,
   isSafeDifferent,
   isSafeSame,
   normalizePairwiseVerification,
@@ -27,7 +28,11 @@ import {
   canonicalizeColor,
   canonicalizeFit,
   canonicalizeGarmentSlot,
+  canonicalizeLengthClass,
+  canonicalizeMaterialClass,
+  canonicalizeNeckline,
   canonicalizePattern,
+  canonicalizeSleeve,
   colorSimilarity,
 } from './garmentVocabulary.js';
 
@@ -59,6 +64,7 @@ export interface GarmentIdentityCandidate {
   effectivePrior: number;
   tier: IdentityCandidateTier;
   categoryCompatibility: IdentityCategoryCompatibility;
+  descriptor: GarmentAppearanceDescriptor;
   referenceAppearanceAssetIds: string[];
   closetItem: ClosetItem;
   referenceAppearances: GarmentImageAsset[];
@@ -67,7 +73,7 @@ export interface GarmentIdentityCandidate {
 
 export interface GarmentRecallCandidate extends Omit<
   GarmentIdentityCandidate,
-  'closetItem' | 'referenceAppearances' | 'catalogFallbackImage'
+  'closetItem' | 'descriptor' | 'referenceAppearances' | 'catalogFallbackImage'
 > {
   appearanceCount: number;
   hasCatalogFallbackImage: boolean;
@@ -85,6 +91,8 @@ export interface GarmentRecallResult {
 
 interface VerificationRecord {
   candidate: GarmentIdentityCandidate;
+  evaluation: 'verified' | 'excluded';
+  exclusionReason?: string;
   raw: PairwiseGarmentVerification;
   normalized: PairwiseGarmentVerification;
   downgradeReasons: string[];
@@ -102,6 +110,10 @@ export class VisualGarmentIdentityProvider implements GarmentIdentityProvider {
       baseNewConfidence?: number;
       newConfidence?: number;
       strongPriorVeto?: number;
+      safeSameMinPrior?: number;
+      vetoMinPrior?: number;
+      multipleSafeMatchMargin?: number;
+      maxVisualCandidates?: number;
       newConfidenceCeiling?: number;
       strongContinuityWindowMs?: number;
       weakContinuityWindowMs?: number;
@@ -120,6 +132,9 @@ export class VisualGarmentIdentityProvider implements GarmentIdentityProvider {
       matchConfidence: this.options.matchConfidence ?? 0.88,
       baseNewConfidence: this.options.baseNewConfidence ?? this.options.newConfidence ?? 0.78,
       strongPriorVeto: this.options.strongPriorVeto ?? 0.85,
+      safeSameMinPrior: this.options.safeSameMinPrior ?? 0.55,
+      vetoMinPrior: this.options.vetoMinPrior ?? 0.6,
+      multipleSafeMatchMargin: this.options.multipleSafeMatchMargin ?? 0.15,
     };
     const traceBase = {
       traceId: makeId('identity_trace'),
@@ -140,7 +155,6 @@ export class VisualGarmentIdentityProvider implements GarmentIdentityProvider {
 
     const candidates = buildIdentityCandidates(input, this.options);
     const recall = recallFromCandidates(candidates, this.options.topK ?? 4);
-    const recalledIds = recall.candidates.map((candidate) => candidate.closetItemId);
     if (recall.strategy === 'empty_compatible_closet') {
       return this.finalize(input, fingerprint, [], [], traceBase, 'new_to_closet', newIdentityConfidence(
         input,
@@ -148,19 +162,6 @@ export class VisualGarmentIdentityProvider implements GarmentIdentityProvider {
         this.options.newConfidenceCeiling,
       ), ['COMPATIBLE_CLOSET_TRULY_EMPTY', ...recall.evidence], recall);
     }
-    if (recall.strategy === 'potential_match_without_visual_reference') {
-      return this.finalize(input, fingerprint, candidatesForRecall(candidates, recall), [], traceBase, 'ambiguous', 0, [
-        'NO_VISUAL_REFERENCE_FOR_POTENTIAL_MATCH',
-        ...recall.evidence,
-      ], recall);
-    }
-    if (!this.options.verifier.ready) {
-      return this.finalize(input, fingerprint, candidatesForRecall(candidates, recall), [], traceBase, 'ambiguous', 0, [
-        'REAL_VISUAL_VERIFIER_UNAVAILABLE',
-        ...recall.evidence,
-      ], recall);
-    }
-
     const selected = candidatesForRecall(candidates, recall);
     const decisionCandidates = selected.filter((candidate) => candidate.tier !== 'fallback');
     if (!decisionCandidates.length) {
@@ -169,28 +170,58 @@ export class VisualGarmentIdentityProvider implements GarmentIdentityProvider {
         ...recall.evidence,
       ], recall);
     }
-    const missingReferences = decisionCandidates.filter((candidate) =>
-      candidate.referenceAppearances.length === 0 && !candidate.catalogFallbackImage);
-    if (missingReferences.length) {
-      return this.finalize(input, fingerprint, selected, [], traceBase, 'ambiguous', 0, [
-        'NO_VISUAL_REFERENCE_FOR_POTENTIAL_MATCH',
-        ...missingReferences.map((candidate) => `MISSING_VISUAL_REFERENCE:${candidate.closetItemId}`),
+    const excludedResults = decisionCandidates.flatMap((candidate) => {
+      const reason = hardAttributeExclusion(descriptor, candidate.descriptor);
+      return reason ? [excludedVerificationRecord(candidate, descriptor, reason)] : [];
+    });
+    const excludedIds = new Set(excludedResults.map((result) => result.candidate.closetItemId));
+    const survivors = decisionCandidates.filter((candidate) => !excludedIds.has(candidate.closetItemId));
+    const vetoSet = survivors.filter((candidate) => candidate.effectivePrior >= thresholds.vetoMinPrior);
+    const topPrior = decisionCandidates[0]?.effectivePrior ?? 0;
+
+    if (!this.options.verifier.ready && vetoSet.length > 0) {
+      return this.finalize(input, fingerprint, selected, excludedResults, traceBase, 'ambiguous', 0, [
+        'REAL_VISUAL_VERIFIER_UNAVAILABLE',
+        ...recall.evidence,
       ], recall);
     }
 
-    const top = decisionCandidates[0]!;
-    const topResult = await this.verifyCandidate(input.currentAppearance, top);
-    const results = [topResult];
-    const topSafeSame = isSafeSame(top, topResult.normalized, thresholds);
-    if (!(topSafeSame && decisionCandidates.length === 1)) {
-      results.push(...await Promise.all(decisionCandidates.slice(1).map((candidate) =>
-        this.verifyCandidate(input.currentAppearance, candidate))));
+    const candidatesWithReferences = survivors.filter((candidate) =>
+      candidate.referenceAppearances.length > 0 || candidate.catalogFallbackImage);
+    const missingVetoReferences = vetoSet.filter((candidate) =>
+      candidate.referenceAppearances.length === 0 && !candidate.catalogFallbackImage);
+    const missingReferenceReasonCodes = missingVetoReferences.flatMap((candidate) => [
+      'NO_VISUAL_REFERENCE_FOR_POTENTIAL_MATCH',
+      `MISSING_VISUAL_REFERENCE:${candidate.closetItemId}`,
+    ]);
+    const maxVisualCandidates = Math.max(1, this.options.maxVisualCandidates ?? 3);
+    const toVerify = candidatesWithReferences.slice(0, maxVisualCandidates);
+    const verifiedResults: VerificationRecord[] = [];
+    if (toVerify.length > 0 && this.options.verifier.ready) {
+      const top = toVerify[0]!;
+      const topResult = await this.verifyCandidate(input.currentAppearance, descriptor, top);
+      verifiedResults.push(topResult);
+      const nextPrior = survivors[1]?.effectivePrior ?? 0;
+      const topHasDecisiveLead = top.effectivePrior - nextPrior >= thresholds.multipleSafeMatchMargin;
+      if (!(isSafeSame(top, topResult.normalized, thresholds) && topHasDecisiveLead)) {
+        verifiedResults.push(...await Promise.all(toVerify.slice(1).map((candidate) =>
+          this.verifyCandidate(input.currentAppearance, descriptor, candidate))));
+      }
     }
-
-    const safeMatches = results.filter(({ candidate, normalized }) =>
+    const results = [...excludedResults, ...verifiedResults];
+    const safeMatches = verifiedResults.filter(({ candidate, normalized }) =>
       isSafeSame(candidate, normalized, thresholds));
     if (safeMatches.length === 1) {
       const match = safeMatches[0]!;
+      const verifiedIds = new Set(verifiedResults.map((result) => result.candidate.closetItemId));
+      const unverifiedCloseContender = survivors.some((candidate) =>
+        !verifiedIds.has(candidate.closetItemId) &&
+        candidate.effectivePrior >= thresholds.safeSameMinPrior &&
+        match.candidate.effectivePrior - candidate.effectivePrior < thresholds.multipleSafeMatchMargin);
+      if (unverifiedCloseContender) {
+        return this.finalize(input, fingerprint, selected, results, traceBase, 'ambiguous',
+          match.normalized.confidence, ['UNVERIFIED_CLOSE_MATCH_CONTENDER'], recall);
+      }
       return this.finalize(input, fingerprint, selected, results, traceBase, 'matched_existing',
         match.normalized.confidence, [
           'REAL_VISUAL_APPEARANCE_MATCH',
@@ -198,50 +229,75 @@ export class VisualGarmentIdentityProvider implements GarmentIdentityProvider {
         ], recall, match.candidate.closetItemId);
     }
     if (safeMatches.length > 1) {
+      const rankedMatches = [...safeMatches].sort((left, right) =>
+        right.candidate.effectivePrior - left.candidate.effectivePrior ||
+        left.candidate.closetItemId.localeCompare(right.candidate.closetItemId));
+      const lead = rankedMatches[0]!.candidate.effectivePrior - rankedMatches[1]!.candidate.effectivePrior;
+      if (lead >= thresholds.multipleSafeMatchMargin) {
+        const match = rankedMatches[0]!;
+        return this.finalize(input, fingerprint, selected, results, traceBase, 'matched_existing',
+          match.normalized.confidence, ['REAL_VISUAL_APPEARANCE_MATCH', 'SAFE_MATCH_PRIOR_MARGIN'],
+          recall, match.candidate.closetItemId);
+      }
       return this.finalize(input, fingerprint, selected, results, traceBase, 'ambiguous',
         Math.max(...safeMatches.map((item) => item.normalized.confidence)), [
           'MULTIPLE_SAFE_MATCHES',
         ], recall);
     }
 
-    const topPrior = top.effectivePrior;
     if (topPrior >= thresholds.strongPriorVeto) {
       return this.finalize(input, fingerprint, selected, results, traceBase, 'ambiguous',
-        topResult.normalized.confidence, ['STRONG_PRIOR_AUTO_CREATE_VETO'], recall);
+        verifiedResults[0]?.normalized.confidence ?? 0,
+        [
+          'HIGH_PRIOR_CANDIDATE_BLOCKS_NEW_ITEM',
+          'STRONG_PRIOR_AUTO_CREATE_VETO',
+          ...missingReferenceReasonCodes,
+        ], recall);
     }
 
-    const allSafelyDifferent = results.length === decisionCandidates.length && results.every(({ candidate, normalized }) =>
-      isSafeDifferent(candidate, normalized, thresholds));
-    if (allSafelyDifferent) {
+    const verifiedById = new Map(verifiedResults.map((result) => [result.candidate.closetItemId, result]));
+    const allVetoCandidatesSafelyDifferent = missingVetoReferences.length === 0 && vetoSet.every((candidate) => {
+      const result = verifiedById.get(candidate.closetItemId);
+      return Boolean(result && isSafeDifferent(candidate, result.normalized, thresholds));
+    });
+    if (allVetoCandidatesSafelyDifferent) {
+      const differentConfidences = vetoSet.flatMap((candidate) => {
+        const result = verifiedById.get(candidate.closetItemId);
+        return result ? [result.normalized.confidence] : [];
+      });
       return this.finalize(input, fingerprint, selected, results, traceBase, 'new_to_closet', newIdentityConfidence(
         input,
-        Math.min(...results.map((item) => item.normalized.confidence)),
+        differentConfidences.length ? Math.min(...differentConfidences) : input.garment.confidence,
         this.options.newConfidenceCeiling,
       ), [
-        'REAL_VISUAL_CANDIDATES_DIFFERENT',
+        vetoSet.length ? 'REAL_VISUAL_VETO_CANDIDATES_DIFFERENT' : 'NO_MATERIAL_VETO_CANDIDATES',
         `RECALL_STRATEGY_${recall.strategy.toUpperCase()}`,
       ], recall);
     }
     return this.finalize(input, fingerprint, selected, results, traceBase, 'ambiguous',
-      topResult.normalized.confidence, ['INSUFFICIENT_SAFE_DIFFERENCE'], recall);
+      verifiedResults[0]?.normalized.confidence ?? 0,
+      ['INSUFFICIENT_SAFE_DIFFERENCE', ...missingReferenceReasonCodes], recall);
   }
 
   private async verifyCandidate(
     currentAppearance: GarmentImageAsset,
+    lockedDescriptor: GarmentAppearanceDescriptor,
     candidate: GarmentIdentityCandidate,
   ): Promise<VerificationRecord> {
     const startedAt = Date.now();
     const raw = await this.options.verifier.verifyPair({
       currentAppearance,
+      lockedDescriptor,
       candidate: {
         closetItem: candidate.closetItem,
         referenceAppearances: candidate.referenceAppearances.slice(0, 2),
         catalogFallbackImage: candidate.catalogFallbackImage,
       },
     });
-    const normalized = normalizePairwiseVerification(raw);
+    const normalized = normalizePairwiseVerification(raw, lockedDescriptor);
     return {
       candidate,
+      evaluation: 'verified',
       raw,
       normalized: normalized.verification,
       downgradeReasons: normalized.downgradeReasons,
@@ -278,6 +334,8 @@ export class VisualGarmentIdentityProvider implements GarmentIdentityProvider {
       },
       pairwiseVerifications: verificationResults.map((result) => ({
         candidateClosetItemId: result.candidate.closetItemId,
+        evaluation: result.evaluation,
+        exclusionReason: result.exclusionReason,
         rawResult: result.raw,
         normalizedResult: result.normalized,
         serverDowngradeReasons: result.downgradeReasons,
@@ -307,6 +365,8 @@ export class VisualGarmentIdentityProvider implements GarmentIdentityProvider {
         })),
         pairwise: trace.pairwiseVerifications.map((verification) => ({
           candidateClosetItemId: verification.candidateClosetItemId,
+          evaluation: verification.evaluation ?? 'verified',
+          exclusionReason: verification.exclusionReason,
           verdict: verification.normalizedResult.verdict,
           confidence: verification.normalizedResult.confidence,
           downgradeReasons: verification.serverDowngradeReasons,
@@ -360,6 +420,10 @@ export function descriptorFromObservation(garment: WornGarmentObservation): Garm
     dominantColor: canonicalizeColor(garment.dominantColor),
     secondaryColors: garment.secondaryColors.map(canonicalizeColor).filter((color) => color !== 'unknown').sort(),
     pattern: canonicalizePattern(garment.pattern),
+    sleeve: canonicalizeSleeve(garment.sleeve),
+    neckline: canonicalizeNeckline(garment.neckline),
+    lengthClass: canonicalizeLengthClass(garment.lengthClass),
+    materialClass: canonicalizeMaterialClass(garment.materialClass),
     silhouette: normalize(garment.silhouette),
     fit: canonicalizeFit(garment.fit),
     distinctiveFeatures: garment.distinctiveFeatures.map(normalize).filter(Boolean).sort(),
@@ -413,6 +477,7 @@ function buildIdentityCandidates(
       effectivePrior: record.effectivePrior,
       tier: record.tier,
       categoryCompatibility: record.categoryCompatibility,
+      descriptor: record.descriptor,
       referenceAppearanceAssetIds: record.referenceAppearances.map((asset) => asset.assetId),
       closetItem: record.item,
       referenceAppearances: record.referenceAppearances,
@@ -594,14 +659,23 @@ function descriptorForItem(item: ClosetItem, appearances: GarmentAppearance[]): 
       secondaryColors: latest.descriptor.secondaryColors.map(canonicalizeColor).filter((color) => color !== 'unknown').sort(),
       pattern: canonicalizePattern(latest.descriptor.pattern),
       fit: canonicalizeFit(latest.descriptor.fit),
+      sleeve: canonicalizeSleeve(latest.descriptor.sleeve),
+      neckline: canonicalizeNeckline(latest.descriptor.neckline),
+      lengthClass: canonicalizeLengthClass(latest.descriptor.lengthClass),
+      materialClass: canonicalizeMaterialClass(latest.descriptor.materialClass),
     };
   }
+  const itemVocabulary = [item.name, item.fit, item.color, ...item.styleTags].join(' ');
   return {
     slot: canonicalizeGarmentSlot(item.category, item.category),
     category: item.category,
     dominantColor: canonicalizeColor(item.color),
     secondaryColors: [],
     pattern: canonicalizePattern(item.styleTags.find((tag) => /stripe|check|print|solid|条纹|格纹|印花|纯色/i.test(tag)) ?? 'other'),
+    sleeve: canonicalizeSleeve(itemVocabulary),
+    neckline: canonicalizeNeckline(itemVocabulary),
+    lengthClass: canonicalizeLengthClass(itemVocabulary),
+    materialClass: canonicalizeMaterialClass(itemVocabulary),
     silhouette: normalize(item.fit),
     fit: canonicalizeFit(item.fit),
     distinctiveFeatures: item.styleTags.map(normalize).filter(Boolean).sort(),
@@ -612,11 +686,42 @@ function scoreDescriptor(left: GarmentAppearanceDescriptor, right: GarmentAppear
   if (left.category !== right.category || left.slot !== right.slot) return 0;
   let score = 0.35;
   score += 0.25 * colorSimilarity(left.dominantColor, right.dominantColor);
-  if (left.pattern === right.pattern) score += 0.12;
-  if (left.silhouette === right.silhouette) score += 0.1;
+  if (left.pattern !== 'other' && left.pattern === right.pattern) score += 0.12;
+  if (left.silhouette !== 'unknown' && left.silhouette === right.silhouette) score += 0.1;
   if (left.fit !== 'unknown' && right.fit !== 'unknown' && left.fit === right.fit) score += 0.08;
   score += intersectionRatio(left.distinctiveFeatures, right.distinctiveFeatures) * 0.1;
+  if (canonicalizeSleeve(left.sleeve) !== 'unknown' && canonicalizeSleeve(left.sleeve) === canonicalizeSleeve(right.sleeve)) score += 0.08;
+  if (canonicalizeNeckline(left.neckline) !== 'unknown' && canonicalizeNeckline(left.neckline) === canonicalizeNeckline(right.neckline)) score += 0.06;
+  if (canonicalizeLengthClass(left.lengthClass) !== 'unknown' && canonicalizeLengthClass(left.lengthClass) === canonicalizeLengthClass(right.lengthClass)) score += 0.04;
+  if (canonicalizeMaterialClass(left.materialClass) !== 'unknown' && canonicalizeMaterialClass(left.materialClass) === canonicalizeMaterialClass(right.materialClass)) score += 0.04;
   return Math.min(1, score);
+}
+
+function excludedVerificationRecord(
+  candidate: GarmentIdentityCandidate,
+  currentDescriptor: GarmentAppearanceDescriptor,
+  exclusionReason: string,
+): VerificationRecord {
+  const verification: PairwiseGarmentVerification = {
+    verdict: 'different',
+    confidence: 1,
+    currentColor: currentDescriptor.dominantColor,
+    currentSleeve: currentDescriptor.sleeve ?? 'unknown',
+    currentNeckline: currentDescriptor.neckline ?? 'unknown',
+    featureComparisons: [],
+    occlusions: [],
+    jointlyVisibleEvidence: [],
+    model: 'deterministic_attribute_exclusion',
+  };
+  return {
+    candidate,
+    evaluation: 'excluded',
+    exclusionReason,
+    raw: verification,
+    normalized: verification,
+    downgradeReasons: [exclusionReason],
+    latencyMs: 0,
+  };
 }
 
 function intersectionRatio(left: string[], right: string[]): number {

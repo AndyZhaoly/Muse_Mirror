@@ -20,6 +20,7 @@ import { makeId } from '../utils/ids.js';
 import type { GarmentIdentityProvider } from '../services/garmentIdentityProvider.js';
 import { appearanceFingerprint, descriptorFromObservation } from '../services/garmentIdentityProvider.js';
 import { canonicalizePattern, colorSimilarity } from '../services/garmentVocabulary.js';
+import { hardAttributeExclusion } from '../services/garmentIdentityEvidence.js';
 import type { OutfitObservationProvider } from '../services/outfitObservationProvider.js';
 import type { JsonUserWardrobeRepository } from '../services/userWardrobeRepository.js';
 import type { GarmentImageAssetService } from '../services/garmentImageAssetService.js';
@@ -90,6 +91,9 @@ export class AmbientCaptureCoordinator {
         retryAfterMs: 10_000,
       });
     }
+    const gatedObservation = gateWornGarmentObservation(observation);
+    observation = gatedObservation.observation;
+    const observationGateReasonCodes = gatedObservation.reasonCodes;
 
     if (observation.personCount === 0) {
       episode = { ...episode, status: 'ended', endedAt: observation.analyzedAt, lastObservationId: observation.observationId, lastObservedAt: observation.analyzedAt };
@@ -149,7 +153,7 @@ export class AmbientCaptureCoordinator {
     if (!reliable) {
       return this.remember(packet.userId, {
         status: 'insufficient_evidence',
-        reasonCodes: observationReasonCodes(observation),
+        reasonCodes: [...observationGateReasonCodes, ...observationReasonCodes(observation)],
         episodeId: episode.episodeId,
         observationId: observation.observationId,
         retryAfterMs: 4_000,
@@ -158,7 +162,7 @@ export class AmbientCaptureCoordinator {
     if (episode.status !== 'stable') {
       return this.remember(packet.userId, {
         status: 'observing',
-        reasonCodes: ['EPISODE_REQUIRES_SECOND_RELIABLE_OBSERVATION'],
+        reasonCodes: [...observationGateReasonCodes, 'EPISODE_REQUIRES_SECOND_RELIABLE_OBSERVATION'],
         episodeId: episode.episodeId,
         observationId: observation.observationId,
         retryAfterMs: 2_500,
@@ -189,7 +193,7 @@ export class AmbientCaptureCoordinator {
       await this.options.assetService.deleteAssets([...(evidenceAsset ? [evidenceAsset] : []), ...appearanceAssets]);
       return this.remember(packet.userId, {
         status: 'insufficient_evidence',
-        reasonCodes: ['GARMENT_CROP_FAILED', safeErrorCode(error)],
+        reasonCodes: [...observationGateReasonCodes, 'GARMENT_CROP_FAILED', safeErrorCode(error)],
         episodeId: episode.episodeId,
         observationId: observation.observationId,
         retryAfterMs: 5_000,
@@ -222,7 +226,7 @@ export class AmbientCaptureCoordinator {
       await this.options.assetService.deleteAssets([evidenceAsset, ...appearanceAssets]);
       return this.remember(packet.userId, {
         status: unresolved.some((item) => item.status === 'ambiguous') ? 'ambiguous' : 'insufficient_evidence',
-        reasonCodes: unresolved.flatMap((item) => item.reasonCodes),
+        reasonCodes: [...observationGateReasonCodes, ...unresolved.flatMap((item) => item.reasonCodes)],
         episodeId: episode.episodeId,
         observationId: observation.observationId,
         retryAfterMs: 5_000,
@@ -261,7 +265,7 @@ export class AmbientCaptureCoordinator {
     if (committed.status === 'committed' && committed.createdClosetItemIds.length) {
       const processing: AmbientCaptureOutcome = {
         status: 'committed_processing_images',
-        reasonCodes: ['CAPTURE_COMMITTED', 'CATALOG_IMAGES_PROCESSING'],
+        reasonCodes: [...observationGateReasonCodes, 'CAPTURE_COMMITTED', 'CATALOG_IMAGES_PROCESSING'],
         episodeId: episode.episodeId,
         observationId: observation.observationId,
         retryAfterMs: 4_000,
@@ -286,6 +290,7 @@ export class AmbientCaptureCoordinator {
     return this.remember(packet.userId, {
       status,
       reasonCodes: [
+        ...observationGateReasonCodes,
         committed.createdClosetItemIds.length ? 'NEW_GARMENTS_COMMITTED' : 'KNOWN_GARMENTS_RECOGNIZED',
         proposal.repeatedOutfit ? 'REPEATED_OUTFIT_SIGNATURE' : 'NEW_OUTFIT_SIGNATURE',
       ],
@@ -549,13 +554,44 @@ function currentEpisode(episodes: AmbientOutfitEpisode[], sessionId: string): Am
 }
 
 function reliableObservation(observation: WornOutfitObservation): boolean {
-  const slots = new Set(observation.garments.map((garment) => garment.slot));
-  const outfitCoverage = (slots.has('top') && slots.has('bottom')) || slots.has('dress');
   return observation.personCount === 1 &&
     observation.quality === 'good' &&
     (observation.coverage === 'three_quarter' || observation.coverage === 'full_body') &&
-    outfitCoverage &&
+    observation.garments.length > 0 &&
     observation.garments.every((garment) => garment.confidence >= 0.72);
+}
+
+export function gateWornGarmentObservation(observation: WornOutfitObservation): {
+  observation: WornOutfitObservation;
+  reasonCodes: string[];
+} {
+  const reasonCodes: string[] = [];
+  const garments = observation.garments.filter((garment) => {
+    if (garment.visibleFraction === 'barely') {
+      reasonCodes.push('SLOT_DROPPED_BARELY_VISIBLE');
+      return false;
+    }
+    const box = garment.boundingBox;
+    const boxIsSubstantial = box.width >= 0.05 && box.height >= 0.05 && box.width * box.height >= 0.008;
+    if (!boxIsSubstantial) {
+      reasonCodes.push('SLOT_DROPPED_INVALID_VISIBLE_REGION');
+      return false;
+    }
+    if ((observation.coverage === 'none' || observation.coverage === 'head_shoulders') &&
+        garment.slot !== 'top' && garment.slot !== 'outerwear' && garment.slot !== 'accessory') {
+      reasonCodes.push('SLOT_DROPPED_OUTSIDE_COVERAGE');
+      return false;
+    }
+    if (observation.coverage === 'upper_body' && (garment.slot === 'bottom' || garment.slot === 'shoes')) {
+      reasonCodes.push('SLOT_DROPPED_OUTSIDE_COVERAGE');
+      return false;
+    }
+    return true;
+  });
+  return {
+    observation: garments.length === observation.garments.length ? observation : { ...observation, garments },
+    reasonCodes: [...new Set(reasonCodes)],
+  };
 }
 
 function updateGarmentTracks(
@@ -591,6 +627,7 @@ export function trackDescriptorSimilarity(
   right: AmbientGarmentTrack['descriptor'],
 ): number {
   if (left.slot !== right.slot || left.category !== right.category) return 0;
+  if (hardAttributeExclusion(left, right)) return 0;
   let score = 0.35;
   const colorScore = colorSimilarity(left.dominantColor, right.dominantColor);
   score += 0.35 * colorScore;
@@ -713,7 +750,15 @@ function buildProposal(args: {
             color: observation.dominantColor,
             fit: observation.fit,
             formality: 'unknown',
-            styleTags: unique([observation.pattern, observation.silhouette, ...observation.distinctiveFeatures]),
+            styleTags: unique([
+              observation.pattern,
+              observation.sleeve ?? 'unknown',
+              observation.neckline ?? 'unknown',
+              observation.lengthClass ?? 'unknown',
+              observation.materialClass ?? 'unknown',
+              observation.silhouette,
+              ...observation.distinctiveFeatures,
+            ]).filter((value) => value !== 'unknown'),
             imageUrl: '/agent-assets/wardrobe-processing.svg',
             appearanceAssetIds: [args.appearanceAssets[index]!.assetId],
             imageStatus: 'processing',

@@ -25,6 +25,20 @@ export const CANONICAL_FITS = ['slim', 'regular', 'relaxed', 'oversized', 'unkno
 export type CanonicalFit = (typeof CANONICAL_FITS)[number];
 export const OBSERVABLE_FITS = CANONICAL_FITS;
 
+export const CANONICAL_SLEEVES = ['sleeveless', 'short', 'three_quarter', 'long', 'unknown'] as const;
+export type CanonicalSleeve = (typeof CANONICAL_SLEEVES)[number];
+
+export const CANONICAL_NECKLINES = ['crew', 'v', 'square', 'collar', 'turtleneck', 'boat', 'hooded', 'unknown'] as const;
+export type CanonicalNeckline = (typeof CANONICAL_NECKLINES)[number];
+
+export const CANONICAL_LENGTH_CLASSES = ['short', 'medium', 'long', 'unknown'] as const;
+export type CanonicalGarmentLengthClass = (typeof CANONICAL_LENGTH_CLASSES)[number];
+
+export const CANONICAL_MATERIAL_CLASSES = [
+  'cotton', 'linen', 'denim', 'knit', 'wool', 'chiffon', 'leather', 'suiting', 'technical', 'other', 'unknown',
+] as const;
+export type CanonicalMaterialClass = (typeof CANONICAL_MATERIAL_CLASSES)[number];
+
 const COLOR_SYNONYMS: Record<string, CanonicalColor> = {
   charcoal: 'gray', 'dark gray': 'gray', 'dark grey': 'gray', grey: 'gray',
   'light gray': 'gray', 'light grey': 'gray', slate: 'gray', 灰色: 'gray', 深灰: 'gray', 浅灰: 'gray',
@@ -79,6 +93,41 @@ const FIT_SYNONYMS: Record<string, CanonicalFit> = {
   baggy: 'oversized', 'over sized': 'oversized', boxy: 'oversized', 廓形: 'oversized',
 };
 
+const SLEEVE_SYNONYMS: Record<string, CanonicalSleeve> = {
+  tank: 'sleeveless', 'tank top': 'sleeveless', vest: 'sleeveless', 无袖: 'sleeveless', 背心: 'sleeveless', 无袖背心: 'sleeveless',
+  'short sleeve': 'short', 'short sleeved': 'short', 短袖: 'short',
+  'three quarter sleeve': 'three_quarter', '3 4 sleeve': 'three_quarter', 'mid sleeve': 'three_quarter',
+  七分袖: 'three_quarter', 中袖: 'three_quarter',
+  'long sleeve': 'long', 'long sleeved': 'long', 长袖: 'long',
+};
+
+const NECKLINE_SYNONYMS: Record<string, CanonicalNeckline> = {
+  'crew neck': 'crew', round: 'crew', 'round neck': 'crew', 圆领: 'crew',
+  'v neck': 'v', 'v neckline': 'v', v领: 'v',
+  'square neck': 'square', 方领: 'square',
+  'shirt collar': 'collar', collared: 'collar', lapel: 'collar', 衬衫领: 'collar', 翻领: 'collar',
+  'high neck': 'turtleneck', mockneck: 'turtleneck', 'mock neck': 'turtleneck', 高领: 'turtleneck', 半高领: 'turtleneck',
+  'boat neck': 'boat', bateau: 'boat', 'off shoulder': 'boat', 一字领: 'boat', 船领: 'boat',
+  hood: 'hooded', hoodie: 'hooded', 连帽: 'hooded',
+};
+
+const LENGTH_SYNONYMS: Record<string, CanonicalGarmentLengthClass> = {
+  cropped: 'short', crop: 'short', mini: 'short', 短款: 'short', 短: 'short',
+  regular: 'medium', midi: 'medium', 'standard length': 'medium', 常规长度: 'medium', 中长: 'medium',
+  longline: 'long', maxi: 'long', 长款: 'long', 长: 'long',
+};
+
+const MATERIAL_SYNONYMS: Record<string, CanonicalMaterialClass> = {
+  jersey: 'cotton', 棉: 'cotton', 纯棉: 'cotton',
+  flax: 'linen', 亚麻: 'linen',
+  jean: 'denim', 牛仔: 'denim', 牛仔面料: 'denim',
+  knitted: 'knit', ribbed: 'knit', 针织: 'knit', 罗纹: 'knit',
+  woolen: 'wool', 羊毛: 'wool', 毛呢: 'wool',
+  雪纺: 'chiffon', suede: 'leather', 皮革: 'leather', 皮质: 'leather',
+  tailored: 'suiting', 'suiting fabric': 'suiting', 西装料: 'suiting', 西装面料: 'suiting',
+  nylon: 'technical', polyester: 'technical', 'technical fabric': 'technical', 机能面料: 'technical', 涤纶: 'technical',
+};
+
 export function canonicalizeColor(value: string): CanonicalColor {
   return canonicalizeValue(value, CANONICAL_COLORS, COLOR_SYNONYMS, 'unknown');
 }
@@ -98,6 +147,29 @@ export function canonicalizePattern(value: string): CanonicalPattern {
 
 export function canonicalizeFit(value: string): CanonicalFit {
   return canonicalizeValue(value, CANONICAL_FITS, FIT_SYNONYMS, 'unknown');
+}
+
+export function canonicalizeSleeve(value: string | undefined): CanonicalSleeve {
+  return canonicalizeValue(value ?? '', CANONICAL_SLEEVES, SLEEVE_SYNONYMS, 'unknown');
+}
+
+export function canonicalizeNeckline(value: string | undefined): CanonicalNeckline {
+  return canonicalizeValue(value ?? '', CANONICAL_NECKLINES, NECKLINE_SYNONYMS, 'unknown');
+}
+
+export function canonicalizeLengthClass(value: string | undefined): CanonicalGarmentLengthClass {
+  return canonicalizeValue(value ?? '', CANONICAL_LENGTH_CLASSES, LENGTH_SYNONYMS, 'unknown');
+}
+
+export function canonicalizeMaterialClass(value: string | undefined): CanonicalMaterialClass {
+  return canonicalizeValue(value ?? '', CANONICAL_MATERIAL_CLASSES, MATERIAL_SYNONYMS, 'unknown');
+}
+
+export function sleeveClassDistance(left: string | undefined, right: string | undefined): number | undefined {
+  const order: readonly CanonicalSleeve[] = ['sleeveless', 'short', 'three_quarter', 'long'];
+  const leftIndex = order.indexOf(canonicalizeSleeve(left));
+  const rightIndex = order.indexOf(canonicalizeSleeve(right));
+  return leftIndex < 0 || rightIndex < 0 ? undefined : Math.abs(leftIndex - rightIndex);
 }
 
 /** Jumpsuits share the one-piece/dress tracking slot; they never become accessories. */

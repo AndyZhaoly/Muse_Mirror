@@ -1,4 +1,10 @@
 import type { ClosetItem } from '../types.js';
+import type {
+  CanonicalGarmentLengthClass,
+  CanonicalMaterialClass,
+  CanonicalNeckline,
+  CanonicalSleeve,
+} from '../services/garmentVocabulary.js';
 
 export type AmbientGarmentSlot =
   | 'top'
@@ -101,8 +107,13 @@ export interface WornGarmentObservation {
   dominantColor: string;
   secondaryColors: string[];
   pattern: string;
+  sleeve?: CanonicalSleeve;
+  neckline?: CanonicalNeckline;
+  lengthClass?: CanonicalGarmentLengthClass;
+  materialClass?: CanonicalMaterialClass;
   silhouette: string;
   fit: string;
+  visibleFraction?: 'full' | 'partial' | 'barely';
   distinctiveFeatures: string[];
   boundingBox: NormalizedBoundingBox;
   confidence: number;
@@ -133,6 +144,10 @@ export interface GarmentAppearanceDescriptor {
   dominantColor: string;
   secondaryColors: string[];
   pattern: string;
+  sleeve?: CanonicalSleeve;
+  neckline?: CanonicalNeckline;
+  lengthClass?: CanonicalGarmentLengthClass;
+  materialClass?: CanonicalMaterialClass;
   silhouette: string;
   fit: string;
   distinctiveFeatures: string[];
@@ -205,6 +220,9 @@ export interface GarmentFeatureComparison {
 export interface PairwiseGarmentVerification {
   verdict: 'same' | 'different' | 'uncertain';
   confidence: number;
+  currentColor?: string;
+  currentSleeve?: CanonicalSleeve;
+  currentNeckline?: CanonicalNeckline;
   featureComparisons: GarmentFeatureComparison[];
   occlusions: string[];
   jointlyVisibleEvidence: string[];
@@ -234,6 +252,8 @@ export interface GarmentIdentityDecisionTrace {
   };
   pairwiseVerifications: Array<{
     candidateClosetItemId: string;
+    evaluation?: 'verified' | 'excluded';
+    exclusionReason?: string;
     rawResult: PairwiseGarmentVerification;
     normalizedResult: PairwiseGarmentVerification;
     serverDowngradeReasons: string[];
@@ -246,6 +266,9 @@ export interface GarmentIdentityDecisionTrace {
     matchConfidence: number;
     baseNewConfidence: number;
     strongPriorVeto: number;
+    safeSameMinPrior?: number;
+    vetoMinPrior?: number;
+    multipleSafeMatchMargin?: number;
   };
   finalDecision: GarmentIdentityStatus;
   matchedClosetItemId?: string;

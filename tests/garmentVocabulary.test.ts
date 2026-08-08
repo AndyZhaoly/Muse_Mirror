@@ -6,7 +6,11 @@ import {
   canonicalizeColor,
   canonicalizeFit,
   canonicalizeGarmentSlot,
+  canonicalizeLengthClass,
+  canonicalizeMaterialClass,
+  canonicalizeNeckline,
   canonicalizePattern,
+  canonicalizeSleeve,
   colorSimilarity,
 } from '../src/services/garmentVocabulary.js';
 
@@ -35,6 +39,21 @@ test('pattern and fit vocabulary preserve uncertainty instead of forcing a guess
   assert.equal(canonicalizeFit('loose'), 'relaxed');
   assert.equal(canonicalizeFit('修身'), 'slim');
   assert.equal(canonicalizeFit('not visible'), 'unknown');
+});
+
+test('identity vocabulary canonicalizes sleeves, necklines, lengths, and materials', () => {
+  assert.equal(canonicalizeSleeve('无袖背心'), 'sleeveless');
+  assert.equal(canonicalizeSleeve('七分袖'), 'three_quarter');
+  assert.equal(canonicalizeSleeve('not visible'), 'unknown');
+  assert.equal(canonicalizeNeckline('V领'), 'v');
+  assert.equal(canonicalizeNeckline('半高领'), 'turtleneck');
+  assert.equal(canonicalizeNeckline('unclear neckline'), 'unknown');
+  assert.equal(canonicalizeLengthClass('cropped jacket'), 'short');
+  assert.equal(canonicalizeLengthClass('midi skirt'), 'medium');
+  assert.equal(canonicalizeLengthClass('not visible'), 'unknown');
+  assert.equal(canonicalizeMaterialClass('牛仔面料'), 'denim');
+  assert.equal(canonicalizeMaterialClass('ribbed knit'), 'knit');
+  assert.equal(canonicalizeMaterialClass('unreadable fabric'), 'unknown');
 });
 
 test('jumpsuit category consistently uses the one-piece dress slot', () => {

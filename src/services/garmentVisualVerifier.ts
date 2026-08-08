@@ -1,17 +1,27 @@
 import fs from 'node:fs/promises';
 import OpenAI from 'openai';
 import type {
+  GarmentAppearanceDescriptor,
   GarmentIdentityFeature,
   GarmentImageAsset,
   PairwiseGarmentVerification,
   ProductImageVerification,
 } from '../domain/ambientCapture.js';
 import type { ClosetItem } from '../types.js';
+import {
+  CANONICAL_COLORS,
+  CANONICAL_NECKLINES,
+  CANONICAL_SLEEVES,
+  canonicalizeColor,
+  canonicalizeNeckline,
+  canonicalizeSleeve,
+} from './garmentVocabulary.js';
 
-export const GARMENT_PAIRWISE_PROMPT_VERSION = 'garment-pairwise-v1';
+export const GARMENT_PAIRWISE_PROMPT_VERSION = 'garment-pairwise-v2-locked-current';
 
 export interface GarmentPairwiseVerificationInput {
   currentAppearance: GarmentImageAsset;
+  lockedDescriptor: GarmentAppearanceDescriptor;
   candidate: {
     closetItem: ClosetItem;
     referenceAppearances: GarmentImageAsset[];
@@ -62,6 +72,17 @@ export class OpenAIGarmentVisualVerifier implements GarmentPairwiseVerifier {
           `Pairwise garment identity verification. Prompt version: ${GARMENT_PAIRWISE_PROMPT_VERSION}.`,
           'Compare the current garment crop with exactly one candidate ClosetItem.',
           `Candidate ID: ${input.candidate.closetItem.id}`,
+          `Locked current descriptor: ${JSON.stringify({
+            dominantColor: input.lockedDescriptor.dominantColor,
+            pattern: input.lockedDescriptor.pattern,
+            sleeve: input.lockedDescriptor.sleeve ?? 'unknown',
+            neckline: input.lockedDescriptor.neckline ?? 'unknown',
+            lengthClass: input.lockedDescriptor.lengthClass ?? 'unknown',
+            materialClass: input.lockedDescriptor.materialClass ?? 'unknown',
+          })}`,
+          'Treat the locked current descriptor as the canonical reading of the current garment. Do not reinterpret the current image to resemble the reference.',
+          'Repeat your own current-image color, sleeve, and neckline readings in the structured currentColor/currentSleeve/currentNeckline fields.',
+          'If the reference clearly contradicts the locked sleeve class, neckline family, or color family, return different.',
           'Use only regions and features that are jointly visible in the current and reference images.',
           'A feature visible in one image but occluded, covered, or cropped out in the other is unknown, never different.',
           'For example, when a shirt covers a trouser waistband or drawstring, absence of that detail is not identity evidence.',
@@ -96,6 +117,9 @@ export class OpenAIGarmentVisualVerifier implements GarmentPairwiseVerifier {
               properties: {
                 verdict: { type: 'string', enum: ['same', 'different', 'uncertain'] },
                 confidence: { type: 'number', minimum: 0, maximum: 1 },
+                currentColor: { type: 'string', enum: [...CANONICAL_COLORS] },
+                currentSleeve: { type: 'string', enum: [...CANONICAL_SLEEVES] },
+                currentNeckline: { type: 'string', enum: [...CANONICAL_NECKLINES] },
                 featureComparisons: {
                   type: 'array',
                   items: {
@@ -115,7 +139,10 @@ export class OpenAIGarmentVisualVerifier implements GarmentPairwiseVerifier {
                 occlusions: { type: 'array', items: { type: 'string' } },
                 jointlyVisibleEvidence: { type: 'array', items: { type: 'string' } },
               },
-              required: ['verdict', 'confidence', 'featureComparisons', 'occlusions', 'jointlyVisibleEvidence'],
+              required: [
+                'verdict', 'confidence', 'currentColor', 'currentSleeve', 'currentNeckline',
+                'featureComparisons', 'occlusions', 'jointlyVisibleEvidence',
+              ],
             },
           },
         },
@@ -274,6 +301,11 @@ function parsePairwiseVerification(value: unknown, model: string): PairwiseGarme
   if (!['same', 'different', 'uncertain'].includes(String(record.verdict))) {
     throw new Error('Pairwise verifier returned an invalid verdict.');
   }
+  if (!CANONICAL_COLORS.includes(record.currentColor as (typeof CANONICAL_COLORS)[number]) ||
+      !CANONICAL_SLEEVES.includes(record.currentSleeve as (typeof CANONICAL_SLEEVES)[number]) ||
+      !CANONICAL_NECKLINES.includes(record.currentNeckline as (typeof CANONICAL_NECKLINES)[number])) {
+    throw new Error('Pairwise verifier omitted its current-garment reading.');
+  }
   if (!Array.isArray(record.featureComparisons)) {
     throw new Error('Pairwise verifier omitted feature comparisons.');
   }
@@ -302,6 +334,9 @@ function parsePairwiseVerification(value: unknown, model: string): PairwiseGarme
   return {
     verdict: record.verdict as PairwiseGarmentVerification['verdict'],
     confidence: clamp(Number(record.confidence)),
+    currentColor: canonicalizeColor(String(record.currentColor ?? 'unknown')),
+    currentSleeve: canonicalizeSleeve(String(record.currentSleeve ?? 'unknown')),
+    currentNeckline: canonicalizeNeckline(String(record.currentNeckline ?? 'unknown')),
     featureComparisons,
     occlusions: safeStrings(record.occlusions),
     jointlyVisibleEvidence: safeStrings(record.jointlyVisibleEvidence),
@@ -311,7 +346,8 @@ function parsePairwiseVerification(value: unknown, model: string): PairwiseGarme
 
 function uncertainGarmentVerification(reason: string, model: string): PairwiseGarmentVerification {
   return {
-    verdict: 'uncertain', confidence: 0, featureComparisons: [],
+    verdict: 'uncertain', confidence: 0,
+    currentColor: 'unknown', currentSleeve: 'unknown', currentNeckline: 'unknown', featureComparisons: [],
     occlusions: [reason], jointlyVisibleEvidence: [], model,
   };
 }

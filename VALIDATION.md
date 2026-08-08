@@ -72,6 +72,21 @@ node --import tsx --test \
   tests/ambientCaptureUi.test.ts
 ```
 
+The layered identity suite additionally verifies canonical English/Chinese sleeve, neckline, length, and
+material values; conservative hard exclusions; zero VLM calls for explicit contradictions; locked-current
+descriptor sentinels; the `0.55` safe-same prior floor; the `0.60` weighted creation-veto floor; decisive versus
+ambiguous multiple matches; and the `0.85` high-prior auto-create block. It also verifies that a `barely`
+visible slot is dropped while another clear garment completes capture. These thresholds are deterministic
+routing controls, not calibrated probabilities:
+
+```bash
+node --import tsx --test \
+  tests/garmentVocabulary.test.ts \
+  tests/garmentIdentityEvidence.test.ts \
+  tests/garmentIdentityProvider.test.ts \
+  tests/ambientCapture.test.ts
+```
+
 `tests/garmentVocabulary.test.ts` separately verifies English/Chinese appearance normalization, longest-phrase
 matching without substring errors, observable `unknown` values, graded color similarity, consistent jumpsuit
 slotting, and the rule that neighboring color evidence alone cannot preserve a garment track.
@@ -94,6 +109,12 @@ the frame or pause the camera, return in the same outfit for Round 2, then chang
 Confirm counts are `2 new`, `0 new/2 matched`, then `1 new/1 matched`, and that product-image generation
 counts are `2`, `0`, then `1`. Use `?ambientDebug=1` for safe diagnostics. Do not claim this live acceptance
 unless all three physical-camera rounds were actually executed.
+
+For the 37-item identity-funnel acceptance, inspect each identity trace as well as final item counts. Round 1
+should hard-exclude most incompatible candidates and issue no more than three pairwise verifier calls per
+garment. Round 2 should reuse each Round 1 item, normally with one pairwise call. A real run may still return
+`ambiguous` when evidence is genuinely insufficient; the safety requirement is zero silent duplicate creation
+and zero false merge, not a fabricated zero-ambiguity claim.
 
 If items were recorded while the product-image provider was disabled, use the visible “生成衣橱单品图” action.
 The browser-scoped backfill processes only that user's active mirror-captured items, keeps failed verification

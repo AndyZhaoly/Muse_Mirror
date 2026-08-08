@@ -157,8 +157,11 @@ real browser camera
         -> deterministic situation-policy preflight
         -> real worn-outfit observation provider
         -> independent Sharp garment crops (appearance evidence)
+        -> canonical observation + visibility gate
         -> metadata Top-K recall
-        -> real-image garment verifier
+        -> deterministic contradiction exclusion
+        -> candidate-specific real-image verifier (0-3 pairs)
+        -> prior-weighted identity decision
         -> deterministic capture proposal validator
         -> Stage A atomic per-browser wardrobe commit
         -> Stage B image-edit product generation + visual verification
@@ -171,8 +174,9 @@ The path runs only after a one-time `ambient-worn-garments-v1` grant. The grant 
 in the single-user demo context, garments visibly worn by the browser user may be recorded as provisional
 closet items. It does not cover held garments, guests, multi-person frames, identity inference, or continuous
 video recording. The client uploads a still only after three stable local pixel samples; the server requires a
-fresh packet, one person, good three-quarter/full-body coverage, a complete worn outfit, and two consistent
-garment-track observations. Active Agent/image tasks defer the capture, and multi-person observations enter
+fresh packet, one person, good three-quarter/full-body coverage, at least one substantially visible garment,
+and two consistent garment-track observations. A `barely` visible or coverage-incompatible slot is discarded
+before identity resolution and does not make another clear garment ambiguous. Active Agent/image tasks defer the capture, and multi-person observations enter
 privacy pause.
 
 The browser's empty-scene guard is a deterministic upload optimization, not a person detector. One
@@ -189,20 +193,32 @@ The image model has three non-interchangeable roles: `capture_evidence` is the s
 the product verifier can become `ClosetItem.imageUrl`. Full-person evidence and raw crops never become a
 closet card.
 
-`OutfitObservationProvider` reports visual facts only. Identity uses wide metadata recall, then assigns each
-candidate a `strong`, `plausible`, or `fallback` tier. Every visual request compares the current real crop with
+`OutfitObservationProvider` reports visual facts only. Its strict schema uses one canonical vocabulary for
+color, pattern, fit, sleeve, neckline, length class, and material class; uncertain or legacy values normalize
+to `unknown` and cannot trigger a contradiction. Identity uses wide metadata recall, then assigns each
+candidate a `strong`, `plausible`, or `fallback` tier. Before spending a visual call, deterministic rules
+exclude only explicit color/pattern, distant sleeve, distant neckline-family, or short/long contradictions.
+Excluded candidates remain visible in the trace and count as safely ruled out, but a total effective prior of
+`0.85` or more still blocks silent item creation. Every visual request compares the current real crop with
 exactly one ClosetItem and at most two of that item's recent real appearances. Different ClosetItems are never
 sent in the same verifier request, so unrelated fallback candidates cannot change a strong candidate's verdict.
 Base fixture items may use their verified catalog image only when no real appearance exists; generated product
 images are never the sole identity ground truth for a user item.
 
-The pairwise verifier returns structured feature visibility and relations. Server normalization treats covered
+The pairwise verifier receives the canonical current descriptor as locked input and repeats its own current
+color, sleeve, and neckline reading in strict structured output. A far contradiction between that reading and
+the locked descriptor invalidates the verdict as `VERIFIER_INCONSISTENT_CURRENT_READ`. It otherwise returns
+structured feature visibility and relations. Server normalization treats covered
 or cropped details as `unknown`, caps length/fit/silhouette evidence at weak, and requires jointly visible
 medium/strong construction evidence for a safe match or difference. An AI confidence value is a routing signal,
-not a calibrated probability. The default match threshold is `0.88`; the required different threshold rises
+not a calibrated probability. The default match threshold remains `0.88`, and safe same additionally requires
+an effective metadata/continuity prior of at least `0.55`. At most three surviving candidates receive visual
+verification. Multiple safe matches require a `0.15` prior lead or resolve as ambiguous. The required different threshold rises
 from `0.78` with the candidate's effective prior. A candidate seen in the immediately previous same-slot capture
 within 60 minutes receives a `0.08` continuity prior; a 12-hour WearEvent receives `0.02`. These priors affect
-ranking and auto-create safety only, never establish a match. An effective prior of at least `0.85` prevents
+ranking and auto-create safety only, never establish a match. Only surviving candidates with an effective prior
+of at least `0.60` can veto creation; lower-prior uncertainty cannot indefinitely block a clearly new garment.
+An effective prior of at least `0.85` prevents
 silent auto-creation and yields `ambiguous`. `uncertain` never creates an item, and fallback candidates cannot
 decide whether a garment is new.
 
@@ -213,7 +229,8 @@ absolute paths, or user IDs. `FASHION_AGENT_TRACE=true` emits the same redacted 
 The signed-browser diagnostics route exposes only the current user's traces.
 
 Observation, garment-track continuity, and identity recall use the same canonical appearance vocabulary.
-The structured vision schema includes explicit `unknown` values for color and fit instead of forcing weak
+The structured vision schema includes explicit `unknown` values for color, fit, sleeve, neckline, length, and
+material instead of forcing weak
 evidence into a named bucket. Legacy and current descriptors are normalized at comparison time; persisted
 records are not rewritten. Exact color buckets score `1`, neighboring buckets score `0.6`, and unknown or
 unrelated colors score `0`. A neighboring color alone cannot preserve a track without stronger silhouette,

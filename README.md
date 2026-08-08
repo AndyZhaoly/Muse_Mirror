@@ -63,13 +63,18 @@ become closet-card primary images. Product-image verification changes image stat
 garment identity or ownership. Repeat recognition uses historical real appearances, tolerates metadata label
 drift, preserves provisional/unverified status, and does not generate another product image. Observation,
 tracking, and recall share a canonical appearance vocabulary for color, pattern, and fit. Free-form English
-and Chinese labels are normalized only at comparison time, while visually uncertain color and fit stay
+and Chinese labels are normalized only at comparison time, while visually uncertain color, fit, sleeve,
+neckline, length, and material stay
 `unknown` and contribute no identity similarity.
 
-Identity resolution keeps recall broad but verifies one ClosetItem at a time. Only jointly visible
+Identity resolution keeps recall broad, deterministically removes explicit attribute contradictions, and then
+verifies at most three surviving ClosetItems one at a time. The current descriptor is locked before each visual
+comparison, and a verifier that changes its reading of the current color/sleeve/neckline is downgraded to
+uncertain. Only jointly visible
 construction evidence can establish a safe match or difference; occlusion, crop, length, fit, and silhouette
-drift cannot silently create a duplicate. Recent wear raises a candidate's prior without proving identity,
-and a strong prior vetoes automatic creation. Ambiguous evidence writes no ClosetItem. The latest 200
+drift cannot silently create a duplicate. Safe same requires both visual evidence and a minimum prior; low-prior
+uncertainty no longer blocks a clearly new item, while recent wear raises a candidate's prior without proving
+identity and a strong prior vetoes automatic creation. Ambiguous evidence writes no ClosetItem. The latest 200
 sanitized decision traces remain available to the signed browser identity for diagnostics.
 Duplicate overlay items can be repaired through a dry-run-first, atomic repository merge; the duplicate is
 archived as an alias and is excluded from recommendation without deleting its historical appearances or wear.
@@ -196,6 +201,10 @@ OPENAI_PRODUCT_IMAGE_SIZE=1024x1024
 FASHION_AGENT_PRODUCT_IMAGE_VERIFY_CONFIDENCE=0.84
 FASHION_AGENT_IDENTITY_TOP_K=4
 FASHION_AGENT_IDENTITY_PAIR_MATCH_CONFIDENCE=0.88
+FASHION_AGENT_IDENTITY_SAFE_SAME_MIN_PRIOR=0.55
+FASHION_AGENT_IDENTITY_VETO_MIN_PRIOR=0.60
+FASHION_AGENT_IDENTITY_MULTIPLE_SAFE_MATCH_MARGIN=0.15
+FASHION_AGENT_IDENTITY_MAX_VISUAL_CANDIDATES=3
 FASHION_AGENT_IDENTITY_BASE_NEW_CONFIDENCE=0.78
 FASHION_AGENT_IDENTITY_STRONG_PRIOR_VETO=0.85
 FASHION_AGENT_IDENTITY_NEW_CONFIDENCE_CEILING=0.9

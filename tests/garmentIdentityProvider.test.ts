@@ -109,6 +109,27 @@ test('multiple safe matches remain ambiguous instead of choosing top one', async
   assert.ok(result.reasonCodes.includes('MULTIPLE_SAFE_MATCHES'));
 });
 
+test('multiple safe matches choose the prior leader only when the margin is decisive', async () => {
+  const uncertainLeader = ambientItem('leader-uncertain', 'Light gray knee shorts', 'light gray');
+  const safeLeader = ambientItem('safe-leader', 'Light gray knee shorts', 'light gray');
+  const safeRunnerUp = ambientItem('safe-runner-up', 'Generic shorts', 'light gray');
+  const input = withAppearanceDescriptors(identityInput({
+    userClosetItems: [uncertainLeader, safeLeader, safeRunnerUp],
+  }), [
+    { item: uncertainLeader, descriptor: descriptorFixture({ dominantColor: 'gray', pattern: 'solid', silhouette: 'straight', fit: 'regular' }) },
+    { item: safeLeader, descriptor: descriptorFixture({ dominantColor: 'gray', pattern: 'solid', silhouette: 'straight', fit: 'unknown' }) },
+    { item: safeRunnerUp, descriptor: descriptorFixture({ dominantColor: 'gray', pattern: 'other', silhouette: 'unknown', fit: 'unknown' }) },
+  ]);
+  const result = await provider(verifier({
+    'leader-uncertain': verification('uncertain', 0.7, []),
+    'safe-leader': verification('same', 0.95, [feature('pocket', 'same', 'strong')]),
+    'safe-runner-up': verification('same', 0.94, [feature('waistband', 'same', 'strong')]),
+  })).resolve(input);
+  assert.equal(result.status, 'matched_existing');
+  assert.equal(result.matchedClosetItemId, 'safe-leader');
+  assert.ok(result.reasonCodes.includes('SAFE_MATCH_PRIOR_MARGIN'));
+});
+
 test('immediately previous same-slot wear contributes continuity without deciding a match', async () => {
   const shorts = ambientItem('recent-shorts', 'Light gray knee shorts', 'light gray');
   const previousCapture = capture('recent-shorts', '2026-08-06T20:43:00.000Z');
@@ -148,6 +169,85 @@ test('a compatible item without visual references is ambiguous', async () => {
   assert.ok(result.reasonCodes.includes('NO_VISUAL_REFERENCE_FOR_POTENTIAL_MATCH'));
 });
 
+test('hard color contradiction excludes a black sleeveless top from a white short-sleeve candidate without VLM', async () => {
+  const candidate = ambientItem('white-tee', 'White short sleeve crew T-shirt', 'white', 'top');
+  const input = withAppearanceDescriptors(identityInput({
+    garment: {
+      ...shortsObservation(), observationItemId: 'black-tank', slot: 'top', category: 'top',
+      description: 'black sleeveless tank', dominantColor: 'black', sleeve: 'sleeveless', neckline: 'crew',
+      lengthClass: 'medium', materialClass: 'cotton', boundingBox: { x: 0.2, y: 0.15, width: 0.6, height: 0.5 },
+    },
+    userClosetItems: [candidate],
+  }), [{
+    item: candidate,
+    descriptor: descriptorFixture({
+      slot: 'top', category: 'top', dominantColor: 'white', pattern: 'solid', sleeve: 'short', neckline: 'crew',
+    }),
+  }]);
+  const calls: string[] = [];
+  const result = await provider(verifier({}, calls)).resolve(input);
+  assert.equal(result.status, 'new_to_closet');
+  assert.deepEqual(calls, []);
+  assert.equal(result.decisionTrace?.pairwiseVerifications[0]?.evaluation, 'excluded');
+  assert.equal(result.decisionTrace?.pairwiseVerifications[0]?.exclusionReason, 'COLOR_FAMILY_CONTRADICTION');
+});
+
+test('safe same requires the configured effective-prior floor', async () => {
+  const candidate = ambientItem('weak-gray-shorts', 'Generic shorts', 'unknown');
+  const input = withAppearanceDescriptors(identityInput({ userClosetItems: [candidate] }), [{
+    item: candidate,
+    descriptor: descriptorFixture({ dominantColor: 'unknown', pattern: 'solid' }),
+  }]);
+  const result = await provider(verifier({
+    'weak-gray-shorts': verification('same', 0.95, [feature('pocket', 'same', 'strong')]),
+  })).resolve(input);
+  assert.notEqual(result.status, 'matched_existing');
+  assert.ok((result.decisionTrace?.recall.candidates[0]?.effectivePrior ?? 1) < 0.55);
+});
+
+test('low-prior uncertain candidates do not veto a safely different material candidate', async () => {
+  const material = ambientItem('material-candidate', 'Gray shorts', 'light gray');
+  const weak = ambientItem('weak-candidate', 'Generic shorts', 'unknown');
+  const input = withAppearanceDescriptors(identityInput({ userClosetItems: [material, weak] }), [
+    { item: material, descriptor: descriptorFixture({ dominantColor: 'gray', pattern: 'solid' }) },
+    { item: weak, descriptor: descriptorFixture({ dominantColor: 'unknown', pattern: 'solid' }) },
+  ]);
+  const result = await provider(verifier({
+    'material-candidate': verification('different', 0.94, [feature('pocket', 'different', 'strong')]),
+    'weak-candidate': verification('uncertain', 0.5, []),
+  })).resolve(input);
+  assert.equal(result.status, 'new_to_closet');
+  assert.ok((result.decisionTrace?.recall.candidates.find((item) => item.closetItemId === 'material-candidate')?.effectivePrior ?? 0) >= 0.6);
+  assert.ok((result.decisionTrace?.recall.candidates.find((item) => item.closetItemId === 'weak-candidate')?.effectivePrior ?? 1) < 0.6);
+});
+
+test('an uncertain material-prior candidate still blocks automatic creation', async () => {
+  const material = ambientItem('material-candidate', 'Gray shorts', 'light gray');
+  const input = withAppearanceDescriptors(identityInput({ userClosetItems: [material] }), [{
+    item: material, descriptor: descriptorFixture({ dominantColor: 'gray', pattern: 'solid' }),
+  }]);
+  const result = await provider(verifier({
+    'material-candidate': verification('uncertain', 0.8, []),
+  })).resolve(input);
+  assert.equal(result.status, 'ambiguous');
+  assert.ok(result.reasonCodes.includes('INSUFFICIENT_SAFE_DIFFERENCE'));
+});
+
+test('gray knit shorts and white denim shorts do not consume a visual verification call', async () => {
+  const candidate = ambientItem('white-denim-shorts', 'White denim shorts', 'white');
+  const input = withAppearanceDescriptors(identityInput({
+    garment: { ...shortsObservation(), materialClass: 'knit', pattern: 'knit_texture' },
+    userClosetItems: [candidate],
+  }), [{
+    item: candidate,
+    descriptor: descriptorFixture({ dominantColor: 'white', pattern: 'denim_wash', materialClass: 'denim' }),
+  }]);
+  const calls: string[] = [];
+  const result = await provider(verifier({}, calls)).resolve(input);
+  assert.equal(result.status, 'new_to_closet');
+  assert.deepEqual(calls, []);
+});
+
 function provider(pairVerifier: GarmentPairwiseVerifier): VisualGarmentIdentityProvider {
   return new VisualGarmentIdentityProvider({
     verifier: pairVerifier,
@@ -165,6 +265,7 @@ function verifier(
     ready: true,
     async verifyPair(input) {
       calls.push(input.candidate.closetItem.id);
+      assert.ok(input.lockedDescriptor.dominantColor);
       assert.ok(input.candidate.referenceAppearances.length <= 2);
       return results[input.candidate.closetItem.id] ?? verification('uncertain', 0, []);
     },
@@ -176,7 +277,10 @@ function verification(
   confidence: number,
   featureComparisons: PairwiseGarmentVerification['featureComparisons'],
 ): PairwiseGarmentVerification {
-  return { verdict, confidence, featureComparisons, occlusions: [], jointlyVisibleEvidence: [], model: 'fixture-model' };
+  return {
+    verdict, confidence, currentColor: 'gray', currentSleeve: 'unknown', currentNeckline: 'unknown',
+    featureComparisons, occlusions: [], jointlyVisibleEvidence: [], model: 'fixture-model',
+  };
 }
 
 function feature(
@@ -205,15 +309,16 @@ function shortsObservation(): WornGarmentObservation {
   return {
     observationItemId: 'observed-gray-shorts', slot: 'bottom', category: 'bottom',
     description: 'light gray knee shorts', dominantColor: 'light gray', secondaryColors: [],
-    pattern: 'solid', silhouette: 'straight', fit: 'regular', distinctiveFeatures: [],
+    pattern: 'solid', sleeve: 'unknown', neckline: 'unknown', lengthClass: 'short', materialClass: 'cotton',
+    silhouette: 'straight', fit: 'regular', visibleFraction: 'full', distinctiveFeatures: [],
     boundingBox: { x: 0.25, y: 0.48, width: 0.5, height: 0.48 }, confidence: 0.94, uncertainties: [],
   };
 }
 
-function ambientItem(id: string, name: string, color: string): AmbientClosetItem {
+function ambientItem(id: string, name: string, color: string, category: ClosetItem['category'] = 'bottom'): AmbientClosetItem {
   return {
     item: {
-      id, name, category: 'bottom', color, fit: 'regular', formality: 'casual',
+      id, name, category, color, fit: 'regular', formality: 'casual',
       styleTags: ['solid', name], imageUrl: `/catalog/${id}.jpg`, source: 'mirror_auto_capture',
       identityStatus: 'provisional', ownershipStatus: 'unverified', imageStatus: 'ready',
     },
@@ -228,6 +333,31 @@ function withAppearances(input: GarmentIdentityInput, items: AmbientClosetItem[]
     ...input,
     appearances,
     assets: appearances.map((item) => asset(item.appearanceAssetId, item.closetItemId)),
+  };
+}
+
+function withAppearanceDescriptors(
+  input: GarmentIdentityInput,
+  entries: Array<{ item: AmbientClosetItem; descriptor: GarmentAppearance['descriptor'] }>,
+): GarmentIdentityInput {
+  const appearances = entries.map(({ item, descriptor }, index) => ({
+    ...appearance(item.item.id, `descriptor-reference-${index}`),
+    descriptor,
+  }));
+  return {
+    ...input,
+    appearances,
+    assets: appearances.map((item) => asset(item.appearanceAssetId, item.closetItemId)),
+  };
+}
+
+function descriptorFixture(
+  overrides: Partial<GarmentAppearance['descriptor']> = {},
+): GarmentAppearance['descriptor'] {
+  return {
+    slot: 'bottom', category: 'bottom', dominantColor: 'gray', secondaryColors: [], pattern: 'other',
+    sleeve: 'unknown', neckline: 'unknown', lengthClass: 'unknown', materialClass: 'unknown',
+    silhouette: 'unknown', fit: 'unknown', distinctiveFeatures: [], ...overrides,
   };
 }
 

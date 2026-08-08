@@ -8,13 +8,21 @@ import type {
 import { extractJsonObject } from '../utils/json.js';
 import { makeId } from '../utils/ids.js';
 import {
+  CANONICAL_LENGTH_CLASSES,
+  CANONICAL_MATERIAL_CLASSES,
+  CANONICAL_NECKLINES,
   CANONICAL_PATTERNS,
+  CANONICAL_SLEEVES,
   OBSERVABLE_COLORS,
   OBSERVABLE_FITS,
   canonicalizeColor,
   canonicalizeFit,
   canonicalizeGarmentSlot,
+  canonicalizeLengthClass,
+  canonicalizeMaterialClass,
+  canonicalizeNeckline,
   canonicalizePattern,
+  canonicalizeSleeve,
 } from './garmentVocabulary.js';
 
 export interface OutfitObservationInput {
@@ -50,8 +58,13 @@ const observationSchema = {
           'dominantColor',
           'secondaryColors',
           'pattern',
+          'sleeve',
+          'neckline',
+          'lengthClass',
+          'materialClass',
           'silhouette',
           'fit',
+          'visibleFraction',
           'distinctiveFeatures',
           'boundingBox',
           'confidence',
@@ -70,8 +83,13 @@ const observationSchema = {
           dominantColor: { type: 'string', enum: [...OBSERVABLE_COLORS] },
           secondaryColors: { type: 'array', items: { type: 'string', enum: [...OBSERVABLE_COLORS] }, maxItems: 4 },
           pattern: { type: 'string', enum: [...CANONICAL_PATTERNS] },
+          sleeve: { type: 'string', enum: [...CANONICAL_SLEEVES] },
+          neckline: { type: 'string', enum: [...CANONICAL_NECKLINES] },
+          lengthClass: { type: 'string', enum: [...CANONICAL_LENGTH_CLASSES] },
+          materialClass: { type: 'string', enum: [...CANONICAL_MATERIAL_CLASSES] },
           silhouette: { type: 'string' },
           fit: { type: 'string', enum: [...OBSERVABLE_FITS] },
+          visibleFraction: { type: 'string', enum: ['full', 'partial', 'barely'] },
           distinctiveFeatures: { type: 'array', items: { type: 'string' }, maxItems: 8 },
           boundingBox: {
             type: 'object',
@@ -181,9 +199,14 @@ Return only the structured observation requested by the schema.
 - Count people conservatively.
 - Describe only garments visibly WORN by the single person. Ignore garments held in hands, furniture, bedding, and background clothing.
 - Emit separate items by slot. A visible open overshirt is outerwear; the shirt beneath it is top.
-- Use stable visual attributes useful for recognizing the same physical garment later: category, main color, pattern, silhouette, fit, and distinctive visible details.
+- Use stable visual attributes useful for recognizing the same physical garment later: category, main color, pattern, sleeve, neckline, length class, material class, silhouette, fit, and distinctive visible details.
 - Use only these color values: ${OBSERVABLE_COLORS.join(', ')}. Use unknown when color is not reliable; never invent a free-text shade.
 - pattern must be one of: ${CANONICAL_PATTERNS.join(', ')}. fit must be one of: ${OBSERVABLE_FITS.join(', ')}; use unknown when fit is not reliable.
+- sleeve must be one of: ${CANONICAL_SLEEVES.join(', ')}. neckline must be one of: ${CANONICAL_NECKLINES.join(', ')}.
+- lengthClass must be one of: ${CANONICAL_LENGTH_CLASSES.join(', ')}. materialClass must be one of: ${CANONICAL_MATERIAL_CLASSES.join(', ')}.
+- Use unknown for any attribute that is not clearly visible. Never infer a hidden sleeve, neckline, length, or material from typical garment construction.
+- visibleFraction describes how much of the garment is actually visible: full, partial, or barely.
+- Report only substantially visible garments. Do not emit slots cropped out of frame or garments merely expected from context.
 - Bounding boxes are normalized to the entire image (0..1).
 - quality=good only when garment color and shape are sufficiently clear.
 - coverage=three_quarter requires the upper body and most of the legs; full_body requires feet.
@@ -214,8 +237,13 @@ function normalizeObservation(
         dominantColor: canonicalizeColor(text(item?.dominantColor, 'unknown')),
         secondaryColors: texts(item?.secondaryColors).map(canonicalizeColor).filter((color) => color !== 'unknown'),
         pattern: canonicalizePattern(text(item?.pattern, 'other')),
+        sleeve: canonicalizeSleeve(text(item?.sleeve, 'unknown')),
+        neckline: canonicalizeNeckline(text(item?.neckline, 'unknown')),
+        lengthClass: canonicalizeLengthClass(text(item?.lengthClass, 'unknown')),
+        materialClass: canonicalizeMaterialClass(text(item?.materialClass, 'unknown')),
         silhouette: text(item?.silhouette, 'unknown'),
         fit: canonicalizeFit(text(item?.fit, 'unknown')),
+        visibleFraction: enumValue(item?.visibleFraction, ['full', 'partial', 'barely'], 'partial'),
         distinctiveFeatures: texts(item?.distinctiveFeatures),
         boundingBox: {
           x: unit(item?.boundingBox?.x),

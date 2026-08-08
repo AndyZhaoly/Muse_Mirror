@@ -11,7 +11,7 @@ import type {
   WornGarmentObservation,
   WornOutfitObservation,
 } from '../src/domain/ambientCapture.js';
-import { AmbientCaptureCoordinator } from '../src/runtime/ambientCaptureCoordinator.js';
+import { AmbientCaptureCoordinator, gateWornGarmentObservation } from '../src/runtime/ambientCaptureCoordinator.js';
 import { GarmentImageAssetService } from '../src/services/garmentImageAssetService.js';
 import { VisualGarmentIdentityProvider } from '../src/services/garmentIdentityProvider.js';
 import {
@@ -29,6 +29,49 @@ import { JsonUserWardrobeRepository } from '../src/services/userWardrobeReposito
 import type { ClosetItem } from '../src/types.js';
 
 const userId = 'browser_user_ambient_test';
+
+test('barely visible and coverage-incompatible slots are removed before identity resolution', () => {
+  const gated = gateWornGarmentObservation({
+    ...outfit([
+      { ...garment('top', 'top', 'navy', 'navy tee'), visibleFraction: 'full' },
+      { ...garment('bottom', 'bottom', 'gray', 'barely visible shorts'), visibleFraction: 'barely' },
+      { ...garment('bottom', 'bottom', 'white', 'inferred shoes'), slot: 'shoes', category: 'shoes', visibleFraction: 'partial' },
+    ]),
+    coverage: 'upper_body',
+  });
+  assert.deepEqual(gated.observation.garments.map((item) => item.slot), ['top']);
+  assert.ok(gated.reasonCodes.includes('SLOT_DROPPED_BARELY_VISIBLE'));
+  assert.ok(gated.reasonCodes.includes('SLOT_DROPPED_OUTSIDE_COVERAGE'));
+});
+
+test('a barely visible slot does not block a clear garment from completing capture', async () => {
+  const fixture = await createFixture('barely-visible-slot');
+  await fixture.repository.setGrant(userId, true);
+  const observed = outfit([
+    { ...garment('clear-top', 'top', 'navy', 'navy crew tee'), visibleFraction: 'full' },
+    { ...garment('barely-bottom', 'bottom', 'sand', 'barely visible trousers'), visibleFraction: 'barely' },
+  ]);
+  const productCalls: ProductImageGenerationInput[] = [];
+  const runtime = coordinator({
+    repository: fixture.repository,
+    assetService: fixture.assetService,
+    observations: [observed, observed],
+    productCalls,
+  });
+
+  const observing = await runtime.process(packet(fixture.framePath, 'barely-slot', 'bs1'));
+  assert.equal(observing.status, 'observing');
+  assert.ok(observing.reasonCodes.includes('SLOT_DROPPED_BARELY_VISIBLE'));
+  const committed = await runtime.process(packet(fixture.framePath, 'barely-slot', 'bs2'));
+  assert.equal(committed.status, 'committed_processing_images');
+  assert.ok(committed.reasonCodes.includes('SLOT_DROPPED_BARELY_VISIBLE'));
+
+  const state = await waitForImages(fixture.repository, userId, 1);
+  assert.equal(state.closetItems.length, 1);
+  assert.equal(state.closetItems[0]?.item.category, 'top');
+  assert.equal(state.captures[0]?.closetItemIds.length, 1);
+  assert.equal(productCalls.length, 1);
+});
 
 test('three rounds create verified products, recognize real appearances, then add only the changed garment', async () => {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'muse-ambient-three-rounds-'));
@@ -249,6 +292,11 @@ test('visual verifier converts invalid legacy-shaped output to uncertain', async
   });
   const result = await verifier.verifyPair({
     currentAppearance: current,
+    lockedDescriptor: {
+      slot: 'top', category: 'top', dominantColor: 'navy', secondaryColors: [], pattern: 'solid',
+      sleeve: 'short', neckline: 'crew', lengthClass: 'medium', materialClass: 'cotton',
+      silhouette: 'regular', fit: 'regular', distinctiveFeatures: [],
+    },
     candidate: {
       closetItem: {
         id: 'allowed-item', name: 'Allowed', category: 'top', color: 'navy', fit: 'regular',
