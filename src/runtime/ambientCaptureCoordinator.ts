@@ -1419,11 +1419,13 @@ function completedEventFromCommit(
         label: item.observation.description,
         status: newIds.has(item.resolvedClosetItemId) ? 'new' : 'recognized',
         imageUrl: ambient?.imageStatus === 'ready' ? ambient.imageUrl : base?.imageUrl,
+        fallbackImageUrl: item.appearanceAsset.imageUrl,
         imageStatus: ambient?.imageStatus ?? (newIds.has(item.resolvedClosetItemId) ? 'processing' : 'ready'),
       };
     }),
     repeatedOutfit: proposal.repeatedOutfit,
     committedAt: commit.capture.committedAt,
+    updatedAt: commit.capture.committedAt,
   };
 }
 

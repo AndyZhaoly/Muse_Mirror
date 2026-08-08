@@ -301,13 +301,19 @@ Stage A capture is the authority for garment identity and completion state. A de
 fields only when the current completion event still owns that capture; it never rebuilds identity from its old
 proposal. Monotonic runtime outcome revisions also prevent an older image job from replacing a newer observation's
 diagnostic outcome.
-The recommendation runtime reads the same signed-browser overlay as ambient capture. A new-item completion
-card displays product images only after all required jobs are verified; repeat recognition reuses existing
-primary images without another generation call.
+The recommendation runtime reads the same signed-browser overlay as ambient capture. The Mirror Screen
+Controller derives a user-scoped `Latest Wardrobe Moment` only from a persisted semantic completion event,
+never from frame observations or image-pipeline status. The Moment is a persistent passive surface: explicit
+conversation, approval, and visual tasks cover it without deleting it, then the newest event is restored.
+New-item product cards reveal independently as their image jobs complete; repeat recognition reuses existing
+primary images without another generation call. A protected garment-only appearance crop may be used as a
+presentation fallback when catalog-image generation fails, but full-person evidence is never rendered as a
+wardrobe card.
 
 Completion events explicitly distinguish `fully_resolved`, `fully_recognized`, and `partially_resolved` results.
-Partial events include their unresolved garment references, allowing the Mirror Canvas to acknowledge recorded
-items while saying that another garment still needs evidence instead of claiming the whole outfit is finalized.
+Partial events include their unresolved garment references, allowing resolved cards to remain useful while a
+pending card says that another garment still needs evidence. Pending resolution and product-image completion
+update the existing capture Moment in place rather than creating a second screen transition.
 Runtime diagnostics derive the same truth from the persisted completion event: successful image generation cannot
 turn `NEW + PENDING` into an all-ready outcome.
 

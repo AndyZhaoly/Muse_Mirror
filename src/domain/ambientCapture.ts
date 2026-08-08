@@ -609,10 +609,12 @@ export interface OutfitCaptureCompletedEvent {
     label: string;
     status: 'new' | 'recognized';
     imageUrl?: string;
+    fallbackImageUrl?: string;
     imageStatus?: ClosetItem['imageStatus'];
   }>;
   repeatedOutfit: boolean;
   committedAt: string;
+  updatedAt?: string;
   acknowledgedAt?: string;
 }
 

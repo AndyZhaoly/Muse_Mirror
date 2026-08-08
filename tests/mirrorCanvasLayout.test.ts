@@ -15,7 +15,11 @@ test('Mirror Canvas consumes one projected screen state and approval is not dupl
   assert.doesNotMatch(app, /const latestArtifactSummary/);
   assert.doesNotMatch(app, /const canvasContent/);
   assert.match(canvas, /state: MirrorScreenState/);
+  assert.match(canvas, /state\.wardrobeMoment/);
+  assert.match(canvas, /data-screen-owner/);
+  assert.match(canvas, /wardrobe-moment/);
   assert.doesNotMatch(canvas, /MessageBubble|ActivityTimeline|messages\.map/);
+  assert.doesNotMatch(canvas, /ambient-image-progress|ambient-product-gallery|role="progressbar"/);
   assert.match(drawer, /aria-expanded/);
   assert.match(drawer, /aria-controls/);
   assert.match(app, /id="complete-conversation"/);

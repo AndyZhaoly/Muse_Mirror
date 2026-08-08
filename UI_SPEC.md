@@ -154,18 +154,24 @@ does not belong to the current turn.
 `garment_ingestion` is a reserved content boundary only. This controller does not implement
 garment detection, capture, ingestion UI, closet writes, or mode-specific renderers.
 
-PR8's ambient presentation may project an already-computed ingestion state into that boundary. While Stage B
-is running, the Canvas says `正在整理衣橱图片` and does not render a raw crop as a closet card. A ready event
-shows only `imageStatus=ready` items with verified canonical product URLs. Repeat recognition reuses the
-existing primary image; mixed results combine verified new images with those existing images. `needs_review`
-or failed jobs may show a neutral processing notice but never the rejected image. The full completion card
-is acknowledged after roughly seven seconds, can recover after refresh while unacknowledged, and yields to
-an active Agent turn.
+PR8's ambient presentation projects only a persisted semantic completion event into that boundary. Pipeline
+status, repeated camera observations, or the existence of closet items alone never create UI. A valid event
+creates the signed browser user's `Latest Wardrobe Moment`, which remains the passive background surface until
+a newer event replaces it. Blocking interaction and user-requested visual work temporarily own the Canvas;
+they do not destroy the Moment, and the controller restores the newest user-scoped Moment afterward. A new
+event received under foreground ownership updates in the background without stealing the screen.
+
+One capture owns one Moment. New-item cards start as stable processing placeholders and reveal verified
+canonical images independently. Pending identity resolution and product-image completion update that same
+Moment in place. Repeat recognition reuses the existing primary image. If presentation-image generation fails,
+the card may use the protected garment-only appearance crop as a visual fallback; it must never use a full
+person frame, imply that wardrobe capture failed, or expose technical provider/QC details. Unknown users and a
+new browser identity never inherit another user's Moment.
 
 The ordinary Mirror UI does not expose internal `provisional` or `unverified` labels. Those fields remain
 backend evidence semantics, not user-facing warnings and not filters that hide otherwise usable closet items.
-The UI may show image processing/review state because it affects whether a trustworthy catalog card exists,
-but must never imply that a verified product image proves garment identity or user ownership.
+The UI may show a quiet per-card processing state because it affects presentation readiness, but must never
+imply that a verified product image proves garment identity or user ownership.
 
 PR7 allows the controller to project an optional, already-computed `MirrorSituationDecision` as a small
 presentation hint. A foreground ownership question uses the reserved `garment_ingestion` content kind;

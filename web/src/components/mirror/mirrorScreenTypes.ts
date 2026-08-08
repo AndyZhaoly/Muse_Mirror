@@ -29,6 +29,33 @@ export type MirrorContentKind =
   | 'device_feedback'
   | 'garment_ingestion';
 
+export type MirrorScreenOwner =
+  | 'blocking_interaction'
+  | 'explicit_task'
+  | 'wardrobe_moment'
+  | 'idle';
+
+export interface WardrobeMomentItem {
+  id: string;
+  slot: AmbientCaptureCompletedEvent['itemSummaries'][number]['slot'];
+  label: string;
+  status: 'new' | 'recognized' | 'pending';
+  imageState: 'processing' | 'ready' | 'fallback' | 'pending';
+  imageUrl?: string;
+}
+
+export interface WardrobeMoment {
+  eventId: string;
+  captureId: string;
+  episodeId: string;
+  ownerUserId: string;
+  headline: string;
+  summary: string;
+  supportingText?: string;
+  items: WardrobeMomentItem[];
+  updatedAt: string;
+}
+
 export interface MirrorPrimaryArtifact {
   ownerMessageId: string;
   artifactType: string;
@@ -46,6 +73,7 @@ export interface MirrorVoicePresentation {
 }
 
 export interface MirrorScreenState {
+  screenOwner: MirrorScreenOwner;
   phase: MirrorInteractionPhase;
   contentKind: MirrorContentKind;
   priority: number;
@@ -66,6 +94,7 @@ export interface MirrorScreenState {
   showApproval: boolean;
   isActiveTurn: boolean;
   situationDecision?: MirrorSituationDecision;
+  wardrobeMoment?: WardrobeMoment;
   ambientCaptureEvent?: AmbientCaptureCompletedEvent;
   ambientCaptureStatus?: AmbientCaptureOutcome['status'];
   ambientClosetItems: AmbientCaptureClosetEntry[];
@@ -104,4 +133,5 @@ export interface MirrorScreenControllerInput {
   ambientClosetItems?: AmbientCaptureClosetEntry[];
   ambientProductImageProviderReady?: boolean;
   ambientProductImageBackfillPending?: boolean;
+  foregroundVisualTask?: boolean;
 }

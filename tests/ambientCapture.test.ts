@@ -119,6 +119,9 @@ test('three rounds create verified products, recognize real appearances, then ad
   assert.ok(round1State.closetItems.every((entry) => entry.item.ownershipStatus === 'unverified'));
   assert.ok(round1State.closetItems.every((entry) => entry.item.primaryImageAssetId));
   assert.ok(round1State.closetItems.every((entry) => entry.item.imageUrl.startsWith('/api/fashion/wardrobe-assets/')));
+  assert.ok(round1State.pendingCompletionEvent?.itemSummaries.every((item) =>
+    item.fallbackImageUrl?.startsWith('/api/fashion/wardrobe-assets/')));
+  assert.ok(round1State.pendingCompletionEvent?.updatedAt);
   const round1Products = round1State.assets.filter((asset) => asset.role === 'canonical_product');
   const round1Appearances = round1State.assets.filter((asset) => asset.role === 'garment_appearance');
   assert.equal(round1Products.length, 2);
@@ -1355,6 +1358,9 @@ test('capture without product providers commits evidence but never promotes a cr
   assert.ok(state.closetItems.every((entry) => !entry.item.primaryImageAssetId));
   assert.ok(state.closetItems.every((entry) => entry.item.imageUrl === '/agent-assets/wardrobe-processing.svg'));
   assert.equal(state.assets.filter((asset) => asset.role === 'canonical_product').length, 0);
+  assert.ok(state.pendingCompletionEvent?.itemSummaries.every((item) => item.imageStatus === 'needs_review'));
+  assert.ok(state.pendingCompletionEvent?.itemSummaries.every((item) =>
+    item.fallbackImageUrl?.startsWith('/api/fashion/wardrobe-assets/')));
 });
 
 test('critical product mismatch blocks primary image promotion despite high confidence', async () => {

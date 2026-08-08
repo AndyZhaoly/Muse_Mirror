@@ -634,10 +634,12 @@ export interface AmbientCaptureCompletedEvent {
     label: string;
     status: 'new' | 'recognized';
     imageUrl?: string;
+    fallbackImageUrl?: string;
     imageStatus?: 'processing' | 'ready' | 'needs_review' | 'failed';
   }>;
   repeatedOutfit: boolean;
   committedAt: string;
+  updatedAt?: string;
   acknowledgedAt?: string;
 }
 

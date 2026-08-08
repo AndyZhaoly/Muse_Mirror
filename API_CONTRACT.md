@@ -36,7 +36,8 @@ in a query or body are ignored for ambient storage and private assets.
 - `POST /api/ambient-capture/frame` accepts a real camera still, frame metadata, local stability evidence, and active-task status.
 - `POST /api/ambient-capture/episode/end` ends the current session episode when the user leaves or pauses the mirror.
 - `POST /api/ambient-capture/debug/reset` deletes only the requesting user's ambient overlay and capture records.
-- `POST /api/fashion/outfit-capture/acknowledge` clears only the current presentation event.
+- `POST /api/fashion/outfit-capture/acknowledge` explicitly clears only the current presentation event. The
+  normal Mirror UI does not auto-acknowledge a Wardrobe Moment on a timer.
 - `POST /api/dev/outfit-capture/retry-product-image` retries one current-browser item in `needs_review`/`failed` state.
 - `GET /api/fashion/wardrobe-assets/:assetId` serves an owned asset after cookie and path validation.
 
@@ -49,8 +50,10 @@ The frame endpoint may return `disabled`, `observing`, `deferred`, `privacy_paus
 `insufficient_evidence`, `ambiguous`, `committed`, `recognized`, `mixed`, `already_committed`,
 `episode_ended`, or `unavailable`, plus the two-stage image states documented in `src/domain/ambientCapture.ts`.
 Only committed/recognized/ready outcomes may carry an
-`OutfitCaptureCompletedEvent`; the UI must never synthesize that event from a model answer or an optimistic
-client state. Stage A atomically stores the evidence, independent garment appearances, provisional items,
+`OutfitCaptureCompletedEvent`; the UI must never synthesize that event from a model answer, image-pipeline
+status, closet inventory, or optimistic client state. `updatedAt` changes when pending identity or item-image
+state refreshes while `eventId` and `captureId` preserve the same Wardrobe Moment identity. Stage A atomically
+stores the evidence, independent garment appearances, provisional items,
 wear events, and capture. Stage B edits each new appearance into a product image and promotes it only after
 visual verification. Private evidence, appearances, and generated product images are never served by the
 public `/generated` route.

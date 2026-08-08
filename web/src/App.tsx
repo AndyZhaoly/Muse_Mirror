@@ -1375,6 +1375,9 @@ function App() {
 
   useEffect(() => {
     let cancelled = false;
+    setAmbientCaptureEvent(undefined);
+    setAmbientCaptureOutcome(undefined);
+    setAmbientClosetItems([]);
     void getAmbientCaptureState(userId)
       .then((state) => {
         if (cancelled) return;
@@ -1401,7 +1404,7 @@ function App() {
       void getAmbientCaptureState().then((state) => {
         if (cancelled) return;
         setAmbientCaptureOutcome(ambientOutcomeFromState(state));
-        if (state.pendingCompletionEvent) setAmbientCaptureEvent(state.pendingCompletionEvent);
+        setAmbientCaptureEvent(state.pendingCompletionEvent);
         setAmbientClosetItems(state.closetItems);
       }).catch(() => undefined);
     }, 1800);
@@ -1416,6 +1419,7 @@ function App() {
         if (cancelled) return;
         setAmbientClosetItems(state.closetItems);
         setAmbientCaptureOutcome(ambientOutcomeFromState(state));
+        setAmbientCaptureEvent(state.pendingCompletionEvent);
       }).catch(() => undefined);
     }, 1_500);
     return () => { cancelled = true; window.clearInterval(poll); };
@@ -1429,7 +1433,7 @@ function App() {
       const state = await getAmbientCaptureState();
       setAmbientClosetItems(state.closetItems);
       setAmbientCaptureOutcome(ambientOutcomeFromState(state));
-      if (state.pendingCompletionEvent) setAmbientCaptureEvent(state.pendingCompletionEvent);
+      setAmbientCaptureEvent(state.pendingCompletionEvent);
     } catch {
       setAmbientCaptureOutcome({ status: 'image_needs_review', reasonCodes: ['PRODUCT_IMAGE_BACKFILL_FAILED'] });
     } finally {
@@ -2329,7 +2333,6 @@ function App() {
   ): Promise<AgentTurnResult | undefined> => {
     const value = message.trim();
     if (!value) return;
-    setAmbientCaptureEvent(undefined);
     if (pendingApproval) {
       const approvalReply = parsePendingApprovalReply(value);
       if (approvalReply === 'include' || approvalReply === 'conceal') {
@@ -2445,6 +2448,7 @@ function App() {
       ambientClosetItems,
       ambientProductImageProviderReady,
       ambientProductImageBackfillPending,
+      foregroundVisualTask: visualMode !== 'live' && Boolean(stageArtifact),
     }),
     [
       agentStatusLabel,
@@ -2466,6 +2470,8 @@ function App() {
       ambientClosetItems,
       ambientProductImageProviderReady,
       ambientProductImageBackfillPending,
+      stageArtifact,
+      visualMode,
     ],
   );
 
@@ -2602,6 +2608,15 @@ function App() {
                   empty={ambientEmptySceneDiagnostics.status} · candidate={ambientEmptySceneDiagnostics.candidateCount} · confirmedAt={ambientEmptySceneDiagnostics.confirmedAt ?? 'none'} · skipped={ambientEmptySceneDiagnostics.skippedUploadCount} · forced={ambientEmptySceneDiagnostics.forcedProbeCount} · diff={ambientEmptySceneDiagnostics.sceneDifference?.toFixed(4) ?? 'none'} · threshold={emptySceneGuardConfig.threshold} · reentryMs={ambientEmptySceneDiagnostics.reentryLatencyMs ?? 'none'}
                 </code>
                 <button type="button" onClick={() => { void resetAmbientCaptureFromUi(); }}>Reset my ambient wardrobe</button>
+                {ambientProductImageProviderReady && ambientCaptureOutcome?.status === 'image_needs_review' && (
+                  <button
+                    type="button"
+                    disabled={ambientProductImageBackfillPending}
+                    onClick={() => { void backfillAmbientProductImagesFromUi(); }}
+                  >
+                    {ambientProductImageBackfillPending ? 'Retrying product images…' : 'Retry product images'}
+                  </button>
+                )}
               </details>
             )}
           </section>
@@ -2609,7 +2624,6 @@ function App() {
         canvas={(
           <MirrorAgentCanvas
             state={mirrorScreenState}
-            onBackfillProductImages={() => { void backfillAmbientProductImagesFromUi(); }}
             approval={mirrorScreenState.showApproval && pendingApproval ? (
               <ConsentCard
                 busy={generating}

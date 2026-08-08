@@ -253,9 +253,12 @@ Real product search is disabled by default. The application will not fabricate p
 Ambient catalog-image generation is a separate capability. The demo configuration enables it with
 `FASHION_AGENT_PRODUCT_IMAGE_PROVIDER=openai`: OpenAI edits the stored real garment crop into an isolated
 catalog view, then an OpenAI vision comparison must pass before the image is promoted. The UI labels these as
-AI-organized closet images rather than merchant product photos. Existing failed items can be regenerated from
-the wardrobe card; verified images remain visible after the capture-completion notice disappears. This adds
-image-generation and verification cost and never uses text-only generation for closet primary images.
+AI-organized closet images rather than merchant product photos. A real semantic capture creates a persistent,
+user-scoped Wardrobe Moment: cards appear immediately as quiet placeholders, reveal independently as product
+images finish, and remain available behind higher-priority conversation or visual tasks. Failed presentation
+images may fall back to the protected garment-only crop without changing the successful wardrobe-capture
+status. This adds image-generation and verification cost and never uses text-only generation for closet
+primary images.
 
 ## Validation
 

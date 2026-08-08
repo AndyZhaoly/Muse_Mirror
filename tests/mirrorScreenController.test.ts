@@ -101,6 +101,33 @@ function situationDecision(
   };
 }
 
+function ambientEvent(
+  captureId = 'capture-1',
+  label = '蓝色上衣',
+): NonNullable<MirrorScreenControllerInput['ambientCaptureEvent']> {
+  return {
+    eventId: `event-${captureId}`,
+    type: 'outfit_capture_completed',
+    userId: 'user-1',
+    sessionId: 'session-1',
+    captureId,
+    episodeId: `episode-${captureId}`,
+    newItemIds: [`top-${captureId}`],
+    recognizedItemIds: [],
+    completionStatus: 'fully_resolved',
+    pendingItems: [],
+    itemSummaries: [{
+      closetItemId: `top-${captureId}`,
+      slot: 'top',
+      label,
+      status: 'new',
+      imageStatus: 'processing',
+    }],
+    repeatedOutfit: false,
+    committedAt: '2026-08-08T00:00:00.000Z',
+  };
+}
+
 test('empty state is idle conversation without approval or artifact', () => {
   const state = deriveMirrorScreenState(input());
   assert.equal(state.phase, 'idle');
@@ -111,9 +138,11 @@ test('empty state is idle conversation without approval or artifact', () => {
   assert.equal(state.showApproval, false);
   assert.equal(state.primaryArtifact, undefined);
   assert.deepEqual(state.ambientClosetItems, []);
+  assert.equal(state.screenOwner, 'idle');
+  assert.equal(state.wardrobeMoment, undefined);
 });
 
-test('verified ambient closet images remain projected after the completion notice is gone', () => {
+test('ambient closet inventory alone does not create a Wardrobe Moment', () => {
   const state = deriveMirrorScreenState(input({
     ambientClosetItems: [{
       status: 'active',
@@ -135,6 +164,8 @@ test('verified ambient closet images remain projected after the completion notic
   assert.equal(state.ambientClosetItems.length, 1);
   assert.equal(state.ambientClosetItems[0]?.item.imageStatus, 'ready');
   assert.equal(state.ambientProductImageProviderReady, true);
+  assert.equal(state.wardrobeMoment, undefined);
+  assert.equal(state.screenOwner, 'idle');
 });
 
 test('ambient capture completion owns the passive canvas instead of stale conversation content', () => {
@@ -144,22 +175,13 @@ test('ambient capture completion owns the passive canvas instead of stale conver
       { id: 'a1', role: 'assistant', text: '上一轮回答' },
     ],
     ambientCaptureEvent: {
-      eventId: 'event-1',
-      type: 'outfit_capture_completed',
-      userId: 'user-1',
-      sessionId: 'session-1',
-      captureId: 'capture-1',
-      episodeId: 'episode-1',
+      ...ambientEvent(),
       newItemIds: ['top-1'],
       recognizedItemIds: ['bottom-1'],
-      completionStatus: 'fully_resolved',
-      pendingItems: [],
       itemSummaries: [
         { closetItemId: 'top-1', slot: 'top', label: '蓝色上衣', status: 'new' },
         { closetItemId: 'bottom-1', slot: 'bottom', label: '米色长裤', status: 'recognized' },
       ],
-      repeatedOutfit: false,
-      committedAt: '2026-08-05T00:00:00.000Z',
     },
   }));
 
@@ -169,6 +191,9 @@ test('ambient capture completion owns the passive canvas instead of stale conver
   assert.equal(state.caption.latestUserText, undefined);
   assert.equal(state.caption.museText, undefined);
   assert.equal(state.ambientCaptureEvent?.captureId, 'capture-1');
+  assert.equal(state.screenOwner, 'wardrobe_moment');
+  assert.equal(state.wardrobeMoment?.captureId, 'capture-1');
+  assert.equal(state.wardrobeMoment?.items.length, 2);
 });
 
 test('active assistant turn hides an older ambient completion event', () => {
@@ -176,36 +201,25 @@ test('active assistant turn hides an older ambient completion event', () => {
     messages: [{ id: 'a2', role: 'assistant' }],
     activeAssistantId: 'a2',
     responding: true,
-    ambientCaptureEvent: {
-      eventId: 'event-1',
-      type: 'outfit_capture_completed',
-      userId: 'user-1',
-      sessionId: 'session-1',
-      captureId: 'capture-1',
-      episodeId: 'episode-1',
-      newItemIds: [],
-      recognizedItemIds: [],
-      completionStatus: 'fully_recognized',
-      pendingItems: [],
-      itemSummaries: [],
-      repeatedOutfit: true,
-      committedAt: '2026-08-05T00:00:00.000Z',
-    },
+    ambientCaptureEvent: ambientEvent(),
   }));
 
   assert.equal(state.phase, 'thinking');
   assert.equal(state.ambientCaptureEvent, undefined);
+  assert.equal(state.wardrobeMoment, undefined);
+  assert.equal(state.screenOwner, 'explicit_task');
 });
 
-test('catalog image processing owns only the passive canvas', () => {
+test('catalog image processing without a semantic event never creates screen chrome', () => {
   const passive = deriveMirrorScreenState(input({
     messages: [{ id: 'a1', role: 'assistant', text: '较早的一轮回答' }],
     ambientCaptureStatus: 'committed_processing_images',
   }));
   assert.equal(passive.phase, 'showing_result');
-  assert.equal(passive.contentKind, 'garment_ingestion');
-  assert.equal(passive.caption.museText, undefined);
-  assert.equal(passive.ambientCaptureStatus, 'committed_processing_images');
+  assert.equal(passive.contentKind, 'conversation');
+  assert.equal(passive.caption.museText, '较早的一轮回答');
+  assert.equal(passive.ambientCaptureStatus, undefined);
+  assert.equal(passive.wardrobeMoment, undefined);
 
   const active = deriveMirrorScreenState(input({
     messages: [{ id: 'a2', role: 'assistant' }],
@@ -217,14 +231,61 @@ test('catalog image processing owns only the passive canvas', () => {
   assert.equal(active.ambientCaptureStatus, undefined);
 });
 
-test('catalog image failure never revives a stale conversation answer', () => {
+test('catalog image failure without a semantic event remains a background diagnostic only', () => {
   const state = deriveMirrorScreenState(input({
     messages: [{ id: 'a1', role: 'assistant', text: '上一轮穿搭建议' }],
     ambientCaptureStatus: 'image_needs_review',
   }));
-  assert.equal(state.contentKind, 'garment_ingestion');
-  assert.equal(state.caption.museText, undefined);
-  assert.equal(state.ambientCaptureStatus, 'image_needs_review');
+  assert.equal(state.contentKind, 'conversation');
+  assert.equal(state.caption.museText, '上一轮穿搭建议');
+  assert.equal(state.ambientCaptureStatus, undefined);
+  assert.equal(state.wardrobeMoment, undefined);
+});
+
+test('a foreground visual task covers but does not mutate the latest Wardrobe Moment', () => {
+  const latest = ambientEvent('capture-2', '米色上衣');
+  const covered = deriveMirrorScreenState(input({
+    ambientCaptureEvent: latest,
+    foregroundVisualTask: true,
+  }));
+  const restored = deriveMirrorScreenState(input({
+    ambientCaptureEvent: latest,
+    foregroundVisualTask: false,
+  }));
+
+  assert.equal(covered.wardrobeMoment, undefined);
+  assert.equal(covered.screenOwner, 'explicit_task');
+  assert.equal(restored.screenOwner, 'wardrobe_moment');
+  assert.equal(restored.wardrobeMoment?.captureId, 'capture-2');
+  assert.equal(restored.wardrobeMoment?.items[0]?.label, '米色上衣');
+});
+
+test('a newer wardrobe event received under foreground ownership is the one restored', () => {
+  const oldEvent = ambientEvent('capture-1', '蓝色上衣');
+  const newEvent = ambientEvent('capture-2', '米色上衣');
+  const before = deriveMirrorScreenState(input({ ambientCaptureEvent: oldEvent }));
+  const covered = deriveMirrorScreenState(input({ ambientCaptureEvent: newEvent, responding: true }));
+  const after = deriveMirrorScreenState(input({ ambientCaptureEvent: newEvent }));
+
+  assert.equal(before.wardrobeMoment?.captureId, 'capture-1');
+  assert.equal(covered.wardrobeMoment, undefined);
+  assert.equal(after.wardrobeMoment?.captureId, 'capture-2');
+});
+
+test('listening allows the persistent Wardrobe Moment while recognition covers it', () => {
+  const event = ambientEvent();
+  const listening = deriveMirrorScreenState(input({
+    ambientCaptureEvent: event,
+    voice: { ...idleVoice, enabled: true, state: 'listening' },
+  }));
+  const recognizing = deriveMirrorScreenState(input({
+    ambientCaptureEvent: event,
+    voice: { ...idleVoice, enabled: true, state: 'recognizing', partialTranscript: '看看这身' },
+  }));
+
+  assert.equal(listening.wardrobeMoment?.captureId, 'capture-1');
+  assert.equal(recognizing.wardrobeMoment, undefined);
+  assert.equal(recognizing.screenOwner, 'explicit_task');
 });
 
 test('situation decision is projected as a hint without changing conversation lifecycle', () => {

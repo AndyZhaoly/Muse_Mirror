@@ -739,6 +739,7 @@ export class JsonUserWardrobeRepository implements WardrobeRepository {
           imageStatus: ambient.imageStatus,
         };
       });
+      completionEvent.updatedAt = occurredAt;
       bump(state, occurredAt);
       await this.writeFile(file);
       return structuredClone(completionEvent);
@@ -976,12 +977,14 @@ function applyPendingIdentityResolution(
         label: ambient?.name ?? pendingSummary.label,
         status: input.state === 'resolved_new' ? 'new' : 'recognized',
         imageUrl: ambient?.imageStatus === 'ready' ? ambient.imageUrl : undefined,
+        fallbackImageUrl: latestAppearanceImageUrl(state, input.closetItemId),
         imageStatus: ambient?.imageStatus ?? (input.state === 'resolved_new' ? 'processing' : 'ready'),
       });
     }
     pendingCompletionEvent.completionStatus = pendingCompletionEvent.pendingItems.length > 0
       ? 'partially_resolved'
       : pendingCompletionEvent.newItemIds.length > 0 ? 'fully_resolved' : 'fully_recognized';
+    pendingCompletionEvent.updatedAt = occurredAt;
   }
   const affectedEpisodes = new Set<string>();
   for (const capture of state.captures) {
@@ -1230,6 +1233,14 @@ function dedupeCompletionSummaries(
   const byId = new Map<string, NonNullable<UserWardrobeState['pendingCompletionEvent']>['itemSummaries'][number]>();
   for (const summary of summaries) if (!byId.has(summary.closetItemId)) byId.set(summary.closetItemId, summary);
   return [...byId.values()];
+}
+
+function latestAppearanceImageUrl(state: UserWardrobeState, closetItemId: string): string | undefined {
+  const appearance = [...state.appearances]
+    .reverse()
+    .find((entry) => entry.closetItemId === closetItemId);
+  if (!appearance) return undefined;
+  return state.assets.find((asset) => asset.assetId === appearance.appearanceAssetId)?.imageUrl;
 }
 
 function unique(values: string[]): string[] {

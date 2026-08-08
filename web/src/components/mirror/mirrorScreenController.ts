@@ -9,6 +9,7 @@ import type {
   MirrorScreenState,
   MirrorVoicePresentation,
 } from './mirrorScreenTypes.js';
+import { deriveWardrobeMoment } from './wardrobeMoment.js';
 
 const IDLE_FALLBACK = '你好。需要时，我可以看镜子、查衣柜或生成视觉参考。';
 
@@ -210,18 +211,30 @@ export function deriveMirrorScreenState(input: MirrorScreenControllerInput): Mir
       (message) => message.id === input.activeAssistantId && message.role === 'assistant',
     )
     : undefined;
-  const canShowAmbientCapture = !activeAssistant &&
+  const foregroundSituation = input.situationDecision?.presentation.visibility === 'foreground';
+  const explicitScreenTask = Boolean(
+    activeAssistant ||
+    input.responding ||
+    input.generating ||
+    input.hasPendingApproval ||
+    input.foregroundVisualTask ||
+    input.voice.state === 'requesting_permission' ||
+    input.voice.state === 'recognizing' ||
+    input.voice.state === 'thinking' ||
+    input.voice.state === 'speaking' ||
+    input.voice.partialTranscript?.trim() ||
+    foregroundSituation,
+  );
+  const canShowWardrobeMoment = !explicitScreenTask &&
     !input.responding &&
     !input.generating &&
-    !input.hasPendingApproval &&
     (input.voice.state === 'disabled' || input.voice.state === 'idle' || input.voice.state === 'listening');
-  const ambientCaptureEvent = canShowAmbientCapture ? input.ambientCaptureEvent : undefined;
-  const ambientCaptureStatus = canShowAmbientCapture ? input.ambientCaptureStatus : undefined;
-  const ambientCaptureOwnsCanvas = Boolean(
-    ambientCaptureEvent ||
-    ambientCaptureStatus === 'committed_processing_images' ||
-    ambientCaptureStatus === 'image_needs_review',
-  );
+  const wardrobeMoment = canShowWardrobeMoment
+    ? deriveWardrobeMoment(input.ambientCaptureEvent)
+    : undefined;
+  const ambientCaptureOwnsCanvas = Boolean(wardrobeMoment);
+  const ambientCaptureEvent = ambientCaptureOwnsCanvas ? input.ambientCaptureEvent : undefined;
+  const ambientCaptureStatus = ambientCaptureOwnsCanvas ? input.ambientCaptureStatus : undefined;
   const completedAssistant = ambientCaptureOwnsCanvas ? undefined : latestCompletedAssistant(input.messages);
   const ownerMessage = activeAssistant ?? completedAssistant;
   const activeText = activeAssistant?.text?.trim() || undefined;
@@ -301,7 +314,16 @@ export function deriveMirrorScreenState(input: MirrorScreenControllerInput): Mir
     ? input.voice.partialTranscript?.trim() || undefined
     : undefined;
 
+  const screenOwner = input.hasPendingApproval || foregroundSituation
+    ? 'blocking_interaction'
+    : explicitScreenTask || completedAssistant
+      ? 'explicit_task'
+      : wardrobeMoment
+        ? 'wardrobe_moment'
+        : 'idle';
+
   return {
+    screenOwner,
     phase: ambientCaptureOwnsCanvas && phase === 'idle' ? 'showing_result' : phase,
     contentKind: ambientCaptureOwnsCanvas ? 'garment_ingestion' : primaryArtifact?.contentKind ?? (
       input.situationDecision?.presentation.visibility === 'foreground'
@@ -329,6 +351,7 @@ export function deriveMirrorScreenState(input: MirrorScreenControllerInput): Mir
     showApproval: input.hasPendingApproval,
     isActiveTurn: Boolean(activeAssistant),
     situationDecision: input.situationDecision,
+    wardrobeMoment,
     ambientCaptureEvent,
     ambientCaptureStatus,
     ambientClosetItems: input.ambientClosetItems ?? [],
