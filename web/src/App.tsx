@@ -8,7 +8,6 @@ import {
   getPerceptionStatus,
   getAmbientCaptureState,
   backfillAmbientProductImages,
-  acknowledgeAmbientCapture,
   getAgentStatus,
   getConversationMessages,
   listConversations,
@@ -1437,19 +1436,6 @@ function App() {
       setAmbientProductImageBackfillPending(false);
     }
   }, [ambientProductImageBackfillPending]);
-
-  useEffect(() => {
-    if (!ambientCaptureEvent) return undefined;
-    const eventId = ambientCaptureEvent.eventId;
-    const timer = window.setTimeout(() => {
-      void acknowledgeAmbientCapture()
-        .then(() => {
-          setAmbientCaptureEvent((current) => current?.eventId === eventId ? undefined : current);
-        })
-        .catch(() => undefined);
-    }, 7_000);
-    return () => window.clearTimeout(timer);
-  }, [ambientCaptureEvent?.eventId]);
 
   useEffect(() => {
     let cancelled = false;

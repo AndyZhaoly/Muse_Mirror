@@ -855,10 +855,18 @@ export class AmbientCaptureCoordinator {
           threshold: this.options.productImageVerifyConfidence ?? 0.84,
         });
         failed ||= !completed.ready;
+        await this.options.repository.refreshPendingCompletionEventImages(
+          proposal.userId,
+          committed.capture.captureId,
+        );
       } catch (error) {
         if (generatedAsset) await this.options.assetService.deleteAssets([generatedAsset]);
         failed = true;
         await this.options.repository.failProductImageJob(proposal.userId, job.jobId, safeErrorCode(error));
+        await this.options.repository.refreshPendingCompletionEventImages(
+          proposal.userId,
+          committed.capture.captureId,
+        );
       }
     }
     await this.exclusive(proposal.userId, async () => {

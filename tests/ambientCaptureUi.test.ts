@@ -28,8 +28,7 @@ test('ambient capture UI exposes explicit grant, real completion, and developer 
   assert.match(canvas, /role="progressbar"/);
   assert.match(app, /backfillAmbientProductImages/);
   assert.match(app, /needsReviewImageCount/);
-  assert.match(app, /acknowledgeAmbientCapture/);
-  assert.match(app, /7_000/);
+  assert.doesNotMatch(app, /acknowledgeAmbientCapture/);
   assert.match(app, /evaluateEmptySceneGuard/);
   assert.match(app, /ambientEmptySceneStreamId/);
   assert.match(app, /resetAmbientEmptySceneGuard/);
